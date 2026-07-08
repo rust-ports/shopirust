@@ -31,6 +31,16 @@ governor = "0.6"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
+# hashing
+sha2 = "0.10"
+hex = "0.4"
+
+# randomness
+rand = "0.8"
+
+# filesystem paths
+dirs = "5"
+
 [profile.release]
 strip = true
 lto = true

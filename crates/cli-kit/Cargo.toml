@@ -12,6 +12,13 @@ serde_json.workspace = true
 thiserror.workspace = true
 governor.workspace = true
 tracing.workspace = true
+sha2.workspace = true
+hex.workspace = true
+rand.workspace = true
+dirs.workspace = true
 
 [dev-dependencies]
 wiremock = "0.6"
+tempfile = "3"
+sha2.workspace = true
+hex.workspace = true
