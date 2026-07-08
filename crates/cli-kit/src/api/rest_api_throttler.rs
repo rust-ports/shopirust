@@ -40,6 +40,7 @@ pub struct RestClient {
     client: reqwest::Client,
     base_url: String,
     token: String,
+    extra_headers: Option<HeaderMap>,
 }
 
 impl RestClient {
@@ -49,6 +50,7 @@ impl RestClient {
             client,
             base_url: base_url.into(),
             token: token.into(),
+            extra_headers: None,
         }
     }
 
@@ -61,7 +63,13 @@ impl RestClient {
             client,
             base_url: base_url.into(),
             token: token.into(),
+            extra_headers: None,
         }
+    }
+
+    pub fn with_extra_headers(mut self, headers: HeaderMap) -> Self {
+        self.extra_headers = Some(headers);
+        self
     }
 
     fn url_for(&self, path: &str) -> String {
@@ -72,7 +80,13 @@ impl RestClient {
     }
 
     fn headers(&self) -> HeaderMap {
-        build_headers(Some(&self.token))
+        let mut headers = build_headers(Some(&self.token));
+        if let Some(ref extra) = self.extra_headers {
+            for (key, val) in extra.iter() {
+                headers.insert(key, val.clone());
+            }
+        }
+        headers
     }
 
     pub async fn get<T: DeserializeOwned>(

@@ -2,6 +2,7 @@ use crate::error::{abort_error, FatalError};
 use crate::http::{build_client, build_headers};
 use crate::util::cache::CacheStore;
 use crate::util::retry::{is_transient_network_error, RetryAction, RetryConfig};
+use reqwest::header::HeaderMap;
 use reqwest::StatusCode;
 use serde::de::DeserializeOwned;
 use serde::Deserialize;
@@ -96,6 +97,7 @@ pub struct GraphqlClient {
     pub token: Option<String>,
     retry_config: RetryConfig,
     cache: Option<Arc<CacheStore>>,
+    extra_headers: Option<HeaderMap>,
 }
 
 impl GraphqlClient {
@@ -107,6 +109,7 @@ impl GraphqlClient {
             token,
             retry_config: RetryConfig::new(),
             cache: None,
+            extra_headers: None,
         }
     }
 
@@ -117,6 +120,7 @@ impl GraphqlClient {
             token,
             retry_config: RetryConfig::new(),
             cache: None,
+            extra_headers: None,
         }
     }
 
@@ -127,6 +131,11 @@ impl GraphqlClient {
 
     pub fn with_cache(mut self, cache: Arc<CacheStore>) -> Self {
         self.cache = Some(cache);
+        self
+    }
+
+    pub fn with_extra_headers(mut self, headers: HeaderMap) -> Self {
+        self.extra_headers = Some(headers);
         self
     }
 
@@ -149,7 +158,12 @@ impl GraphqlClient {
         }
 
         let body = serde_json::json!({"query": query, "variables": variables});
-        let headers = build_headers(self.token.as_deref());
+        let mut headers = build_headers(self.token.as_deref());
+        if let Some(ref extra) = self.extra_headers {
+            for (key, val) in extra.iter() {
+                headers.insert(key, val.clone());
+            }
+        }
         let url = self.url.clone();
         let client = self.client.clone();
         let cache = self.cache.clone();
@@ -243,7 +257,7 @@ impl GraphqlClient {
                     }
 
                     if status.is_client_error() {
-                        return RetryAction::Retry(GraphqlRequestError::ApiError(
+                        return RetryAction::Err(GraphqlRequestError::ApiError(
                             extract_error_messages(&full_response.errors.unwrap_or_default()),
                             status.as_u16(),
                         ));
