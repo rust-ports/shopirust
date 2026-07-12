@@ -1,5 +1,5 @@
 pub mod admin;
-pub mod app_development;
+pub mod app_dev;
 pub mod app_management;
 pub mod business_platform;
 pub mod functions;
