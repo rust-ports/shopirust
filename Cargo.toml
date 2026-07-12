@@ -41,6 +41,9 @@ rand = "0.8"
 # filesystem paths
 dirs = "5"
 
+# date/time
+chrono = { version = "0.4", features = ["serde"] }
+
 [profile.release]
 strip = true
 lto = true
