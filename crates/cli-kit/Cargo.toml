@@ -17,6 +17,14 @@ hex.workspace = true
 rand.workspace = true
 dirs.workspace = true
 chrono.workspace = true
+colored.workspace = true
+console.workspace = true
+is-terminal.workspace = true
+inquire.workspace = true
+indicatif.workspace = true
+uuid.workspace = true
+open.workspace = true
+base64.workspace = true
 
 [dev-dependencies]
 wiremock = "0.6"

@@ -27,6 +27,13 @@ anyhow = "1"
 # rate limiting
 governor = "0.6"
 
+# terminal output
+colored = "2.2"
+console = "0.15"
+is-terminal = "0.4"
+inquire = "0.9"
+indicatif = "0.18"
+
 # logging/tracing
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
@@ -37,6 +44,9 @@ hex = "0.4"
 
 # randomness
 rand = "0.8"
+uuid = { version = "1", features = ["v4"] }
+open = "5"
+base64 = "0.22"
 
 # filesystem paths
 dirs = "5"
