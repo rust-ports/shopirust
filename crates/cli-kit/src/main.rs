@@ -1,7 +1,5 @@
 use cli_kit::api::graphql::GraphqlClient;
 use serde::{Deserialize, Serialize};
-use cli_kit::output::banner::render_info;
-use cli_kit::output::banner::render_success;
 use cli_kit::output::is_verbose;
 use cli_kit::output::set_verbose;
 use cli_kit::output::Token;
@@ -9,6 +7,7 @@ use cli_kit::output::{output_info, OutputContent};
 use cli_kit::session::ensure_authenticated;
 use cli_kit::session::store::SessionStore;
 use cli_kit::session::validate::{OAuthApplications, PartnersApiOptions};
+use std::process;
 
 fn init_tracing() {
     tracing_subscriber::fmt()
@@ -19,25 +18,55 @@ fn init_tracing() {
         .init();
 }
 
-fn print_banner() {
-    render_info(
-        "Shopify CLI (Rust)",
-        "Unofficial Rust port of the Shopify CLI",
-    );
-}
-
-fn print_usage() {
+fn print_usage(exit: bool) {
     output_info(OutputContent::new().add(Token::Raw(
-        "Commands:
-  auth       Authenticate with Shopify
-  whoami     Show current user
-  orgs       List organizations
-  help       Show this help"
+        "A CLI tool to build for the Shopify platform
+
+USAGE
+  $ cli-kit [COMMAND]
+
+TOPICS
+  auth          Auth operations.
+  organization  List organizations you have access to.
+
+COMMANDS
+  help          Display help for Shopify CLI
+  version       Shopify CLI version currently installed."
             .into(),
     )));
+    if exit {
+        process::exit(0);
+    }
 }
 
-async fn cmd_whoami(store: &SessionStore) -> Result<(), String> {
+// ── Auth commands ─────────────────────────────────────────────
+
+async fn cmd_auth_login(store: &SessionStore) -> Result<(), String> {
+    let applications = OAuthApplications {
+        admin_api: None,
+        partners_api: Some(PartnersApiOptions {
+            scopes: vec!["https://api.shopify.com/auth/partners.app.cli.access".into()],
+        }),
+        storefront_renderer_api: None,
+        business_platform_api: Some(Default::default()),
+        app_management_api: None,
+    };
+
+    let _session = ensure_authenticated(&applications, store).await?;
+    output_info(
+        OutputContent::new()
+            .add(Token::Info("Authentication successful".into())),
+    );
+    Ok(())
+}
+
+async fn cmd_auth_logout(store: &SessionStore) -> Result<(), String> {
+    store.remove();
+    output_info(OutputContent::new().add(Token::Info("Logged out.".into())));
+    Ok(())
+}
+
+async fn cmd_auth_status(store: &SessionStore) -> Result<(), String> {
     let sessions = store.fetch().ok_or("not authenticated")?;
     let current_id = store.get_current_session_id().ok_or("not authenticated")?;
 
@@ -56,24 +85,23 @@ async fn cmd_whoami(store: &SessionStore) -> Result<(), String> {
     Ok(())
 }
 
-async fn cmd_auth(store: &SessionStore) -> Result<(), String> {
-    let applications = OAuthApplications {
-        admin_api: None,
-        partners_api: Some(PartnersApiOptions {
-            scopes: vec!["https://api.shopify.com/auth/partners.app.cli.access".into()],
-        }),
-        storefront_renderer_api: None,
-        business_platform_api: Some(Default::default()),
-        app_management_api: None,
-    };
+fn print_auth_usage() {
+    output_info(OutputContent::new().add(Token::Raw(
+        "Auth operations.
 
-    let _session = ensure_authenticated(&applications, store).await?;
-    output_info(
-        OutputContent::new()
-            .add(Token::Info("Authentication successful".into())),
-    );
-    Ok(())
+USAGE
+  $ cli-kit auth [COMMAND]
+
+COMMANDS
+  login   Login to Shopify
+  logout  Logout from Shopify
+  status  Display the current authentication status, and if the user is authenticated."
+            .into(),
+    )));
+    process::exit(0);
 }
+
+// ── Organization commands ─────────────────────────────────────
 
 #[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -114,7 +142,7 @@ impl BusinessPlatformOrg {
     }
 }
 
-async fn cmd_orgs(store: &SessionStore) -> Result<(), String> {
+async fn cmd_organization_list(store: &SessionStore) -> Result<(), String> {
     let applications = OAuthApplications {
         admin_api: None,
         partners_api: Some(PartnersApiOptions {
@@ -149,15 +177,38 @@ query ListOrganizations {
 
     let orgs = resp.current_user_account.organizations_with_access_to_destination.nodes;
 
-    for org in &orgs {
-        render_success(&org.name, &format!("ID: {}", org.numeric_id()));
-    }
-
     if orgs.is_empty() {
         output_info(OutputContent::new().add(Token::Raw("No organizations found.".into())));
+        return Ok(());
+    }
+
+    output_info(OutputContent::new().add(Token::Raw(
+        format!("{:>10}  {}", "ID", "NAME"),
+    )));
+    output_info(OutputContent::new().add(Token::Raw(
+        format!("{:>10}  {}", "──────────", "────────────"),
+    )));
+    for org in &orgs {
+        output_info(OutputContent::new().add(Token::Raw(
+            format!("{:>10}  {}", org.numeric_id(), org.name),
+        )));
     }
 
     Ok(())
+}
+
+fn print_organization_usage() {
+    output_info(OutputContent::new().add(Token::Raw(
+        "List organizations you have access to.
+
+USAGE
+  $ cli-kit organization [COMMAND]
+
+COMMANDS
+  list  List the organizations."
+            .into(),
+    )));
+    process::exit(0);
 }
 
 #[tokio::main]
@@ -169,30 +220,59 @@ async fn main() {
     }
 
     let args: Vec<String> = std::env::args().collect();
-    let command = args.get(1).map(|s| s.as_str()).unwrap_or("help");
+    let topic = args.get(1).map(|s| s.as_str()).unwrap_or("help");
 
     let store = SessionStore::new();
-    let result = match command {
-        "auth" => cmd_auth(&store).await,
-        "whoami" => cmd_whoami(&store).await,
-        "orgs" => cmd_orgs(&store).await,
+    let result = match topic {
+        "auth" => {
+            match args.get(2).map(|s| s.as_str()).unwrap_or("help") {
+                "login" => cmd_auth_login(&store).await,
+                "logout" => cmd_auth_logout(&store).await,
+                "status" => cmd_auth_status(&store).await,
+                "help" | "--help" | "-h" => { print_auth_usage(); Ok(()) }
+                sub => {
+                    output_info(OutputContent::new().add(Token::Error(
+                        format!("Unknown auth command: {sub}"),
+                    )));
+                    print_auth_usage();
+                    Ok(())
+                }
+            }
+        }
+        "organization" => {
+            match args.get(2).map(|s| s.as_str()).unwrap_or("help") {
+                "list" => cmd_organization_list(&store).await,
+                "help" | "--help" | "-h" => { print_organization_usage(); Ok(()) }
+                sub => {
+                    output_info(OutputContent::new().add(Token::Error(
+                        format!("Unknown organization command: {sub}"),
+                    )));
+                    print_organization_usage();
+                    Ok(())
+                }
+            }
+        }
         "help" | "--help" | "-h" => {
-            print_banner();
-            print_usage();
+            print_usage(false);
             Ok(())
         }
-        _ => {
-            print_banner();
-            output_info(OutputContent::new().add(Token::Error(format!(
-                "Unknown command: {command}"
-            ))));
-            print_usage();
-            Err("Unknown command".into())
+        "version" | "--version" | "-v" => {
+            output_info(OutputContent::new().add(Token::Raw(
+                format!("@shopify/cli/{} linux-x64 node-v{}", env!("CARGO_PKG_VERSION"), "rust"),
+            )));
+            Ok(())
+        }
+        cmd => {
+            output_info(OutputContent::new().add(Token::Error(
+                format!("Unknown command: {cmd}"),
+            )));
+            print_usage(true);
+            Ok(())
         }
     };
 
     if let Err(e) = result {
         eprintln!("Error: {e}");
-        std::process::exit(1);
+        process::exit(1);
     }
 }
