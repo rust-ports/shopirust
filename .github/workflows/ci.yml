@@ -3,7 +3,6 @@ name: CI
 on:
   push:
     branches: ["**"]
-    tags: ["v*"]
   pull_request:
     branches: [development, master]
 
@@ -12,7 +11,6 @@ env:
   RUSTFLAGS: "-D warnings"
 
 jobs:
-  # ── Lint ───────────────────────────────────────────────────────
   lint:
     name: Lint (clippy + fmt)
     runs-on: ubuntu-latest
@@ -27,7 +25,6 @@ jobs:
       - run: cargo clippy --all-targets --all-features
       - run: cargo fmt --check
 
-  # ── Test ───────────────────────────────────────────────────────
   test:
     name: Test
     runs-on: ubuntu-latest
@@ -38,99 +35,3 @@ jobs:
         with:
           shared-key: test
       - run: cargo test --all-features
-
-  # ── Build ──────────────────────────────────────────────────────
-  build:
-    name: Build (glibc)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: build
-      - run: cargo build --all-features
-      - run: cargo build --release
-      - name: Strip & upload release binary
-        if: startsWith(github.ref, 'refs/tags/v')
-        run: |
-          strip target/release/cli-kit
-          ls -lh target/release/cli-kit
-      - uses: actions/upload-artifact@v4
-        if: startsWith(github.ref, 'refs/tags/v')
-        with:
-          name: cli-kit-x86_64-linux-gnu
-          path: target/release/cli-kit
-          if-no-files-found: error
-
-  # ── Cross-compile (musl) ───────────────────────────────────────
-  cross:
-    name: Cross ${{ matrix.target }}
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        target:
-          - x86_64-unknown-linux-musl
-          - aarch64-unknown-linux-musl
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
-      - uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: cross-${{ matrix.target }}
-      - name: Install cross-tools
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq musl-tools gcc-aarch64-linux-gnu
-      - name: Build release for ${{ matrix.target }}
-        run: |
-          if [ "${{ matrix.target }}" = "aarch64-unknown-linux-musl" ]; then
-            export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=aarch64-linux-gnu-gcc
-          fi
-          cargo build --release --target ${{ matrix.target }}
-      - name: Strip binary
-        run: |
-          BIN="target/${{ matrix.target }}/release/cli-kit"
-          if [ -x "$BIN" ]; then
-            case "${{ matrix.target }}" in
-              aarch64*) aarch64-linux-gnu-strip "$BIN" ;;
-              *) strip "$BIN" ;;
-            esac
-            ls -lh "$BIN"
-          fi
-      - uses: actions/upload-artifact@v4
-        if: startsWith(github.ref, 'refs/tags/v')
-        with:
-          name: cli-kit-${{ matrix.target }}
-          path: target/${{ matrix.target }}/release/cli-kit
-          if-no-files-found: error
-
-  # ── Release ────────────────────────────────────────────────────
-  release:
-    name: Release
-    needs: [lint, test, build, cross]
-    if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          pattern: cli-kit-*
-          merge-multiple: true
-          path: dist
-      - name: Checksum
-        run: |
-          cd dist
-          chmod +x *
-          sha256sum * > checksums.txt
-          cat checksums.txt
-      - name: Create release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: dist/*
-          fail_on_unmatched_files: true
-          generate_release_notes: true
