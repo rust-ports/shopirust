@@ -79,7 +79,7 @@ async fn cmd_orgs(store: &SessionStore) -> Result<(), String> {
     let session = ensure_authenticated(&applications, store).await?;
     let token = session.partners.ok_or("No partners token available")?;
 
-    let url = "https://partners.shopify.com/api/2024-01/graphql.json".to_string();
+    let url = "https://partners.shopify.com/api/cli/graphql".to_string();
     let client = GraphqlClient::new(url, Some(token));
     let partners = PartnersClient::new(client);
     let orgs = partners

@@ -4,12 +4,14 @@ use crate::session::schema::{ApplicationToken, IdentityToken};
 use chrono::Utc;
 use serde::Deserialize;
 use std::collections::HashMap;
+use tracing;
 
 #[derive(Debug, Deserialize)]
 #[allow(dead_code)]
 struct TokenResponse {
     access_token: String,
     expires_in: u64,
+    #[serde(default)]
     refresh_token: String,
     scope: String,
     id_token: Option<String>,
@@ -180,20 +182,30 @@ pub async fn exchange_access_for_application_tokens(
     );
 
     let mut all = HashMap::new();
-    if let Ok(t) = partners {
-        all.extend(t);
+
+    let log_err = |api: &str, e: &ExchangeError| {
+        tracing::warn!("Token exchange failed for {api}: {e:?}");
+    };
+
+    match partners {
+        Ok(t) => all.extend(t),
+        Err(e) => log_err("partners", &e),
     }
-    if let Ok(t) = storefront {
-        all.extend(t);
+    match storefront {
+        Ok(t) => all.extend(t),
+        Err(e) => log_err("storefront-renderer", &e),
     }
-    if let Ok(t) = business_platform {
-        all.extend(t);
+    match business_platform {
+        Ok(t) => all.extend(t),
+        Err(e) => log_err("business-platform", &e),
     }
-    if let Ok(t) = admin {
-        all.extend(t);
+    match admin {
+        Ok(t) => all.extend(t),
+        Err(e) => log_err("admin", &e),
     }
-    if let Ok(t) = app_management {
-        all.extend(t);
+    match app_management {
+        Ok(t) => all.extend(t),
+        Err(e) => log_err("app-management", &e),
     }
     Ok(all)
 }
