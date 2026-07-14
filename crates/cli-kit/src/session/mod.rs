@@ -6,6 +6,9 @@ pub mod scopes;
 pub mod store;
 pub mod validate;
 
+use crate::output::progress::ProgressBar;
+use crate::output::{output_info, output_warn, OutputContent, Token};
+use crate::session::device_authorization::{poll_for_device_authorization, request_device_authorization};
 use crate::session::schema::{IdentityToken, Session};
 use crate::session::store::SessionStore;
 use crate::session::validate::{validate_session, OAuthApplications, ValidationResult};
@@ -93,7 +96,73 @@ pub async fn ensure_authenticated(
             }
         }
         ValidationResult::NeedsFullAuth => {
-            return Err("Full authentication required, but not implemented yet".into());
+            let mut scopes = applications.all_scopes();
+            if !scopes.iter().any(|s| s == "openid") {
+                scopes.insert(0, "openid".into());
+            }
+            let device_auth = request_device_authorization(&scopes)
+                .await
+                .map_err(|e| format!("Device authorization failed: {e}"))?;
+
+            let verification_uri = device_auth
+                .verification_uri_complete
+                .as_deref()
+                .unwrap_or(&device_auth.verification_uri);
+
+            output_info(
+                OutputContent::new()
+                    .add(Token::Info("To authenticate, visit: ".into()))
+                    .add(Token::Raw(verification_uri.to_string()))
+                    .add(Token::Raw("\nEnter code: ".into()))
+                    .add(Token::Command(device_auth.user_code.clone())),
+            );
+
+            if let Err(e) = open::that(verification_uri) {
+                output_warn(format!("Could not open browser: {e}"));
+            }
+
+            let spinner = ProgressBar::new("Waiting for authentication…", None);
+
+            let identity = poll_for_device_authorization(
+                &device_auth.device_code,
+                device_auth.interval.unwrap_or(5),
+            )
+            .await?;
+
+            spinner.finish_with_message("Authentication complete");
+
+            let exchange_scopes = get_exchange_scopes(applications);
+            let app_tokens = exchange::exchange_access_for_application_tokens(
+                &identity,
+                &exchange_scopes.admin,
+                &exchange_scopes.partners,
+                &exchange_scopes.storefront,
+                &exchange_scopes.business_platform,
+                &exchange_scopes.app_management,
+                applications
+                    .admin_api
+                    .as_ref()
+                    .map(|a| a.store_fqdn.as_str()),
+            )
+            .await
+            .map_err(|e| format!("Token exchange failed: {e:?}"))?;
+
+            let session = Session {
+                identity,
+                applications: app_tokens,
+            };
+
+            let mut updated_sessions = sessions.clone();
+            updated_sessions
+                .entry(fqdn.to_string())
+                .or_default()
+                .insert(session.identity.user_id.clone(), session.clone());
+            store.store(&updated_sessions);
+            store.set_current_session_id(&session.identity.user_id);
+            set_last_seen_user_id(&session.identity.user_id);
+            set_last_seen_auth_method(AuthMethod::DeviceAuth);
+            let tokens = tokens_for(applications, &session);
+            return Ok(tokens);
         }
     };
 

@@ -1,3 +1,4 @@
+use crate::api::rate_limiter::ApiRateLimiter;
 use crate::error::{abort_error, FatalError};
 use crate::http::{build_client, build_headers};
 use crate::util::cache::CacheStore;
@@ -98,6 +99,7 @@ pub struct GraphqlClient {
     retry_config: RetryConfig,
     cache: Option<Arc<CacheStore>>,
     extra_headers: Option<HeaderMap>,
+    rate_limiter: Option<ApiRateLimiter>,
 }
 
 impl GraphqlClient {
@@ -110,6 +112,7 @@ impl GraphqlClient {
             retry_config: RetryConfig::new(),
             cache: None,
             extra_headers: None,
+            rate_limiter: None,
         }
     }
 
@@ -121,6 +124,7 @@ impl GraphqlClient {
             retry_config: RetryConfig::new(),
             cache: None,
             extra_headers: None,
+            rate_limiter: None,
         }
     }
 
@@ -136,6 +140,11 @@ impl GraphqlClient {
 
     pub fn with_extra_headers(mut self, headers: HeaderMap) -> Self {
         self.extra_headers = Some(headers);
+        self
+    }
+
+    pub fn with_rate_limiter(mut self, limiter: ApiRateLimiter) -> Self {
+        self.rate_limiter = Some(limiter);
         self
     }
 
@@ -167,6 +176,7 @@ impl GraphqlClient {
         let url = self.url.clone();
         let client = self.client.clone();
         let cache = self.cache.clone();
+        let rate_limiter = self.rate_limiter.clone();
 
         let result: Result<T, GraphqlRequestError> = self
             .retry_config
@@ -175,8 +185,13 @@ impl GraphqlClient {
                 let url = url.clone();
                 let headers = headers.clone();
                 let body = body.clone();
+                let rate_limiter = rate_limiter.clone();
 
                 async move {
+                    if let Some(ref limiter) = rate_limiter {
+                        limiter.acquire().await;
+                    }
+
                     let response_result = client.post(&url).headers(headers).json(&body).send().await;
 
                     let response = match response_result {

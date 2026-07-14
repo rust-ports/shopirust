@@ -5,6 +5,7 @@ pub mod business_platform;
 pub mod functions;
 pub mod graphql;
 pub mod partners;
+pub mod rate_limiter;
 pub mod rest_api_throttler;
 pub mod utilities;
 pub mod webhooks;

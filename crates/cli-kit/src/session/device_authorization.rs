@@ -45,7 +45,12 @@ pub async fn request_device_authorization(
         .map_err(|e| format!("Failed to read response: {e}"))?;
 
     if !status.is_success() {
-        return Err(format!("Authorization service returned HTTP {status}: {text}"));
+        let body_preview = if text.len() > 500 {
+            format!("{}... ({} bytes)", &text[..500], text.len())
+        } else {
+            text.clone()
+        };
+        return Err(format!("Authorization service returned HTTP {status}: {body_preview}"));
     }
 
     let resp: DeviceAuthorizationResponse =

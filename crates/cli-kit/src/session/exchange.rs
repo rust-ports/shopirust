@@ -4,12 +4,14 @@ use crate::session::schema::{ApplicationToken, IdentityToken};
 use chrono::Utc;
 use serde::Deserialize;
 use std::collections::HashMap;
+use tracing;
 
 #[derive(Debug, Deserialize)]
 #[allow(dead_code)]
 struct TokenResponse {
     access_token: String,
     expires_in: u64,
+    #[serde(default)]
     refresh_token: String,
     scope: String,
     id_token: Option<String>,
@@ -28,12 +30,25 @@ pub enum ExchangeError {
     Other(String),
 }
 
+fn extract_user_id_from_id_token(id_token: &str) -> Option<String> {
+    let payload = id_token.split('.').nth(1)?;
+    use base64::Engine;
+    let decoded = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(payload)
+        .ok()?;
+    let claims: serde_json::Value = serde_json::from_slice(&decoded).ok()?;
+    claims.get("sub").and_then(|v| v.as_str()).map(String::from)
+}
+
 fn build_identity_token(
     result: &TokenResponse,
     existing_user_id: Option<&str>,
     existing_alias: Option<&str>,
 ) -> IdentityToken {
-    let user_id = existing_user_id.unwrap_or("unknown").to_string();
+    let user_id = existing_user_id
+        .map(String::from)
+        .or_else(|| result.id_token.as_ref().and_then(|id| extract_user_id_from_id_token(id)))
+        .unwrap_or_else(|| "unknown".to_string());
     IdentityToken {
         access_token: result.access_token.clone(),
         refresh_token: result.refresh_token.clone(),
@@ -180,20 +195,30 @@ pub async fn exchange_access_for_application_tokens(
     );
 
     let mut all = HashMap::new();
-    if let Ok(t) = partners {
-        all.extend(t);
+
+    let log_err = |api: &str, e: &ExchangeError| {
+        tracing::warn!("Token exchange failed for {api}: {e:?}");
+    };
+
+    match partners {
+        Ok(t) => all.extend(t),
+        Err(e) => log_err("partners", &e),
     }
-    if let Ok(t) = storefront {
-        all.extend(t);
+    match storefront {
+        Ok(t) => all.extend(t),
+        Err(e) => log_err("storefront-renderer", &e),
     }
-    if let Ok(t) = business_platform {
-        all.extend(t);
+    match business_platform {
+        Ok(t) => all.extend(t),
+        Err(e) => log_err("business-platform", &e),
     }
-    if let Ok(t) = admin {
-        all.extend(t);
+    match admin {
+        Ok(t) => all.extend(t),
+        Err(e) => log_err("admin", &e),
     }
-    if let Ok(t) = app_management {
-        all.extend(t);
+    match app_management {
+        Ok(t) => all.extend(t),
+        Err(e) => log_err("app-management", &e),
     }
     Ok(all)
 }

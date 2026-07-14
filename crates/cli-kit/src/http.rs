@@ -1,7 +1,7 @@
 use reqwest::header::{self, HeaderMap, HeaderValue};
 use std::time::Duration;
 
-const CLI_KIT_VERSION: &str = "0.1.0";
+const CLI_KIT_VERSION: &str = "3.84.1";
 const DEFAULT_TIMEOUT_MS: u64 = 30_000;
 
 pub fn build_headers(token: Option<&str>) -> HeaderMap {
@@ -56,7 +56,7 @@ mod tests {
         let headers = build_headers(None);
         assert_eq!(
             headers.get(header::USER_AGENT).unwrap(),
-            "Shopify CLI; v=0.1.0"
+            "Shopify CLI; v=3.84.1"
         );
         assert_eq!(
             headers.get(header::CACHE_CONTROL).unwrap(),
