@@ -1,3 +1,4 @@
+use crate::api::rate_limiter::ApiRateLimiter;
 use crate::http::{build_client, build_headers};
 use reqwest::header::HeaderMap;
 use reqwest::Method;
@@ -41,6 +42,7 @@ pub struct RestClient {
     base_url: String,
     token: String,
     extra_headers: Option<HeaderMap>,
+    rate_limiter: Option<ApiRateLimiter>,
 }
 
 impl RestClient {
@@ -51,6 +53,7 @@ impl RestClient {
             base_url: base_url.into(),
             token: token.into(),
             extra_headers: None,
+            rate_limiter: None,
         }
     }
 
@@ -64,11 +67,17 @@ impl RestClient {
             base_url: base_url.into(),
             token: token.into(),
             extra_headers: None,
+            rate_limiter: None,
         }
     }
 
     pub fn with_extra_headers(mut self, headers: HeaderMap) -> Self {
         self.extra_headers = Some(headers);
+        self
+    }
+
+    pub fn with_rate_limiter(mut self, limiter: ApiRateLimiter) -> Self {
+        self.rate_limiter = Some(limiter);
         self
     }
 
@@ -127,6 +136,10 @@ impl RestClient {
         query: Option<HashMap<String, String>>,
         body: Option<serde_json::Value>,
     ) -> Result<RestResponse<T>, RestError> {
+        if let Some(ref limiter) = self.rate_limiter {
+            limiter.acquire().await;
+        }
+
         let url = self.url_for(path);
         let mut req = self
             .client

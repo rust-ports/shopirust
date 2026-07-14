@@ -1,7 +1,14 @@
 use crate::api::graphql::{GraphqlClient, GraphqlRequestError};
+use crate::api::rate_limiter::ApiRateLimiter;
 use serde::de::DeserializeOwned;
+use std::sync::OnceLock;
 
 const FQDN: &str = "app.shopify.com";
+
+fn functions_rate_limiter() -> ApiRateLimiter {
+    static LIMITER: OnceLock<ApiRateLimiter> = OnceLock::new();
+    LIMITER.get_or_init(ApiRateLimiter::shopify_default).clone()
+}
 
 pub async fn functions_request<T: DeserializeOwned + serde::Serialize>(
     organization_id: &str,
@@ -13,7 +20,8 @@ pub async fn functions_request<T: DeserializeOwned + serde::Serialize>(
     let url = format!(
         "https://{FQDN}/functions/unstable/organizations/{organization_id}/{app_id}/graphql"
     );
-    let client = GraphqlClient::new(url, Some(token.into()));
+    let client = GraphqlClient::new(url, Some(token.into()))
+        .with_rate_limiter(functions_rate_limiter());
     client.query_with_variables(query, variables).await
 }
 
