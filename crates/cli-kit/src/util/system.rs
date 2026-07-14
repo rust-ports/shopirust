@@ -134,7 +134,10 @@ mod tests {
     #[test]
     fn test_is_ci_not_set() {
         let ci_vars = ["CI", "TF_BUILD", "GITHUB_ACTIONS", "GITLAB_CI", "CIRCLECI"];
-        let saved: Vec<(&str, Option<String>)> = ci_vars.iter().map(|&v| (v, std::env::var(v).ok())).collect();
+        let saved: Vec<(&str, Option<String>)> = ci_vars
+            .iter()
+            .map(|&v| (v, std::env::var(v).ok()))
+            .collect();
         for (name, _) in &saved {
             std::env::remove_var(name);
         }
