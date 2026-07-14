@@ -23,7 +23,9 @@ pub fn app_management_app_logs_url(
     cursor: Option<&str>,
     filters: Option<HashMap<String, String>>,
 ) -> String {
-    let base = format!("https://{FQDN}/app_management/unstable/organizations/{organization_id}/app_logs/poll");
+    let base = format!(
+        "https://{FQDN}/app_management/unstable/organizations/{organization_id}/app_logs/poll"
+    );
     add_cursor_and_filters_to_app_logs_url(&base, cursor, filters)
 }
 

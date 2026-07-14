@@ -117,11 +117,7 @@ impl RetryConfig {
                 return Err(last_error.expect("last_error must be set after a Retry"));
             }
 
-            debug!(
-                attempt,
-                delay_ms = delay.as_millis(),
-                "retrying operation"
-            );
+            debug!(attempt, delay_ms = delay.as_millis(), "retrying operation");
 
             tokio::time::sleep(delay).await;
             attempt += 1;
@@ -193,7 +189,9 @@ mod tests {
             jitter: true,
             ..Default::default()
         };
-        let delays: Vec<u128> = (0..20).map(|i| config.backoff_delay(i).as_millis()).collect();
+        let delays: Vec<u128> = (0..20)
+            .map(|i| config.backoff_delay(i).as_millis())
+            .collect();
         let are_all_same = delays.windows(2).all(|w| w[0] == w[1]);
         assert!(!are_all_same, "jitter should produce varying delays");
     }
@@ -355,6 +353,8 @@ mod tests {
 
     #[test]
     fn is_transient_network_error_matches_missing_reason() {
-        assert!(is_transient_network_error("request to https://example.com failed, reason:"));
+        assert!(is_transient_network_error(
+            "request to https://example.com failed, reason:"
+        ));
     }
 }

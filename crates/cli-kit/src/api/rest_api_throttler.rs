@@ -122,10 +122,7 @@ impl RestClient {
         self.request(Method::PUT, path, None, Some(body)).await
     }
 
-    pub async fn delete(
-        &self,
-        path: &str,
-    ) -> Result<RestResponse<serde_json::Value>, RestError> {
+    pub async fn delete(&self, path: &str) -> Result<RestResponse<serde_json::Value>, RestError> {
         self.request(Method::DELETE, path, None, None).await
     }
 
@@ -141,10 +138,7 @@ impl RestClient {
         }
 
         let url = self.url_for(path);
-        let mut req = self
-            .client
-            .request(method, &url)
-            .headers(self.headers());
+        let mut req = self.client.request(method, &url).headers(self.headers());
 
         if let Some(ref params) = query {
             req = req.query(params);
@@ -154,7 +148,10 @@ impl RestClient {
             req = req.json(b);
         }
 
-        let response = req.send().await.map_err(|e| RestError::Network(e.to_string()))?;
+        let response = req
+            .send()
+            .await
+            .map_err(|e| RestError::Network(e.to_string()))?;
         let status = response.status().as_u16();
         let headers = response.headers().clone();
         let text = response
@@ -185,7 +182,10 @@ mod tests {
 
     #[tokio::test]
     async fn constructs_correct_url() {
-        let client = RestClient::new("https://example.myshopify.com/admin/api/2024-01", "shpat_test");
+        let client = RestClient::new(
+            "https://example.myshopify.com/admin/api/2024-01",
+            "shpat_test",
+        );
         assert_eq!(
             client.url_for("/themes.json"),
             "https://example.myshopify.com/admin/api/2024-01/themes.json"
@@ -194,7 +194,10 @@ mod tests {
 
     #[tokio::test]
     async fn constructs_url_without_duplicate_json() {
-        let client = RestClient::new("https://example.myshopify.com/admin/api/2024-01", "shpat_test");
+        let client = RestClient::new(
+            "https://example.myshopify.com/admin/api/2024-01",
+            "shpat_test",
+        );
         assert_eq!(
             client.url_for("themes"),
             "https://example.myshopify.com/admin/api/2024-01/themes.json"
@@ -216,10 +219,7 @@ mod tests {
         let client = RestClient::new(mock_server.uri(), "shpat_test");
         let result: RestResponse<serde_json::Value> = client.get("/themes", None).await.unwrap();
         assert_eq!(result.status, 200);
-        assert_eq!(
-            result.body["themes"][0]["name"],
-            json!("Default")
-        );
+        assert_eq!(result.body["themes"][0]["name"], json!("Default"));
     }
 
     #[tokio::test]

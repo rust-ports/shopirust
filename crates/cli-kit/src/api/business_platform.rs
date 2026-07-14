@@ -19,9 +19,8 @@ pub async fn business_platform_organizations_request<T: DeserializeOwned + serde
     query: &str,
     variables: Option<serde_json::Value>,
 ) -> Result<T, GraphqlRequestError> {
-    let url = format!(
-        "https://{FQDN}/organizations/api/unstable/organization/{organization_id}/graphql"
-    );
+    let url =
+        format!("https://{FQDN}/organizations/api/unstable/organization/{organization_id}/graphql");
     let client = GraphqlClient::new(url, Some(token.into()));
     client.query_with_variables(query, variables).await
 }
@@ -32,7 +31,10 @@ mod tests {
 
     #[test]
     fn bp_request_url_contains_destinations() {
-        let client = GraphqlClient::new(format!("https://{FQDN}/destinations/api/2020-07/graphql"), None);
+        let client = GraphqlClient::new(
+            format!("https://{FQDN}/destinations/api/2020-07/graphql"),
+            None,
+        );
         assert!(client.url.contains("destinations"));
     }
 

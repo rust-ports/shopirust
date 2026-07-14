@@ -1,8 +1,7 @@
 use crate::util::system;
 
 pub fn is_terminal_interactive() -> bool {
-    is_terminal::is_terminal(std::io::stdout())
-        && !is_dumb_terminal()
+    is_terminal::is_terminal(std::io::stdout()) && !is_dumb_terminal()
 }
 
 fn is_dumb_terminal() -> bool {
@@ -123,7 +122,9 @@ pub fn theme_token(env: Option<&std::collections::HashMap<String, String>>) -> O
         .or_else(|| std::env::var("SHOPIFY_CLI_THEME_TOKEN").ok())
 }
 
-pub fn get_theme_kit_access_domain(env: Option<&std::collections::HashMap<String, String>>) -> String {
+pub fn get_theme_kit_access_domain(
+    env: Option<&std::collections::HashMap<String, String>>,
+) -> String {
     env.and_then(|e| e.get("SHOPIFY_CLI_THEME_KIT_ACCESS_DOMAIN").cloned())
         .or_else(|| std::env::var("SHOPIFY_CLI_THEME_KIT_ACCESS_DOMAIN").ok())
         .unwrap_or_else(|| "theme-kit-access.shopifyapps.com".to_string())

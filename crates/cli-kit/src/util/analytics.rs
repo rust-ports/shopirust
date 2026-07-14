@@ -28,7 +28,10 @@ pub async fn report_analytics_event(event: &AnalyticsEvent) -> Result<(), String
 
 pub async fn report_unexpected_error(error_message: &str, stack_trace: Option<&str>) {
     let mut payload = HashMap::new();
-    payload.insert("error".into(), serde_json::Value::String(error_message.to_string()));
+    payload.insert(
+        "error".into(),
+        serde_json::Value::String(error_message.to_string()),
+    );
     if let Some(stack) = stack_trace {
         payload.insert("stack".into(), serde_json::Value::String(stack.to_string()));
     }
@@ -67,7 +70,10 @@ mod tests {
     #[test]
     fn test_unexpected_error_event() {
         let mut payload = HashMap::new();
-        payload.insert("error".into(), serde_json::Value::String("test error".into()));
+        payload.insert(
+            "error".into(),
+            serde_json::Value::String("test error".into()),
+        );
 
         let event = AnalyticsEvent {
             schema_id: "cli/unexpected_error/1.0".into(),

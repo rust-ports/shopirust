@@ -9,7 +9,13 @@ pub struct GitHubRemote {
 pub async fn detect_current_branch(path: &std::path::Path) -> Option<String> {
     let branch = system::capture_output(
         "git",
-        &["-C", path.to_str().unwrap_or("."), "rev-parse", "--abbrev-ref", "HEAD"],
+        &[
+            "-C",
+            path.to_str().unwrap_or("."),
+            "rev-parse",
+            "--abbrev-ref",
+            "HEAD",
+        ],
     )
     .await
     .ok()?;
@@ -22,7 +28,13 @@ pub async fn detect_current_branch(path: &std::path::Path) -> Option<String> {
 pub async fn detect_github_remote(path: &std::path::Path) -> Option<GitHubRemote> {
     let remote = system::capture_output(
         "git",
-        &["-C", path.to_str().unwrap_or("."), "config", "--get", "remote.origin.url"],
+        &[
+            "-C",
+            path.to_str().unwrap_or("."),
+            "config",
+            "--get",
+            "remote.origin.url",
+        ],
     )
     .await
     .ok()?;
@@ -52,7 +64,11 @@ fn extract_github_full_name(remote_url: &str) -> Option<String> {
     let remote = remote_url.trim();
     let name = if let Some(name) = remote.strip_prefix("git@github.com:") {
         Some(name.to_string())
-    } else { remote.strip_prefix("https://github.com/").map(|name| name.to_string()) }?;
+    } else {
+        remote
+            .strip_prefix("https://github.com/")
+            .map(|name| name.to_string())
+    }?;
     Some(name.strip_suffix(".git").unwrap_or(&name).to_string())
 }
 

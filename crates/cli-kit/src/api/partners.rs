@@ -456,9 +456,14 @@ impl PartnersClient {
         self.graphql
     }
 
-    pub async fn organizations(&self) -> Result<Vec<Organization>, crate::api::graphql::GraphqlRequestError> {
+    pub async fn organizations(
+        &self,
+    ) -> Result<Vec<Organization>, crate::api::graphql::GraphqlRequestError> {
         let resp: OrgsResponse = self.graphql.query(ALL_ORGS_QUERY).await?;
-        tracing::trace!("organizations response: {} nodes", resp.organizations.nodes.len());
+        tracing::trace!(
+            "organizations response: {} nodes",
+            resp.organizations.nodes.len()
+        );
         Ok(resp.organizations.nodes)
     }
 
@@ -472,17 +477,26 @@ impl PartnersClient {
             .graphql
             .query_with_variables(FIND_ORG_QUERY, Some(vars))
             .await?;
-        Ok(resp.organizations.nodes.into_iter().next().map(|o| OrgWithAppsInfo {
-            id: o.id,
-            business_name: o.business_name,
-            apps: o
-                .apps
-                .nodes
-                .into_iter()
-                .map(|a| MinimalApp { id: a.id, title: a.title, api_key: a.api_key })
-                .collect(),
-            apps_page_info: o.apps.page_info.has_next_page,
-        }))
+        Ok(resp
+            .organizations
+            .nodes
+            .into_iter()
+            .next()
+            .map(|o| OrgWithAppsInfo {
+                id: o.id,
+                business_name: o.business_name,
+                apps: o
+                    .apps
+                    .nodes
+                    .into_iter()
+                    .map(|a| MinimalApp {
+                        id: a.id,
+                        title: a.title,
+                        api_key: a.api_key,
+                    })
+                    .collect(),
+                apps_page_info: o.apps.page_info.has_next_page,
+            }))
     }
 
     pub async fn org_from_id_basic(
@@ -601,10 +615,8 @@ impl PartnersClient {
     pub async fn current_account_info(
         &self,
     ) -> Result<AccountInfo, crate::api::graphql::GraphqlRequestError> {
-        let resp: CurrentAccountInfoResponse = self
-            .graphql
-            .query(CURRENT_ACCOUNT_INFO_QUERY)
-            .await?;
+        let resp: CurrentAccountInfoResponse =
+            self.graphql.query(CURRENT_ACCOUNT_INFO_QUERY).await?;
         Ok(resp.current_account_info)
     }
 }
@@ -966,7 +978,10 @@ mod tests {
             .await;
 
         let client = mock_client(&mock_server);
-        let result = client.deploy_app("abc123", "https://bundle.url").await.unwrap();
+        let result = client
+            .deploy_app("abc123", "https://bundle.url")
+            .await
+            .unwrap();
         assert!(result.app_version.is_some());
         assert_eq!(result.app_version.unwrap().uuid, "ver-uuid");
     }

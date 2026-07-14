@@ -1,10 +1,10 @@
-use std::sync::Arc;
-use std::time::Duration;
-use governor::{Quota, RateLimiter};
-use governor::state::direct::NotKeyed;
-use governor::state::InMemoryState;
 use governor::clock::DefaultClock;
 use governor::middleware::NoOpMiddleware;
+use governor::state::direct::NotKeyed;
+use governor::state::InMemoryState;
+use governor::{Quota, RateLimiter};
+use std::sync::Arc;
+use std::time::Duration;
 
 type GovernorInner = RateLimiter<NotKeyed, InMemoryState, DefaultClock, NoOpMiddleware>;
 

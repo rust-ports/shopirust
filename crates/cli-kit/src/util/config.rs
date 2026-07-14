@@ -39,7 +39,8 @@ impl CliConfig {
             return Ok(Self::default());
         }
         let content = std::fs::read_to_string(&path)?;
-        serde_json::from_str(&content).map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
+        serde_json::from_str(&content)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
     }
 
     pub fn save(&self) -> Result<(), std::io::Error> {

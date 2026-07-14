@@ -4,12 +4,16 @@ pub fn scope_transform(scope: &str) -> &str {
     match scope {
         "graphql" => "https://api.shopify.com/auth/shop.admin.graphql",
         "themes" => "https://api.shopify.com/auth/shop.admin.themes",
-        "collaborator" => "https://api.shopify.com/auth/partners.collaborator-relationships.readonly",
+        "collaborator" => {
+            "https://api.shopify.com/auth/partners.collaborator-relationships.readonly"
+        }
         "cli" => "https://api.shopify.com/auth/partners.app.cli.access",
         "devtools" => "https://api.shopify.com/auth/shop.storefront-renderer.devtools",
         "destinations" => "https://api.shopify.com/auth/destinations.readonly",
         "store-management" => "https://api.shopify.com/auth/organization.store-management",
-        "on-demand-user-access" => "https://api.shopify.com/auth/organization.on-demand-user-access",
+        "on-demand-user-access" => {
+            "https://api.shopify.com/auth/organization.on-demand-user-access"
+        }
         "app-management" => "https://api.shopify.com/auth/organization.apps.manage",
         other => other,
     }
@@ -29,7 +33,13 @@ pub fn default_api_scopes(api: &str) -> &[&str] {
 pub fn all_default_scopes(extra_scopes: &[String]) -> Vec<String> {
     let mut scopes: BTreeSet<String> = BTreeSet::new();
     scopes.insert("openid".to_string());
-    for api in &["admin", "storefront-renderer", "partners", "business-platform", "app-management"] {
+    for api in &[
+        "admin",
+        "storefront-renderer",
+        "partners",
+        "business-platform",
+        "app-management",
+    ] {
         for s in default_api_scopes(api) {
             scopes.insert(scope_transform(s).to_string());
         }

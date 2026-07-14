@@ -1,5 +1,5 @@
-use std::collections::{HashMap, HashSet};
 use rand::Rng;
+use std::collections::{HashMap, HashSet};
 
 pub fn take_random_from_array<T>(array: &[T]) -> Option<&T> {
     if array.is_empty() {
@@ -36,7 +36,11 @@ pub fn uniq<T: Eq + std::hash::Hash + Clone>(array: &[T]) -> Vec<T> {
 
 pub fn difference<T: Eq + std::hash::Hash + Clone>(array: &[T], values: &[T]) -> Vec<T> {
     let excluded: HashSet<_> = values.iter().collect();
-    array.iter().filter(|item| !excluded.contains(item)).cloned().collect()
+    array
+        .iter()
+        .filter(|item| !excluded.contains(item))
+        .cloned()
+        .collect()
 }
 
 pub fn group_by<T, K, F>(items: &[T], key_fn: F) -> HashMap<K, Vec<&T>>
@@ -82,7 +86,10 @@ pub fn as_human_friendly_array(items: &[impl AsRef<str>]) -> Vec<String> {
 }
 
 pub fn join_with_and(items: &[impl AsRef<str>]) -> String {
-    let quoted: Vec<String> = items.iter().map(|s| format!("\"{}\"", s.as_ref())).collect();
+    let quoted: Vec<String> = items
+        .iter()
+        .map(|s| format!("\"{}\"", s.as_ref()))
+        .collect();
     as_human_friendly_array(&quoted).join(", ")
 }
 
@@ -142,7 +149,10 @@ mod tests {
     #[test]
     fn test_as_human_friendly_array() {
         let result = as_human_friendly_array(&["a", "b", "c"]);
-        assert_eq!(result, vec!["a".to_string(), "b".to_string(), "and c".to_string()]);
+        assert_eq!(
+            result,
+            vec!["a".to_string(), "b".to_string(), "and c".to_string()]
+        );
     }
 
     #[test]

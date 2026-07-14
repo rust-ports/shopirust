@@ -14,18 +14,15 @@ pub struct CaptureOutputResult {
 }
 
 pub async fn capture_output(command: &str, args: &[&str]) -> Result<String, std::io::Error> {
-    let output = Command::new(command)
-        .args(args)
-        .output()
-        .await?;
+    let output = Command::new(command).args(args).output().await?;
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
 }
 
-pub async fn capture_output_with_exit_code(command: &str, args: &[&str]) -> Result<CaptureOutputResult, std::io::Error> {
-    let output = Command::new(command)
-        .args(args)
-        .output()
-        .await?;
+pub async fn capture_output_with_exit_code(
+    command: &str,
+    args: &[&str],
+) -> Result<CaptureOutputResult, std::io::Error> {
+    let output = Command::new(command).args(args).output().await?;
     Ok(CaptureOutputResult {
         stdout: String::from_utf8_lossy(&output.stdout).trim().to_string(),
         stderr: String::from_utf8_lossy(&output.stderr).trim().to_string(),
@@ -33,7 +30,9 @@ pub async fn capture_output_with_exit_code(command: &str, args: &[&str]) -> Resu
     })
 }
 
-pub async fn capture_command_with_exit_code(full_command: &str) -> Result<CaptureOutputResult, std::io::Error> {
+pub async fn capture_command_with_exit_code(
+    full_command: &str,
+) -> Result<CaptureOutputResult, std::io::Error> {
     #[cfg(unix)]
     {
         capture_output_with_exit_code("sh", &["-c", full_command]).await
@@ -53,14 +52,12 @@ pub async fn exec_command(command: &str) -> Result<(), std::io::Error> {
 }
 
 pub async fn exec(command: &str, args: &[&str]) -> Result<(), std::io::Error> {
-    let status = Command::new(command)
-        .args(args)
-        .status()
-        .await?;
+    let status = Command::new(command).args(args).status().await?;
     if !status.success() {
-        return Err(std::io::Error::other(
-            format!("Command exited with code {:?}", status.code()),
-        ));
+        return Err(std::io::Error::other(format!(
+            "Command exited with code {:?}",
+            status.code()
+        )));
     }
     Ok(())
 }
@@ -112,7 +109,11 @@ pub async fn read_stdin_string() -> Option<String> {
     let mut buf = String::with_capacity(1024);
     let mut reader = tokio::io::BufReader::new(tokio::io::stdin());
     reader.read_to_string(&mut buf).await.ok()?;
-    if buf.is_empty() { None } else { Some(buf) }
+    if buf.is_empty() {
+        None
+    } else {
+        Some(buf)
+    }
 }
 
 #[cfg(test)]
@@ -132,11 +133,16 @@ mod tests {
 
     #[test]
     fn test_is_ci_not_set() {
-        let prev = std::env::var("CI").ok();
-        std::env::remove_var("CI");
+        let ci_vars = ["CI", "TF_BUILD", "GITHUB_ACTIONS", "GITLAB_CI", "CIRCLECI"];
+        let saved: Vec<(&str, Option<String>)> = ci_vars.iter().map(|&v| (v, std::env::var(v).ok())).collect();
+        for (name, _) in &saved {
+            std::env::remove_var(name);
+        }
         assert!(!is_ci());
-        if let Some(val) = prev {
-            std::env::set_var("CI", val);
+        for (name, val) in saved {
+            if let Some(v) = val {
+                std::env::set_var(name, v);
+            }
         }
     }
 

@@ -8,7 +8,9 @@ pub mod validate;
 
 use crate::output::progress::ProgressBar;
 use crate::output::{output_info, output_warn, OutputContent, Token};
-use crate::session::device_authorization::{poll_for_device_authorization, request_device_authorization};
+use crate::session::device_authorization::{
+    poll_for_device_authorization, request_device_authorization,
+};
 use crate::session::schema::{IdentityToken, Session};
 use crate::session::store::SessionStore;
 use crate::session::validate::{validate_session, OAuthApplications, ValidationResult};
@@ -199,11 +201,46 @@ pub struct ExchangeScopes {
 
 fn get_exchange_scopes(apps: &OAuthApplications) -> ExchangeScopes {
     ExchangeScopes {
-        admin: scopes::api_scopes("admin", &apps.admin_api.as_ref().map(|a| a.scopes.clone()).unwrap_or_default()),
-        partners: scopes::api_scopes("partners", &apps.partners_api.as_ref().map(|a| a.scopes.clone()).unwrap_or_default()),
-        storefront: scopes::api_scopes("storefront-renderer", &apps.storefront_renderer_api.as_ref().map(|a| a.scopes.clone()).unwrap_or_default()),
-        business_platform: scopes::api_scopes("business-platform", &apps.business_platform_api.as_ref().map(|a| a.scopes.clone()).unwrap_or_default()),
-        app_management: scopes::api_scopes("app-management", &apps.app_management_api.as_ref().map(|a| a.scopes.clone()).unwrap_or_default()),
+        admin: scopes::api_scopes(
+            "admin",
+            &apps
+                .admin_api
+                .as_ref()
+                .map(|a| a.scopes.clone())
+                .unwrap_or_default(),
+        ),
+        partners: scopes::api_scopes(
+            "partners",
+            &apps
+                .partners_api
+                .as_ref()
+                .map(|a| a.scopes.clone())
+                .unwrap_or_default(),
+        ),
+        storefront: scopes::api_scopes(
+            "storefront-renderer",
+            &apps
+                .storefront_renderer_api
+                .as_ref()
+                .map(|a| a.scopes.clone())
+                .unwrap_or_default(),
+        ),
+        business_platform: scopes::api_scopes(
+            "business-platform",
+            &apps
+                .business_platform_api
+                .as_ref()
+                .map(|a| a.scopes.clone())
+                .unwrap_or_default(),
+        ),
+        app_management: scopes::api_scopes(
+            "app-management",
+            &apps
+                .app_management_api
+                .as_ref()
+                .map(|a| a.scopes.clone())
+                .unwrap_or_default(),
+        ),
     }
 }
 

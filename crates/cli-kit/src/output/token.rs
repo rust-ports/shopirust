@@ -4,7 +4,10 @@ use colored::Colorize;
 pub enum Token {
     Raw(String),
     Command(String),
-    Link { label: Option<String>, url: String },
+    Link {
+        label: Option<String>,
+        url: String,
+    },
     UserInput(String),
     Subdued(String),
     FilePath(String),
@@ -36,7 +39,11 @@ fn render_token_styled(t: &Token) -> String {
         Token::Warn(s) => s.yellow().to_string(),
         Token::Error(s) => s.red().to_string(),
         Token::Char(c) => c.to_string(),
-        Token::List { title, items, ordered } => {
+        Token::List {
+            title,
+            items,
+            ordered,
+        } => {
             let mut out = String::new();
             if let Some(t) = title {
                 out.push_str(t);
@@ -70,7 +77,11 @@ fn render_token_plain(t: &Token) -> String {
         Token::Warn(s) => s.clone(),
         Token::Error(s) => s.clone(),
         Token::Char(c) => c.to_string(),
-        Token::List { title, items, ordered } => {
+        Token::List {
+            title,
+            items,
+            ordered,
+        } => {
             let mut out = String::new();
             if let Some(t) = title {
                 out.push_str(t);
@@ -156,7 +167,10 @@ mod tests {
 
     #[test]
     fn test_render_plain_command() {
-        assert_eq!(render_tokens_plain(&[Token::Command("dev".into())]), "`dev`");
+        assert_eq!(
+            render_tokens_plain(&[Token::Command("dev".into())]),
+            "`dev`"
+        );
     }
 
     #[test]

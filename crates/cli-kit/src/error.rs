@@ -62,10 +62,7 @@ pub fn abort_silent_error() -> FatalError {
     }
 }
 
-pub fn bug_error(
-    message: impl Into<String>,
-    try_message: Option<impl Into<String>>,
-) -> FatalError {
+pub fn bug_error(message: impl Into<String>, try_message: Option<impl Into<String>>) -> FatalError {
     FatalError {
         message: message.into(),
         r#type: FatalErrorType::Bug,
@@ -159,7 +156,11 @@ mod tests {
 
     #[test]
     fn abort_error_creates_abort_type() {
-        let err = abort_error("something went wrong", Some("try again"), vec!["step 1".into()]);
+        let err = abort_error(
+            "something went wrong",
+            Some("try again"),
+            vec!["step 1".into()],
+        );
         assert_eq!(err.message, "something went wrong");
         assert_eq!(err.r#type, FatalErrorType::Abort);
         assert_eq!(err.try_message, Some("try again".into()));
@@ -256,9 +257,15 @@ mod tests {
 
     #[test]
     fn environment_issue_detection() {
-        assert!(error_message_implies_environment_issue("EPERM: operation not permitted, scandir /tmp"));
-        assert!(error_message_implies_environment_issue("EACCES: permission denied"));
-        assert!(error_message_implies_environment_issue("getaddrinfo ENOTFOUND example.com"));
+        assert!(error_message_implies_environment_issue(
+            "EPERM: operation not permitted, scandir /tmp"
+        ));
+        assert!(error_message_implies_environment_issue(
+            "EACCES: permission denied"
+        ));
+        assert!(error_message_implies_environment_issue(
+            "getaddrinfo ENOTFOUND example.com"
+        ));
         assert!(error_message_implies_environment_issue("socket hang up"));
         assert!(error_message_implies_environment_issue("write EPIPE"));
         assert!(!error_message_implies_environment_issue("normal error"));

@@ -154,13 +154,17 @@ mod tests {
     #[test]
     fn missing_session_returns_needs_full_auth() {
         assert_eq!(
-            validate_session(&[], &OAuthApplications {
-                admin_api: None,
-                partners_api: None,
-                storefront_renderer_api: None,
-                business_platform_api: None,
-                app_management_api: None,
-            }, None),
+            validate_session(
+                &[],
+                &OAuthApplications {
+                    admin_api: None,
+                    partners_api: None,
+                    storefront_renderer_api: None,
+                    business_platform_api: None,
+                    app_management_api: None,
+                },
+                None
+            ),
             ValidationResult::NeedsFullAuth
         );
     }
@@ -172,13 +176,17 @@ mod tests {
             applications: Default::default(),
         };
         assert_eq!(
-            validate_session(&["openid".into()], &OAuthApplications {
-                admin_api: None,
-                partners_api: None,
-                storefront_renderer_api: None,
-                business_platform_api: None,
-                app_management_api: None,
-            }, Some(&session)),
+            validate_session(
+                &["openid".into()],
+                &OAuthApplications {
+                    admin_api: None,
+                    partners_api: None,
+                    storefront_renderer_api: None,
+                    business_platform_api: None,
+                    app_management_api: None,
+                },
+                Some(&session)
+            ),
             ValidationResult::Ok
         );
     }
@@ -193,13 +201,17 @@ mod tests {
             applications: Default::default(),
         };
         assert_eq!(
-            validate_session(&["openid".into()], &OAuthApplications {
-                admin_api: None,
-                partners_api: None,
-                storefront_renderer_api: None,
-                business_platform_api: None,
-                app_management_api: None,
-            }, Some(&session)),
+            validate_session(
+                &["openid".into()],
+                &OAuthApplications {
+                    admin_api: None,
+                    partners_api: None,
+                    storefront_renderer_api: None,
+                    business_platform_api: None,
+                    app_management_api: None,
+                },
+                Some(&session)
+            ),
             ValidationResult::NeedsRefresh
         );
     }
@@ -211,13 +223,17 @@ mod tests {
             applications: Default::default(),
         };
         assert_eq!(
-            validate_session(&["https://api.shopify.com/auth/shop.admin.graphql".into()], &OAuthApplications {
-                admin_api: None,
-                partners_api: None,
-                storefront_renderer_api: None,
-                business_platform_api: None,
-                app_management_api: None,
-            }, Some(&session)),
+            validate_session(
+                &["https://api.shopify.com/auth/shop.admin.graphql".into()],
+                &OAuthApplications {
+                    admin_api: None,
+                    partners_api: None,
+                    storefront_renderer_api: None,
+                    business_platform_api: None,
+                    app_management_api: None,
+                },
+                Some(&session)
+            ),
             ValidationResult::NeedsFullAuth
         );
     }

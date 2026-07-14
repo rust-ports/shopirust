@@ -1,5 +1,4 @@
 use cli_kit::api::graphql::GraphqlClient;
-use serde::{Deserialize, Serialize};
 use cli_kit::output::is_verbose;
 use cli_kit::output::set_verbose;
 use cli_kit::output::Token;
@@ -7,6 +6,7 @@ use cli_kit::output::{output_info, OutputContent};
 use cli_kit::session::ensure_authenticated;
 use cli_kit::session::store::SessionStore;
 use cli_kit::session::validate::{OAuthApplications, PartnersApiOptions};
+use serde::{Deserialize, Serialize};
 use std::process;
 
 fn init_tracing() {
@@ -19,8 +19,9 @@ fn init_tracing() {
 }
 
 fn print_usage(exit: bool) {
-    output_info(OutputContent::new().add(Token::Raw(
-        "A CLI tool to build for the Shopify platform
+    output_info(
+        OutputContent::new().add(Token::Raw(
+            "A CLI tool to build for the Shopify platform
 
 USAGE
   $ cli-kit [COMMAND]
@@ -32,8 +33,9 @@ TOPICS
 COMMANDS
   help          Display help for Shopify CLI
   version       Shopify CLI version currently installed."
-            .into(),
-    )));
+                .into(),
+        )),
+    );
     if exit {
         process::exit(0);
     }
@@ -53,10 +55,7 @@ async fn cmd_auth_login(store: &SessionStore) -> Result<(), String> {
     };
 
     let _session = ensure_authenticated(&applications, store).await?;
-    output_info(
-        OutputContent::new()
-            .add(Token::Info("Authentication successful".into())),
-    );
+    output_info(OutputContent::new().add(Token::Info("Authentication successful".into())));
     Ok(())
 }
 
@@ -86,8 +85,9 @@ async fn cmd_auth_status(store: &SessionStore) -> Result<(), String> {
 }
 
 fn print_auth_usage() {
-    output_info(OutputContent::new().add(Token::Raw(
-        "Auth operations.
+    output_info(
+        OutputContent::new().add(Token::Raw(
+            "Auth operations.
 
 USAGE
   $ cli-kit auth [COMMAND]
@@ -96,8 +96,9 @@ COMMANDS
   login   Login to Shopify
   logout  Logout from Shopify
   status  Display the current authentication status, and if the user is authenticated."
-            .into(),
-    )));
+                .into(),
+        )),
+    );
     process::exit(0);
 }
 
@@ -173,41 +174,50 @@ query ListOrganizations {
 
     let url = "https://destinations.shopifysvc.com/destinations/api/2020-07/graphql".to_string();
     let client = GraphqlClient::new(url, Some(token));
-    let resp: BusinessPlatformOrgsResponse = client.query(query).await.map_err(|e| format!("API call failed: {e}"))?;
+    let resp: BusinessPlatformOrgsResponse = client
+        .query(query)
+        .await
+        .map_err(|e| format!("API call failed: {e}"))?;
 
-    let orgs = resp.current_user_account.organizations_with_access_to_destination.nodes;
+    let orgs = resp
+        .current_user_account
+        .organizations_with_access_to_destination
+        .nodes;
 
     if orgs.is_empty() {
         output_info(OutputContent::new().add(Token::Raw("No organizations found.".into())));
         return Ok(());
     }
 
-    output_info(OutputContent::new().add(Token::Raw(
-        format!("{:>10}  {}", "ID", "NAME"),
-    )));
-    output_info(OutputContent::new().add(Token::Raw(
-        format!("{:>10}  {}", "──────────", "────────────"),
-    )));
+    output_info(OutputContent::new().add(Token::Raw(format!("{:>10}  {}", "ID", "NAME"))));
+    output_info(OutputContent::new().add(Token::Raw(format!(
+        "{:>10}  {}",
+        "──────────", "────────────"
+    ))));
     for org in &orgs {
-        output_info(OutputContent::new().add(Token::Raw(
-            format!("{:>10}  {}", org.numeric_id(), org.name),
-        )));
+        output_info(OutputContent::new().add(Token::Raw(format!(
+            "{:>10}  {}",
+            org.numeric_id(),
+            org.name
+        ))));
     }
 
     Ok(())
 }
 
 fn print_organization_usage() {
-    output_info(OutputContent::new().add(Token::Raw(
-        "List organizations you have access to.
+    output_info(
+        OutputContent::new().add(Token::Raw(
+            "List organizations you have access to.
 
 USAGE
   $ cli-kit organization [COMMAND]
 
 COMMANDS
   list  List the organizations."
-            .into(),
-    )));
+                .into(),
+        )),
+    );
     process::exit(0);
 }
 
@@ -224,48 +234,51 @@ async fn main() {
 
     let store = SessionStore::new();
     let result = match topic {
-        "auth" => {
-            match args.get(2).map(|s| s.as_str()).unwrap_or("help") {
-                "login" => cmd_auth_login(&store).await,
-                "logout" => cmd_auth_logout(&store).await,
-                "status" => cmd_auth_status(&store).await,
-                "help" | "--help" | "-h" => { print_auth_usage(); Ok(()) }
-                sub => {
-                    output_info(OutputContent::new().add(Token::Error(
-                        format!("Unknown auth command: {sub}"),
-                    )));
-                    print_auth_usage();
-                    Ok(())
-                }
+        "auth" => match args.get(2).map(|s| s.as_str()).unwrap_or("help") {
+            "login" => cmd_auth_login(&store).await,
+            "logout" => cmd_auth_logout(&store).await,
+            "status" => cmd_auth_status(&store).await,
+            "help" | "--help" | "-h" => {
+                print_auth_usage();
+                Ok(())
             }
-        }
-        "organization" => {
-            match args.get(2).map(|s| s.as_str()).unwrap_or("help") {
-                "list" => cmd_organization_list(&store).await,
-                "help" | "--help" | "-h" => { print_organization_usage(); Ok(()) }
-                sub => {
-                    output_info(OutputContent::new().add(Token::Error(
-                        format!("Unknown organization command: {sub}"),
-                    )));
-                    print_organization_usage();
-                    Ok(())
-                }
+            sub => {
+                output_info(
+                    OutputContent::new().add(Token::Error(format!("Unknown auth command: {sub}"))),
+                );
+                print_auth_usage();
+                Ok(())
             }
-        }
+        },
+        "organization" => match args.get(2).map(|s| s.as_str()).unwrap_or("help") {
+            "list" => cmd_organization_list(&store).await,
+            "help" | "--help" | "-h" => {
+                print_organization_usage();
+                Ok(())
+            }
+            sub => {
+                output_info(
+                    OutputContent::new()
+                        .add(Token::Error(format!("Unknown organization command: {sub}"))),
+                );
+                print_organization_usage();
+                Ok(())
+            }
+        },
         "help" | "--help" | "-h" => {
             print_usage(false);
             Ok(())
         }
         "version" | "--version" | "-v" => {
-            output_info(OutputContent::new().add(Token::Raw(
-                format!("@shopify/cli/{} linux-x64 node-v{}", env!("CARGO_PKG_VERSION"), "rust"),
-            )));
+            output_info(OutputContent::new().add(Token::Raw(format!(
+                "@shopify/cli/{} linux-x64 node-v{}",
+                env!("CARGO_PKG_VERSION"),
+                "rust"
+            ))));
             Ok(())
         }
         cmd => {
-            output_info(OutputContent::new().add(Token::Error(
-                format!("Unknown command: {cmd}"),
-            )));
+            output_info(OutputContent::new().add(Token::Error(format!("Unknown command: {cmd}"))));
             print_usage(true);
             Ok(())
         }

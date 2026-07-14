@@ -20,8 +20,8 @@ pub async fn functions_request<T: DeserializeOwned + serde::Serialize>(
     let url = format!(
         "https://{FQDN}/functions/unstable/organizations/{organization_id}/{app_id}/graphql"
     );
-    let client = GraphqlClient::new(url, Some(token.into()))
-        .with_rate_limiter(functions_rate_limiter());
+    let client =
+        GraphqlClient::new(url, Some(token.into())).with_rate_limiter(functions_rate_limiter());
     client.query_with_variables(query, variables).await
 }
 

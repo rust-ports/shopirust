@@ -63,8 +63,7 @@ pub struct AdminClient {
 
 impl AdminClient {
     pub fn new(session: AdminSession) -> Self {
-        let client =
-            crate::http::build_client(None).expect("failed to build HTTP client");
+        let client = crate::http::build_client(None).expect("failed to build HTTP client");
         Self {
             session,
             client,
@@ -103,16 +102,14 @@ impl AdminClient {
         if self.is_theme_access_session() {
             format!("https://{THEME_KIT_ACCESS_DOMAIN}/cli/admin/api/{version}")
         } else {
-            format!(
-                "https://{}/admin/api/{version}",
-                self.session.store_fqdn
-            )
+            format!("https://{}/admin/api/{version}", self.session.store_fqdn)
         }
     }
 
     fn graphql_client_for_version(&self, version: &str) -> GraphqlClient {
         let url = self.admin_graphql_url(version);
-        let mut client = GraphqlClient::with_client(url, Some(self.session.token.clone()), self.client.clone());
+        let mut client =
+            GraphqlClient::with_client(url, Some(self.session.token.clone()), self.client.clone());
         if self.is_theme_access_session() {
             let mut extra = HeaderMap::new();
             extra.insert(
@@ -130,7 +127,8 @@ impl AdminClient {
 
     fn rest_client_for_version(&self, version: &str) -> RestClient {
         let base_url = self.admin_rest_base_url(version);
-        let mut client = RestClient::with_client(base_url, self.session.token.clone(), self.client.clone());
+        let mut client =
+            RestClient::with_client(base_url, self.session.token.clone(), self.client.clone());
         if self.is_theme_access_session() {
             let mut extra = HeaderMap::new();
             extra.insert(
@@ -176,24 +174,19 @@ impl AdminClient {
             Ok(response) => Ok(response.public_api_versions),
             Err(err) => match &err {
                 GraphqlRequestError::ApiError(_, 403) => {
-                    let store_name = self
-                        .session
-                        .store_fqdn
-                        .replace(".myshopify.com", "");
+                    let store_name = self.session.store_fqdn.replace(".myshopify.com", "");
                     Err(AdminError::Abort(
                         format!("Looks like you don't have access to this dev store: {store_name}"),
                         Some("If you're not the owner, create a dev store staff account for yourself".into()),
                     ))
                 }
-                GraphqlRequestError::ApiError(_, 401 | 404) => {
-                    Err(AdminError::Abort(
-                        format!(
-                            "Error connecting to your store {}: {}",
-                            self.session.store_fqdn, err
-                        ),
-                        None,
-                    ))
-                }
+                GraphqlRequestError::ApiError(_, 401 | 404) => Err(AdminError::Abort(
+                    format!(
+                        "Error connecting to your store {}: {}",
+                        self.session.store_fqdn, err
+                    ),
+                    None,
+                )),
                 GraphqlRequestError::Network(msg) => Err(AdminError::Abort(
                     format!(
                         "Network error connecting to your store {}: {msg}",
@@ -236,10 +229,14 @@ impl AdminClient {
         match method {
             reqwest::Method::GET => client.get(path, search_params).await,
             reqwest::Method::POST => {
-                client.post(path, body.unwrap_or(serde_json::Value::Null)).await
+                client
+                    .post(path, body.unwrap_or(serde_json::Value::Null))
+                    .await
             }
             reqwest::Method::PUT => {
-                client.put(path, body.unwrap_or(serde_json::Value::Null)).await
+                client
+                    .put(path, body.unwrap_or(serde_json::Value::Null))
+                    .await
             }
             reqwest::Method::DELETE => {
                 let result: RestResponse<serde_json::Value> = client.delete(path).await?;
@@ -282,10 +279,7 @@ impl AdminClient {
             .await
     }
 
-    pub async fn delete(
-        &self,
-        path: &str,
-    ) -> Result<RestResponse<serde_json::Value>, RestError> {
+    pub async fn delete(&self, path: &str) -> Result<RestResponse<serde_json::Value>, RestError> {
         self.rest_request(reqwest::Method::DELETE, path, None, None, None)
             .await
     }

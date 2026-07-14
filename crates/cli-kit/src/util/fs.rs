@@ -113,7 +113,10 @@ mod tests {
     #[test]
     fn test_join_paths() {
         let base = PathBuf::from("/base");
-        assert_eq!(join_paths(base, "sub/file.txt"), PathBuf::from("/base/sub/file.txt"));
+        assert_eq!(
+            join_paths(base, "sub/file.txt"),
+            PathBuf::from("/base/sub/file.txt")
+        );
     }
 
     #[test]

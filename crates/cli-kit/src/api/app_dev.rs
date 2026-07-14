@@ -33,8 +33,8 @@ pub async fn app_dev_request<T: DeserializeOwned + serde::Serialize>(
 ) -> Result<T, GraphqlRequestError> {
     let fqdn = normalize_store_fqdn(shop_fqdn);
     let url = format!("https://{fqdn}/app_dev/unstable/graphql.json");
-    let client = GraphqlClient::new(url, Some(token.into()))
-        .with_rate_limiter(app_dev_rate_limiter());
+    let client =
+        GraphqlClient::new(url, Some(token.into())).with_rate_limiter(app_dev_rate_limiter());
     client.query_with_variables(query, variables).await
 }
 

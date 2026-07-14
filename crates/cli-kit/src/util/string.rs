@@ -1,19 +1,21 @@
-use rand::seq::SliceRandom;
 use chrono::{DateTime, Local, Utc};
+use rand::seq::SliceRandom;
 
 const ADJECTIVES: &[&str] = &[
-    "swift", "bright", "calm", "eager", "fierce", "gentle", "happy", "keen",
-    "lively", "mighty", "noble", "proud", "quick", "sharp", "tough", "warm",
+    "swift", "bright", "calm", "eager", "fierce", "gentle", "happy", "keen", "lively", "mighty",
+    "noble", "proud", "quick", "sharp", "tough", "warm",
 ];
 
 const NOUNS: &[&str] = &[
-    "falcon", "beacon", "crystal", "dragon", "ember", "forest", "garden",
-    "harbor", "island", "jungle", "knight", "lunar", "marble", "nebula",
-    "ocean", "phoenix", "quartz", "raven", "storm", "temple",
+    "falcon", "beacon", "crystal", "dragon", "ember", "forest", "garden", "harbor", "island",
+    "jungle", "knight", "lunar", "marble", "nebula", "ocean", "phoenix", "quartz", "raven",
+    "storm", "temple",
 ];
 
 pub fn get_random_name() -> String {
-    let adj = ADJECTIVES.choose(&mut rand::thread_rng()).unwrap_or(&"swift");
+    let adj = ADJECTIVES
+        .choose(&mut rand::thread_rng())
+        .unwrap_or(&"swift");
     let noun = NOUNS.choose(&mut rand::thread_rng()).unwrap_or(&"falcon");
     format!("{}-{}", adj, noun)
 }
@@ -33,7 +35,13 @@ pub fn try_parse_int(maybe_int: &str) -> Option<i32> {
 pub fn slugify(str: &str) -> String {
     str.to_lowercase()
         .chars()
-        .map(|c| if c.is_alphanumeric() || c == '-' { c } else { '-' })
+        .map(|c| {
+            if c.is_alphanumeric() || c == '-' {
+                c
+            } else {
+                '-'
+            }
+        })
         .collect::<String>()
         .trim_matches('-')
         .to_string()
@@ -43,8 +51,8 @@ pub fn escape_regex(str: &str) -> String {
     let mut out = String::with_capacity(str.len());
     for c in str.chars() {
         match c {
-            '\\' | '.' | '+' | '*' | '?' | '(' | ')' | '|' | '[' | ']'
-            | '{' | '}' | '^' | '$' | '#' | '&' | '-' | '~' => {
+            '\\' | '.' | '+' | '*' | '?' | '(' | ')' | '|' | '[' | ']' | '{' | '}' | '^' | '$'
+            | '#' | '&' | '-' | '~' => {
                 out.push('\\');
                 out.push(c);
             }
@@ -131,7 +139,9 @@ pub fn format_date(dt: &DateTime<Utc>) -> String {
 }
 
 pub fn format_local_date(date_string: &str) -> String {
-    if let Ok(utc) = DateTime::parse_from_str(&format!("{} +0000", date_string), "%Y-%m-%d %H:%M:%S %z") {
+    if let Ok(utc) =
+        DateTime::parse_from_str(&format!("{} +0000", date_string), "%Y-%m-%d %H:%M:%S %z")
+    {
         let local: DateTime<Local> = utc.with_timezone(&Local);
         local.format("%Y-%m-%d %H:%M:%S").to_string()
     } else {
@@ -143,7 +153,11 @@ pub fn normalize_delimited_string(delimited_string: Option<&str>, delimiter: cha
     match delimited_string {
         None => String::new(),
         Some(s) => {
-            let mut parts: Vec<&str> = s.split(delimiter).map(|p| p.trim()).filter(|p| !p.is_empty()).collect();
+            let mut parts: Vec<&str> = s
+                .split(delimiter)
+                .map(|p| p.trim())
+                .filter(|p| !p.is_empty())
+                .collect();
             parts.sort();
             parts.dedup();
             parts.join(&delimiter.to_string())
@@ -170,7 +184,14 @@ pub fn lines_to_columns(lines: &[Vec<String>]) -> String {
     }
     let col_count = lines.iter().map(|row| row.len()).max().unwrap_or(0);
     let widths: Vec<usize> = (0..col_count)
-        .map(|col| lines.iter().filter_map(|row| row.get(col)).map(|s| s.len()).max().unwrap_or(0))
+        .map(|col| {
+            lines
+                .iter()
+                .filter_map(|row| row.get(col))
+                .map(|s| s.len())
+                .max()
+                .unwrap_or(0)
+        })
         .collect();
 
     let mut out = String::new();

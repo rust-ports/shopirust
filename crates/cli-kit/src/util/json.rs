@@ -1,6 +1,9 @@
 use crate::error::{FatalError, FatalErrorType};
 
-pub fn parse_json<T: serde::de::DeserializeOwned>(json_string: &str, context: Option<&str>) -> Result<T, FatalError> {
+pub fn parse_json<T: serde::de::DeserializeOwned>(
+    json_string: &str,
+    context: Option<&str>,
+) -> Result<T, FatalError> {
     serde_json::from_str::<T>(json_string).map_err(|e| {
         let ctx = context.unwrap_or("JSON");
         FatalError {
@@ -28,7 +31,13 @@ mod tests {
     #[test]
     fn test_parse_json_valid() {
         let data: TestData = parse_json(r#"{"name": "test", "value": 42}"#, None).unwrap();
-        assert_eq!(data, TestData { name: "test".into(), value: 42 });
+        assert_eq!(
+            data,
+            TestData {
+                name: "test".into(),
+                value: 42
+            }
+        );
     }
 
     #[test]

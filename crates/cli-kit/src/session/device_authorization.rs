@@ -20,10 +20,7 @@ pub async fn request_device_authorization(
     let client = build_client(None).map_err(|e| e.to_string())?;
     let url = format!("https://{IDENTITY_FQDN}/oauth/device_authorization");
 
-    let params = [
-        ("client_id", client_id()),
-        ("scope", &scopes.join(" ")),
-    ];
+    let params = [("client_id", client_id()), ("scope", &scopes.join(" "))];
 
     let body: Vec<(String, String)> = params
         .iter()
@@ -50,7 +47,9 @@ pub async fn request_device_authorization(
         } else {
             text.clone()
         };
-        return Err(format!("Authorization service returned HTTP {status}: {body_preview}"));
+        return Err(format!(
+            "Authorization service returned HTTP {status}: {body_preview}"
+        ));
     }
 
     let resp: DeviceAuthorizationResponse =

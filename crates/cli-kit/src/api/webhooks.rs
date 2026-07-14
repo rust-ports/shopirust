@@ -16,11 +16,10 @@ pub async fn webhooks_request<T: DeserializeOwned + serde::Serialize>(
     query: &str,
     variables: Option<serde_json::Value>,
 ) -> Result<T, GraphqlRequestError> {
-    let url = format!(
-        "https://{FQDN}/webhooks/unstable/organizations/{organization_id}/graphql.json"
-    );
-    let client = GraphqlClient::new(url, Some(token.into()))
-        .with_rate_limiter(webhooks_rate_limiter());
+    let url =
+        format!("https://{FQDN}/webhooks/unstable/organizations/{organization_id}/graphql.json");
+    let client =
+        GraphqlClient::new(url, Some(token.into())).with_rate_limiter(webhooks_rate_limiter());
     client.query_with_variables(query, variables).await
 }
 

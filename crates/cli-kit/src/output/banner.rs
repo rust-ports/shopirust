@@ -81,10 +81,7 @@ pub fn render_fatal_error(err: &FatalError) {
         _ => "Error",
     };
 
-    let message = err
-        .formatted_message
-        .as_deref()
-        .unwrap_or(&err.message);
+    let message = err.formatted_message.as_deref().unwrap_or(&err.message);
 
     let mut body = String::from(message);
     if let Some(try_msg) = &err.try_message {

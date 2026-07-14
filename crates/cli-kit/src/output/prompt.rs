@@ -2,15 +2,16 @@ use crate::error::{FatalError, FatalErrorType};
 
 fn map_inquire_error(err: inquire::InquireError) -> FatalError {
     match err {
-        inquire::InquireError::OperationCanceled
-        | inquire::InquireError::OperationInterrupted => FatalError {
-            message: "Operation cancelled".into(),
-            r#type: FatalErrorType::AbortSilent,
-            try_message: None,
-            next_steps: vec![],
-            formatted_message: None,
-            skip_oclif_error_handling: true,
-        },
+        inquire::InquireError::OperationCanceled | inquire::InquireError::OperationInterrupted => {
+            FatalError {
+                message: "Operation cancelled".into(),
+                r#type: FatalErrorType::AbortSilent,
+                try_message: None,
+                next_steps: vec![],
+                formatted_message: None,
+                skip_oclif_error_handling: true,
+            }
+        }
         inquire::InquireError::NotTTY => FatalError {
             message: "Interactive prompt requires a TTY".into(),
             r#type: FatalErrorType::Abort,

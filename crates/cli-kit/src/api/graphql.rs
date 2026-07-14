@@ -116,7 +116,11 @@ impl GraphqlClient {
         }
     }
 
-    pub fn with_client(url: impl Into<String>, token: Option<String>, client: reqwest::Client) -> Self {
+    pub fn with_client(
+        url: impl Into<String>,
+        token: Option<String>,
+        client: reqwest::Client,
+    ) -> Self {
         Self {
             client,
             url: url.into(),
@@ -148,11 +152,17 @@ impl GraphqlClient {
         self
     }
 
-    pub async fn query<T: DeserializeOwned + serde::Serialize>(&self, query: &str) -> Result<T, GraphqlRequestError> {
+    pub async fn query<T: DeserializeOwned + serde::Serialize>(
+        &self,
+        query: &str,
+    ) -> Result<T, GraphqlRequestError> {
         self.query_with_variables::<T, Value>(query, None).await
     }
 
-    pub async fn query_with_variables<T: DeserializeOwned + serde::Serialize, V: serde::Serialize>(
+    pub async fn query_with_variables<
+        T: DeserializeOwned + serde::Serialize,
+        V: serde::Serialize,
+    >(
         &self,
         query: &str,
         variables: Option<V>,
@@ -192,7 +202,8 @@ impl GraphqlClient {
                         limiter.acquire().await;
                     }
 
-                    let response_result = client.post(&url).headers(headers).json(&body).send().await;
+                    let response_result =
+                        client.post(&url).headers(headers).json(&body).send().await;
 
                     let response = match response_result {
                         Ok(r) => r,
@@ -245,11 +256,17 @@ impl GraphqlClient {
                                 status.as_u16(),
                                 extract_error_messages(errors),
                             );
-                            return RetryAction::Err(GraphqlRequestError::ApiError(msg, status.as_u16()));
+                            return RetryAction::Err(GraphqlRequestError::ApiError(
+                                msg,
+                                status.as_u16(),
+                            ));
                         }
                         if full_response.data.is_none() && !status.is_server_error() {
                             let msg = extract_error_messages(errors);
-                            return RetryAction::Err(GraphqlRequestError::ApiError(msg, status.as_u16()));
+                            return RetryAction::Err(GraphqlRequestError::ApiError(
+                                msg,
+                                status.as_u16(),
+                            ));
                         }
                     }
 
@@ -302,9 +319,7 @@ impl GraphqlClient {
 async fn wait_for_rate_limit_restore(cost: &GraphqlCost) {
     if let (Some(actual), Some(restore_rate)) = (
         cost.actual_query_cost,
-        cost.throttle_status
-            .as_ref()
-            .and_then(|t| t.restore_rate),
+        cost.throttle_status.as_ref().and_then(|t| t.restore_rate),
     ) {
         if actual > 0.0 && restore_rate > 0.0 {
             let seconds = (actual / restore_rate).min(MAX_RATE_LIMIT_RESTORE_SECONDS);
@@ -414,10 +429,7 @@ mod tests {
                 extensions: None,
             },
         ];
-        assert_eq!(
-            extract_error_messages(&errors),
-            "first error\nsecond error"
-        );
+        assert_eq!(extract_error_messages(&errors), "first error\nsecond error");
     }
 
     #[test]
@@ -462,12 +474,10 @@ mod tests {
 
         Mock::given(method("POST"))
             .and(path("/"))
-            .respond_with(
-                ResponseTemplate::new(200).set_body_json(json!({
-                    "data": { "value": 42 },
-                    "extensions": { "cost": { "actualQueryCost": null, "throttleStatus": null } }
-                })),
-            )
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "data": { "value": 42 },
+                "extensions": { "cost": { "actualQueryCost": null, "throttleStatus": null } }
+            })))
             .mount(&mock_server)
             .await;
 
@@ -530,12 +540,10 @@ mod tests {
 
         Mock::given(method("POST"))
             .and(path("/"))
-            .respond_with(
-                ResponseTemplate::new(200).set_body_json(json!({
-                    "data": { "name": "hello" },
-                    "extensions": { "cost": { "actualQueryCost": null, "throttleStatus": null } }
-                })),
-            )
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "data": { "name": "hello" },
+                "extensions": { "cost": { "actualQueryCost": null, "throttleStatus": null } }
+            })))
             .mount(&mock_server)
             .await;
 
@@ -556,11 +564,9 @@ mod tests {
 
         Mock::given(method("POST"))
             .and(path("/"))
-            .respond_with(
-                ResponseTemplate::new(500).set_body_json(json!({
-                    "errors": [{ "message": "internal server error" }]
-                })),
-            )
+            .respond_with(ResponseTemplate::new(500).set_body_json(json!({
+                "errors": [{ "message": "internal server error" }]
+            })))
             .mount(&mock_server)
             .await;
 
@@ -577,8 +583,7 @@ mod tests {
     #[tokio::test]
     async fn client_with_custom_reqwest_client() {
         let custom_client = build_client(Some(5000)).unwrap();
-        let _client =
-            GraphqlClient::with_client("http://example.com/graphql", None, custom_client);
+        let _client = GraphqlClient::with_client("http://example.com/graphql", None, custom_client);
     }
 
     #[tokio::test]
@@ -616,8 +621,7 @@ mod tests {
             .mount(&mock_server)
             .await;
 
-        let client = GraphqlClient::new(mock_server.uri(), None)
-            .with_retry(RetryConfig::new());
+        let client = GraphqlClient::new(mock_server.uri(), None).with_retry(RetryConfig::new());
         let result: serde_json::Value = client.query("{ ok }").await.unwrap();
         assert_eq!(result, json!({ "ok": true }));
     }
@@ -635,12 +639,10 @@ mod tests {
 
         Mock::given(method("POST"))
             .and(path("/"))
-            .respond_with(
-                ResponseTemplate::new(200).set_body_json(json!({
-                    "data": { "value": "from-api" },
-                    "extensions": { "cost": { "actualQueryCost": null, "throttleStatus": null } }
-                })),
-            )
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "data": { "value": "from-api" },
+                "extensions": { "cost": { "actualQueryCost": null, "throttleStatus": null } }
+            })))
             .mount(&mock_server)
             .await;
 
@@ -668,14 +670,13 @@ mod tests {
             .mount(&mock_server)
             .await;
 
-        let client = GraphqlClient::new(mock_server.uri(), None)
-            .with_retry(RetryConfig {
-                max_retry_time: Duration::from_millis(500),
-                initial_delay: Duration::from_millis(10),
-                max_delay: Duration::from_millis(50),
-                jitter: false,
-                skip_env_var: None,
-            });
+        let client = GraphqlClient::new(mock_server.uri(), None).with_retry(RetryConfig {
+            max_retry_time: Duration::from_millis(500),
+            initial_delay: Duration::from_millis(10),
+            max_delay: Duration::from_millis(50),
+            jitter: false,
+            skip_env_var: None,
+        });
 
         let result: Result<serde_json::Value, _> = client.query("{ value }").await;
         assert!(result.is_err());

@@ -47,7 +47,12 @@ fn build_identity_token(
 ) -> IdentityToken {
     let user_id = existing_user_id
         .map(String::from)
-        .or_else(|| result.id_token.as_ref().and_then(|id| extract_user_id_from_id_token(id)))
+        .or_else(|| {
+            result
+                .id_token
+                .as_ref()
+                .and_then(|id| extract_user_id_from_id_token(id))
+        })
         .unwrap_or_else(|| "unknown".to_string());
     IdentityToken {
         access_token: result.access_token.clone(),
@@ -67,9 +72,7 @@ fn build_application_token(result: &TokenResponse) -> ApplicationToken {
     }
 }
 
-async fn token_request(
-    params: HashMap<&str, String>,
-) -> Result<TokenResponse, ExchangeError> {
+async fn token_request(params: HashMap<&str, String>) -> Result<TokenResponse, ExchangeError> {
     let client = build_client(None).expect("failed to build HTTP client");
     let url = format!("https://{IDENTITY_FQDN}/oauth/token");
 
@@ -97,14 +100,15 @@ async fn token_request(
     if status.is_success() {
         serde_json::from_str(&text).map_err(|e| ExchangeError::Other(e.to_string()))
     } else {
-        let err: TokenError =
-            serde_json::from_str(&text).unwrap_or(TokenError { error: "unknown".into() });
+        let err: TokenError = serde_json::from_str(&text).unwrap_or(TokenError {
+            error: "unknown".into(),
+        });
         match err.error.as_str() {
             "invalid_grant" => Err(ExchangeError::InvalidGrant),
             "invalid_request" => Err(ExchangeError::InvalidRequest),
-            "invalid_target" => {
-                Err(ExchangeError::InvalidTarget(store_param.unwrap_or_default()))
-            }
+            "invalid_target" => Err(ExchangeError::InvalidTarget(
+                store_param.unwrap_or_default(),
+            )),
             other => Err(ExchangeError::Other(other.to_string())),
         }
     }
@@ -114,7 +118,10 @@ pub async fn exchange_device_code_for_access_token(
     device_code: &str,
 ) -> Result<IdentityToken, String> {
     let mut params = HashMap::new();
-    params.insert("grant_type", "urn:ietf:params:oauth:grant-type:device_code".into());
+    params.insert(
+        "grant_type",
+        "urn:ietf:params:oauth:grant-type:device_code".into(),
+    );
     params.insert("device_code", device_code.into());
     params.insert("client_id", client_id().into());
 
@@ -134,7 +141,10 @@ pub async fn request_app_token(
 ) -> Result<HashMap<String, ApplicationToken>, ExchangeError> {
     let app_id = application_id(api);
     let mut params = HashMap::new();
-    params.insert("grant_type", "urn:ietf:params:oauth:grant-type:token-exchange".into());
+    params.insert(
+        "grant_type",
+        "urn:ietf:params:oauth:grant-type:token-exchange".into(),
+    );
     params.insert(
         "requested_token_type",
         "urn:ietf:params:oauth:token-type:access_token".into(),
@@ -240,9 +250,7 @@ pub async fn refresh_access_token(
     ))
 }
 
-pub async fn exchange_custom_partner_token(
-    token: &str,
-) -> Result<String, ExchangeError> {
+pub async fn exchange_custom_partner_token(token: &str) -> Result<String, ExchangeError> {
     let scopes = vec![crate::session::scopes::scope_transform("cli").to_string()];
     let result = request_app_token("partners", token, &scopes, None).await?;
     let _app_id = application_id("partners");

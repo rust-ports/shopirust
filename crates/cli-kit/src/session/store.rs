@@ -45,7 +45,11 @@ impl SessionStore {
     }
 
     pub fn fetch(&self) -> Option<Sessions> {
-        let val = self.cache.retrieve::<String>(SESSION_STORE_KEY).ok().flatten()?;
+        let val = self
+            .cache
+            .retrieve::<String>(SESSION_STORE_KEY)
+            .ok()
+            .flatten()?;
         serde_json::from_str(&val).ok()
     }
 

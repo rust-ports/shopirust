@@ -11,10 +11,7 @@ pub fn build_headers(token: Option<&str>) -> HeaderMap {
         header::USER_AGENT,
         HeaderValue::from_str(&format!("Shopify CLI; v={CLI_KIT_VERSION}")).unwrap(),
     );
-    headers.insert(
-        header::CACHE_CONTROL,
-        HeaderValue::from_static("no-cache"),
-    );
+    headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-cache"));
     headers.insert(
         header::CONTENT_TYPE,
         HeaderValue::from_static("application/json"),
@@ -30,7 +27,10 @@ pub fn build_headers(token: Option<&str>) -> HeaderMap {
         } else {
             format!("Bearer {token}")
         };
-        headers.insert(header::AUTHORIZATION, HeaderValue::from_str(&auth_str).unwrap());
+        headers.insert(
+            header::AUTHORIZATION,
+            HeaderValue::from_str(&auth_str).unwrap(),
+        );
         headers.insert(
             header::HeaderName::from_static("x-shopify-access-token"),
             HeaderValue::from_str(&auth_str).unwrap(),
@@ -42,7 +42,9 @@ pub fn build_headers(token: Option<&str>) -> HeaderMap {
 
 pub fn build_client(timeout_ms: Option<u64>) -> reqwest::Result<reqwest::Client> {
     reqwest::Client::builder()
-        .timeout(Duration::from_millis(timeout_ms.unwrap_or(DEFAULT_TIMEOUT_MS)))
+        .timeout(Duration::from_millis(
+            timeout_ms.unwrap_or(DEFAULT_TIMEOUT_MS),
+        ))
         .pool_idle_timeout(Duration::from_secs(30))
         .build()
 }
@@ -58,10 +60,7 @@ mod tests {
             headers.get(header::USER_AGENT).unwrap(),
             "Shopify CLI; v=3.84.1"
         );
-        assert_eq!(
-            headers.get(header::CACHE_CONTROL).unwrap(),
-            "no-cache"
-        );
+        assert_eq!(headers.get(header::CACHE_CONTROL).unwrap(), "no-cache");
         assert_eq!(
             headers.get(header::CONTENT_TYPE).unwrap(),
             "application/json"
@@ -73,10 +72,7 @@ mod tests {
     #[test]
     fn build_headers_with_bearer_token() {
         let headers = build_headers(Some("abc123"));
-        assert_eq!(
-            headers.get(header::AUTHORIZATION).unwrap(),
-            "Bearer abc123"
-        );
+        assert_eq!(headers.get(header::AUTHORIZATION).unwrap(), "Bearer abc123");
         assert_eq!(
             headers.get("x-shopify-access-token").unwrap(),
             "Bearer abc123"
@@ -86,10 +82,7 @@ mod tests {
     #[test]
     fn build_headers_with_shpat_token() {
         let headers = build_headers(Some("shpat_abc123"));
-        assert_eq!(
-            headers.get(header::AUTHORIZATION).unwrap(),
-            "shpat_abc123"
-        );
+        assert_eq!(headers.get(header::AUTHORIZATION).unwrap(), "shpat_abc123");
         assert_eq!(
             headers.get("x-shopify-access-token").unwrap(),
             "shpat_abc123"

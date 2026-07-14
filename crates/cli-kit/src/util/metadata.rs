@@ -1,5 +1,5 @@
-use std::sync::Mutex;
 use std::collections::HashMap;
+use std::sync::Mutex;
 use std::time::Instant;
 
 static PUBLIC_METADATA: std::sync::LazyLock<Mutex<HashMap<String, serde_json::Value>>> =
@@ -12,7 +12,10 @@ pub fn add_public_metadata(key: &str, value: serde_json::Value) {
 }
 
 pub fn get_public_metadata() -> HashMap<String, serde_json::Value> {
-    PUBLIC_METADATA.lock().map(|m| m.clone()).unwrap_or_default()
+    PUBLIC_METADATA
+        .lock()
+        .map(|m| m.clone())
+        .unwrap_or_default()
 }
 
 pub async fn run_with_timer<F, T>(key: &str, f: F) -> T
@@ -37,7 +40,10 @@ mod tests {
     fn test_add_and_get_metadata() {
         add_public_metadata("test_key", serde_json::Value::String("test_val".into()));
         let meta = get_public_metadata();
-        assert_eq!(meta.get("test_key").and_then(|v| v.as_str()), Some("test_val"));
+        assert_eq!(
+            meta.get("test_key").and_then(|v| v.as_str()),
+            Some("test_val")
+        );
     }
 
     #[tokio::test]

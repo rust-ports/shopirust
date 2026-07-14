@@ -72,11 +72,8 @@ mod tests {
 
     #[test]
     fn no_params_returns_base_url() {
-        let url = add_cursor_and_filters_to_app_logs_url(
-            "https://app.shopify.com/base",
-            None,
-            None,
-        );
+        let url =
+            add_cursor_and_filters_to_app_logs_url("https://app.shopify.com/base", None, None);
         assert_eq!(url, "https://app.shopify.com/base");
     }
 }
