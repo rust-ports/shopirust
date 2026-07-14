@@ -11,6 +11,12 @@ pub struct SessionStore {
     current_id: Mutex<Option<String>>,
 }
 
+impl Default for SessionStore {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SessionStore {
     fn default_path() -> PathBuf {
         dirs::config_dir()

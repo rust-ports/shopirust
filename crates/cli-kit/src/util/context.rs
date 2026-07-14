@@ -1,7 +1,7 @@
 use crate::util::system;
 
 pub fn is_terminal_interactive() -> bool {
-    is_terminal::is_terminal(&std::io::stdout())
+    is_terminal::is_terminal(std::io::stdout())
         && !is_dumb_terminal()
 }
 

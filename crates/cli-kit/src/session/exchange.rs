@@ -158,8 +158,8 @@ pub async fn request_app_token(
     let result = token_request(params).await?;
     let app_token = build_application_token(&result);
 
-    let identifier = if api == "admin" && store.is_some() {
-        format!("{}-{}", store.unwrap(), app_id)
+    let identifier = if api == "admin" {
+        store.map_or_else(|| app_id.to_string(), |s| format!("{}-{}", s, app_id))
     } else {
         app_id.to_string()
     };

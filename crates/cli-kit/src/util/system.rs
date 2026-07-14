@@ -47,7 +47,7 @@ pub async fn capture_command_with_exit_code(full_command: &str) -> Result<Captur
 pub async fn exec_command(command: &str) -> Result<(), std::io::Error> {
     let result = capture_command_with_exit_code(command).await?;
     if result.exit_code != 0 {
-        return Err(std::io::Error::new(std::io::ErrorKind::Other, result.stderr));
+        return Err(std::io::Error::other(result.stderr));
     }
     Ok(())
 }
@@ -58,8 +58,7 @@ pub async fn exec(command: &str, args: &[&str]) -> Result<(), std::io::Error> {
         .status()
         .await?;
     if !status.success() {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::Other,
+        return Err(std::io::Error::other(
             format!("Command exited with code {:?}", status.code()),
         ));
     }
@@ -72,13 +71,13 @@ pub async fn open_url(url: &str) -> bool {
 
 pub fn terminal_supports_hyperlinks() -> bool {
     std::env::var("TERM").map(|t| t != "dumb").unwrap_or(false)
-        && is_terminal::is_terminal(&std::io::stdout())
+        && is_terminal::is_terminal(std::io::stdout())
 }
 
 pub fn terminal_supports_prompting() -> bool {
     !is_ci()
-        && is_terminal::is_terminal(&std::io::stdin())
-        && is_terminal::is_terminal(&std::io::stdout())
+        && is_terminal::is_terminal(std::io::stdin())
+        && is_terminal::is_terminal(std::io::stdout())
 }
 
 pub fn is_ci() -> bool {

@@ -52,11 +52,7 @@ fn extract_github_full_name(remote_url: &str) -> Option<String> {
     let remote = remote_url.trim();
     let name = if let Some(name) = remote.strip_prefix("git@github.com:") {
         Some(name.to_string())
-    } else if let Some(name) = remote.strip_prefix("https://github.com/") {
-        Some(name.to_string())
-    } else {
-        None
-    }?;
+    } else { remote.strip_prefix("https://github.com/").map(|name| name.to_string()) }?;
     Some(name.strip_suffix(".git").unwrap_or(&name).to_string())
 }
 

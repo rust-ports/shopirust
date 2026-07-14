@@ -25,11 +25,18 @@ pub struct OutputContent {
     tokens: Vec<Token>,
 }
 
+impl Default for OutputContent {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl OutputContent {
     pub fn new() -> Self {
         Self { tokens: Vec::new() }
     }
 
+    #[allow(clippy::should_implement_trait)]
     pub fn add(mut self, token: Token) -> Self {
         self.tokens.push(token);
         self

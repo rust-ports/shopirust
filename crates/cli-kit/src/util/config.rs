@@ -118,8 +118,10 @@ mod tests {
 
     #[test]
     fn test_save_and_load_roundtrip() {
-        let mut config = CliConfig::default();
-        config.last_user_id = Some("user_1".into());
+        let config = CliConfig {
+            last_user_id: Some("user_1".into()),
+            ..Default::default()
+        };
         config.save().unwrap();
         let loaded = CliConfig::load().unwrap();
         assert!(loaded.last_user_id.is_some());

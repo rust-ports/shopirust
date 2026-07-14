@@ -159,7 +159,7 @@ impl AdminClient {
             .into_iter()
             .filter(|v| v.supported)
             .map(|v| v.handle)
-            .last()
+            .next_back()
             .unwrap_or_else(|| "unstable".to_string());
 
         let mut cache = self.latest_version.lock().unwrap();

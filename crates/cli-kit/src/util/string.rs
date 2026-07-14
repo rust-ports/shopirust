@@ -72,7 +72,7 @@ pub fn camelize(input: &str) -> String {
 
 pub fn capitalize_words(input: &str) -> String {
     input
-        .split(|c: char| c == '_' || c == '-' || c == ' ')
+        .split(['_', '-', ' '])
         .filter(|w| !w.is_empty())
         .map(capitalize)
         .collect::<Vec<_>>()

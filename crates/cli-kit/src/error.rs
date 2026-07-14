@@ -220,7 +220,7 @@ mod tests {
 
     #[test]
     fn is_fatal_returns_false_for_other_error() {
-        let err = std::io::Error::new(std::io::ErrorKind::Other, "io error");
+        let err = std::io::Error::other("io error");
         assert!(!is_fatal(&err));
     }
 
@@ -244,13 +244,13 @@ mod tests {
 
     #[test]
     fn io_error_reported_based_on_message() {
-        let err = std::io::Error::new(std::io::ErrorKind::Other, "EPERM: operation not permitted, scandir");
+        let err = std::io::Error::other("EPERM: operation not permitted, scandir");
         assert!(!should_report_error_as_unexpected(&err));
     }
 
     #[test]
     fn io_error_without_env_keywords_reported() {
-        let err = std::io::Error::new(std::io::ErrorKind::Other, "some random error");
+        let err = std::io::Error::other("some random error");
         assert!(should_report_error_as_unexpected(&err));
     }
 
