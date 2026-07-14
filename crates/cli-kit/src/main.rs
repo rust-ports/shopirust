@@ -1,5 +1,5 @@
 use cli_kit::api::graphql::GraphqlClient;
-use cli_kit::api::partners::PartnersClient;
+use serde::{Deserialize, Serialize};
 use cli_kit::output::banner::render_info;
 use cli_kit::output::banner::render_success;
 use cli_kit::output::is_verbose;
@@ -63,7 +63,7 @@ async fn cmd_auth(store: &SessionStore) -> Result<(), String> {
             scopes: vec!["https://api.shopify.com/auth/partners.app.cli.access".into()],
         }),
         storefront_renderer_api: None,
-        business_platform_api: None,
+        business_platform_api: Some(Default::default()),
         app_management_api: None,
     };
 
@@ -75,6 +75,45 @@ async fn cmd_auth(store: &SessionStore) -> Result<(), String> {
     Ok(())
 }
 
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct BusinessPlatformOrgsResponse {
+    current_user_account: CurrentUserAccount,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CurrentUserAccount {
+    organizations_with_access_to_destination: OrgConnection,
+}
+
+#[derive(Deserialize, Serialize)]
+struct OrgConnection {
+    nodes: Vec<BusinessPlatformOrg>,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct BusinessPlatformOrg {
+    id: String,
+    name: String,
+}
+
+impl BusinessPlatformOrg {
+    fn numeric_id(&self) -> String {
+        use base64::Engine;
+        let padded = format!("{}{}", self.id, "=".repeat((4 - self.id.len() % 4) % 4));
+        if let Ok(decoded) = base64::engine::general_purpose::STANDARD.decode(&padded) {
+            if let Ok(s) = String::from_utf8(decoded) {
+                if let Some(num) = s.rsplit('/').next() {
+                    return num.to_string();
+                }
+            }
+        }
+        self.id.clone()
+    }
+}
+
 async fn cmd_orgs(store: &SessionStore) -> Result<(), String> {
     let applications = OAuthApplications {
         admin_api: None,
@@ -82,23 +121,36 @@ async fn cmd_orgs(store: &SessionStore) -> Result<(), String> {
             scopes: vec!["https://api.shopify.com/auth/partners.app.cli.access".into()],
         }),
         storefront_renderer_api: None,
-        business_platform_api: None,
+        business_platform_api: Some(Default::default()),
         app_management_api: None,
     };
 
     let session = ensure_authenticated(&applications, store).await?;
-    let token = session.partners.ok_or("No partners token available")?;
+    let token = session
+        .business_platform
+        .ok_or("No business platform token available")?;
 
-    let url = "https://partners.shopify.com/api/cli/graphql".to_string();
+    let query = r#"
+query ListOrganizations {
+  currentUserAccount {
+    organizationsWithAccessToDestination(destination: APPS_CLI) {
+      nodes {
+        id
+        name
+      }
+    }
+  }
+}
+"#;
+
+    let url = "https://destinations.shopifysvc.com/destinations/api/2020-07/graphql".to_string();
     let client = GraphqlClient::new(url, Some(token));
-    let partners = PartnersClient::new(client);
-    let orgs = partners
-        .organizations()
-        .await
-        .map_err(|e| format!("API call failed: {e}"))?;
+    let resp: BusinessPlatformOrgsResponse = client.query(query).await.map_err(|e| format!("API call failed: {e}"))?;
+
+    let orgs = resp.current_user_account.organizations_with_access_to_destination.nodes;
 
     for org in &orgs {
-        render_success(&org.business_name, &format!("ID: {}", org.id));
+        render_success(&org.name, &format!("ID: {}", org.numeric_id()));
     }
 
     if orgs.is_empty() {

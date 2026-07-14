@@ -458,6 +458,7 @@ impl PartnersClient {
 
     pub async fn organizations(&self) -> Result<Vec<Organization>, crate::api::graphql::GraphqlRequestError> {
         let resp: OrgsResponse = self.graphql.query(ALL_ORGS_QUERY).await?;
+        tracing::trace!("organizations response: {} nodes", resp.organizations.nodes.len());
         Ok(resp.organizations.nodes)
     }
 

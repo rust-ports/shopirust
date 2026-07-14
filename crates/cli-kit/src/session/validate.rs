@@ -70,6 +70,7 @@ pub struct StorefrontRendererApiOptions {
     pub scopes: Vec<String>,
 }
 
+#[derive(Default)]
 pub struct BusinessPlatformApiOptions {
     pub scopes: Vec<String>,
 }
