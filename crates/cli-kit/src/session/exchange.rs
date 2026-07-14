@@ -30,12 +30,25 @@ pub enum ExchangeError {
     Other(String),
 }
 
+fn extract_user_id_from_id_token(id_token: &str) -> Option<String> {
+    let payload = id_token.split('.').nth(1)?;
+    use base64::Engine;
+    let decoded = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(payload)
+        .ok()?;
+    let claims: serde_json::Value = serde_json::from_slice(&decoded).ok()?;
+    claims.get("sub").and_then(|v| v.as_str()).map(String::from)
+}
+
 fn build_identity_token(
     result: &TokenResponse,
     existing_user_id: Option<&str>,
     existing_alias: Option<&str>,
 ) -> IdentityToken {
-    let user_id = existing_user_id.unwrap_or("unknown").to_string();
+    let user_id = existing_user_id
+        .map(String::from)
+        .or_else(|| result.id_token.as_ref().and_then(|id| extract_user_id_from_id_token(id)))
+        .unwrap_or_else(|| "unknown".to_string());
     IdentityToken {
         access_token: result.access_token.clone(),
         refresh_token: result.refresh_token.clone(),

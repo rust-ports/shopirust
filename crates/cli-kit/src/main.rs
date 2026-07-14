@@ -37,12 +37,22 @@ fn print_usage() {
     )));
 }
 
-async fn cmd_whoami() -> Result<(), String> {
-    let config = cli_kit::util::config::CliConfig::load().map_err(|e| e.to_string())?;
-    let last_user = config
-        .last_user_id
-        .unwrap_or_else(|| "not authenticated".to_string());
-    output_info(OutputContent::new().add(Token::Info(format!("Authenticated as: {last_user}"))));
+async fn cmd_whoami(store: &SessionStore) -> Result<(), String> {
+    let sessions = store.fetch().ok_or("not authenticated")?;
+    let current_id = store.get_current_session_id().ok_or("not authenticated")?;
+
+    let user_name = sessions
+        .values()
+        .find_map(|inner| inner.get(&current_id))
+        .map(|s| {
+            s.identity
+                .alias
+                .clone()
+                .unwrap_or(s.identity.user_id.clone())
+        })
+        .unwrap_or(current_id);
+
+    output_info(OutputContent::new().add(Token::Info(format!("Authenticated as: {user_name}"))));
     Ok(())
 }
 
@@ -112,7 +122,7 @@ async fn main() {
     let store = SessionStore::new();
     let result = match command {
         "auth" => cmd_auth(&store).await,
-        "whoami" => cmd_whoami().await,
+        "whoami" => cmd_whoami(&store).await,
         "orgs" => cmd_orgs(&store).await,
         "help" | "--help" | "-h" => {
             print_banner();
