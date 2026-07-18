@@ -246,6 +246,7 @@ dependencies = [
  "clap",
  "dirs",
  "is-terminal",
+ "sha2",
  "tokio",
  "tracing",
  "tracing-subscriber",
