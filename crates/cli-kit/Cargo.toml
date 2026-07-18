@@ -5,6 +5,9 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+cli-core = { path = "../cli-core" }
+clap = { version = "4", features = ["derive"] }
+async-trait = "0.1"
 tokio.workspace = true
 reqwest.workspace = true
 serde.workspace = true
