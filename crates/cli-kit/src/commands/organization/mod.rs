@@ -7,7 +7,10 @@ use cli_core::error::CliError;
 #[derive(Debug, Subcommand)]
 pub enum OrganizationSubcommand {
     /// List the organizations
-    List,
+    List {
+        #[arg(short = 'j', long = "json", help = "Output in JSON format")]
+        json: bool,
+    },
 }
 
 #[derive(Debug, clap::Args)]
@@ -27,7 +30,7 @@ impl TopicCommand for OrganizationTopic {
 
     fn from_args(args: Self::Args) -> Self {
         match args.command {
-            OrganizationSubcommand::List => Self::List(list::List),
+            OrganizationSubcommand::List { json } => Self::List(list::List::new(json)),
         }
     }
 
@@ -44,7 +47,7 @@ mod tests {
 
     #[test]
     fn test_organization_subcommand_variants() {
-        assert!(std::mem::discriminant(&OrganizationSubcommand::List)
-            == std::mem::discriminant(&OrganizationSubcommand::List));
+        assert!(std::mem::discriminant(&OrganizationSubcommand::List { json: false })
+            == std::mem::discriminant(&OrganizationSubcommand::List { json: true }));
     }
 }

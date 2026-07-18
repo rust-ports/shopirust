@@ -9,7 +9,15 @@ use crate::session::store::SessionStore;
 use crate::session::validate::{OAuthApplications, PartnersApiOptions};
 
 #[derive(Debug)]
-pub struct List;
+pub struct List {
+    json: bool,
+}
+
+impl List {
+    pub fn new(json: bool) -> Self {
+        Self { json }
+    }
+}
 
 #[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -31,6 +39,12 @@ struct OrgConnection {
 #[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct BusinessPlatformOrg {
+    id: String,
+    name: String,
+}
+
+#[derive(Serialize)]
+struct OrgOutput {
     id: String,
     name: String,
 }
@@ -107,21 +121,34 @@ query ListOrganizations {
 
         let orgs = resp.current_user_account.organizations_with_access_to_destination.nodes;
 
-        if orgs.is_empty() {
-            output_info(OutputContent::new().add(Token::Raw("No organizations found.".into())));
-            return Ok(());
-        }
+        if self.json {
+            let output: Vec<OrgOutput> = orgs
+                .iter()
+                .map(|o| OrgOutput {
+                    id: o.numeric_id(),
+                    name: o.name.clone(),
+                })
+                .collect();
+            let json = serde_json::to_string_pretty(&output)
+                .unwrap_or_else(|_| "[]".to_string());
+            println!("{json}");
+        } else {
+            if orgs.is_empty() {
+                output_info(OutputContent::new().add(Token::Raw("No organizations found.".into())));
+                return Ok(());
+            }
 
-        output_info(OutputContent::new().add(Token::Raw(
-            format!("{:>10}  {}", "ID", "NAME"),
-        )));
-        output_info(OutputContent::new().add(Token::Raw(
-            format!("{:>10}  {}", "──────────", "────────────"),
-        )));
-        for org in &orgs {
             output_info(OutputContent::new().add(Token::Raw(
-                format!("{:>10}  {}", org.numeric_id(), org.name),
+                format!("{:>10}  {}", "ID", "NAME"),
             )));
+            output_info(OutputContent::new().add(Token::Raw(
+                format!("{:>10}  {}", "──────────", "────────────"),
+            )));
+            for org in &orgs {
+                output_info(OutputContent::new().add(Token::Raw(
+                    format!("{:>10}  {}", org.numeric_id(), org.name),
+                )));
+            }
         }
 
         Ok(())
@@ -148,6 +175,18 @@ mod tests {
             List::description(),
             "List the organizations you have access to"
         );
+    }
+
+    #[test]
+    fn test_list_new_not_json() {
+        let cmd = List::new(false);
+        assert!(!cmd.json);
+    }
+
+    #[test]
+    fn test_list_new_json() {
+        let cmd = List::new(true);
+        assert!(cmd.json);
     }
 
     #[test]
