@@ -1,0 +1,15 @@
+[package]
+name = "cli-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+tokio.workspace = true
+async-trait = "0.1"
+is-terminal.workspace = true
+dirs.workspace = true
+sha2.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
