@@ -6,7 +6,11 @@ use cli_kit::commands::{CliSubcommand, CliTopic, CliTopicArgs};
 use std::collections::HashMap;
 
 #[derive(Debug, Parser)]
-#[command(name = "shopify", version, about = "A CLI tool to build for the Shopify platform")]
+#[command(
+    name = "shopify",
+    version,
+    about = "A CLI tool to build for the Shopify platform"
+)]
 struct CliArgs {
     #[command(flatten)]
     _global: GlobalFlags,
@@ -19,7 +23,9 @@ struct CliArgs {
 async fn main() -> ! {
     cli_core::runner::init_tracing();
     let args = CliArgs::parse();
-    let topic = CliTopic::from_args(CliTopicArgs { command: args.command });
+    let topic = CliTopic::from_args(CliTopicArgs {
+        command: args.command,
+    });
 
     let result = run_cli(topic, &args._global, |metadata| {
         tokio::spawn(async move {
@@ -30,17 +36,15 @@ async fn main() -> ! {
 
     match result {
         Ok(()) => std::process::exit(0),
-        Err(e) => {
-            match e.kind {
-                cli_core::error::CliErrorKind::AbortSilent => {
-                    std::process::exit(e.exit_code);
-                }
-                _ => {
-                    eprintln!("Error: {e}");
-                    std::process::exit(e.exit_code);
-                }
+        Err(e) => match e.kind {
+            cli_core::error::CliErrorKind::AbortSilent => {
+                std::process::exit(e.exit_code);
             }
-        }
+            _ => {
+                eprintln!("Error: {e}");
+                std::process::exit(e.exit_code);
+            }
+        },
     }
 }
 

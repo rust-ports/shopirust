@@ -1,9 +1,9 @@
-use cli_core::command::BaseCommand;
-use cli_core::error::CliError;
 use crate::output::{output_info, OutputContent, Token};
 use crate::session::ensure_authenticated;
 use crate::session::store::SessionStore;
 use crate::session::validate::{OAuthApplications, PartnersApiOptions};
+use cli_core::command::BaseCommand;
+use cli_core::error::CliError;
 
 #[derive(Debug)]
 pub struct Login;
@@ -37,8 +37,7 @@ impl BaseCommand for Login {
         match ensure_authenticated(&applications, &store).await {
             Ok(_) => {
                 output_info(
-                    OutputContent::new()
-                        .add(Token::Info("Authentication successful".into())),
+                    OutputContent::new().add(Token::Info("Authentication successful".into())),
                 );
                 Ok(())
             }

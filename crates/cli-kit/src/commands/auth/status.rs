@@ -1,7 +1,7 @@
-use cli_core::command::BaseCommand;
-use cli_core::error::CliError;
 use crate::output::{output_info, OutputContent, Token};
 use crate::session::store::SessionStore;
+use cli_core::command::BaseCommand;
+use cli_core::error::CliError;
 
 #[derive(Debug)]
 pub struct Status;
@@ -22,8 +22,12 @@ impl BaseCommand for Status {
 
     async fn run(&self) -> Result<(), CliError> {
         let store = SessionStore::new();
-        let sessions = store.fetch().ok_or_else(|| CliError::abort("not authenticated"))?;
-        let current_id = store.get_current_session_id().ok_or_else(|| CliError::abort("not authenticated"))?;
+        let sessions = store
+            .fetch()
+            .ok_or_else(|| CliError::abort("not authenticated"))?;
+        let current_id = store
+            .get_current_session_id()
+            .ok_or_else(|| CliError::abort("not authenticated"))?;
 
         let user_name = sessions
             .values()
@@ -36,7 +40,9 @@ impl BaseCommand for Status {
             })
             .unwrap_or(current_id);
 
-        output_info(OutputContent::new().add(Token::Info(format!("Authenticated as: {user_name}"))));
+        output_info(
+            OutputContent::new().add(Token::Info(format!("Authenticated as: {user_name}"))),
+        );
         Ok(())
     }
 }

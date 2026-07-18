@@ -1,7 +1,7 @@
-use cli_core::command::BaseCommand;
-use cli_core::error::CliError;
 use crate::output::{output_info, OutputContent, Token};
 use crate::session::store::SessionStore;
+use cli_core::command::BaseCommand;
+use cli_core::error::CliError;
 
 #[derive(Debug)]
 pub struct Logout;

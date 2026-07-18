@@ -112,14 +112,18 @@ query ListOrganizations {
 }
 "#;
 
-        let url = "https://destinations.shopifysvc.com/destinations/api/2020-07/graphql".to_string();
+        let url =
+            "https://destinations.shopifysvc.com/destinations/api/2020-07/graphql".to_string();
         let client = GraphqlClient::new(url, Some(token));
         let resp: BusinessPlatformOrgsResponse = match client.query(query).await {
             Ok(r) => r,
             Err(e) => return Err(CliError::abort(format!("API call failed: {e}"))),
         };
 
-        let orgs = resp.current_user_account.organizations_with_access_to_destination.nodes;
+        let orgs = resp
+            .current_user_account
+            .organizations_with_access_to_destination
+            .nodes;
 
         if self.json {
             let output: Vec<OrgOutput> = orgs
@@ -129,8 +133,7 @@ query ListOrganizations {
                     name: o.name.clone(),
                 })
                 .collect();
-            let json = serde_json::to_string_pretty(&output)
-                .unwrap_or_else(|_| "[]".to_string());
+            let json = serde_json::to_string_pretty(&output).unwrap_or_else(|_| "[]".to_string());
             println!("{json}");
         } else {
             if orgs.is_empty() {
@@ -138,16 +141,17 @@ query ListOrganizations {
                 return Ok(());
             }
 
-            output_info(OutputContent::new().add(Token::Raw(
-                format!("{:>10}  {}", "ID", "NAME"),
-            )));
-            output_info(OutputContent::new().add(Token::Raw(
-                format!("{:>10}  {}", "──────────", "────────────"),
-            )));
+            output_info(OutputContent::new().add(Token::Raw(format!("{:>10}  {}", "ID", "NAME"))));
+            output_info(OutputContent::new().add(Token::Raw(format!(
+                "{:>10}  {}",
+                "──────────", "────────────"
+            ))));
             for org in &orgs {
-                output_info(OutputContent::new().add(Token::Raw(
-                    format!("{:>10}  {}", org.numeric_id(), org.name),
-                )));
+                output_info(OutputContent::new().add(Token::Raw(format!(
+                    "{:>10}  {}",
+                    org.numeric_id(),
+                    org.name
+                ))));
             }
         }
 

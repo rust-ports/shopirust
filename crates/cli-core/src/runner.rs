@@ -38,17 +38,25 @@ mod tests {
     #[tokio::test]
     async fn test_run_cli_calls_flush_callback() {
         use crate::command::BaseCommand;
-        use std::sync::Arc;
         use std::sync::atomic::{AtomicBool, Ordering};
+        use std::sync::Arc;
 
         struct MockCmd;
 
         #[async_trait::async_trait]
         impl BaseCommand for MockCmd {
-            fn name() -> &'static str { "mock" }
-            fn topic() -> &'static str { "mock" }
-            fn description() -> &'static str { "mock" }
-            async fn run(&self) -> Result<(), CliError> { Ok(()) }
+            fn name() -> &'static str {
+                "mock"
+            }
+            fn topic() -> &'static str {
+                "mock"
+            }
+            fn description() -> &'static str {
+                "mock"
+            }
+            async fn run(&self) -> Result<(), CliError> {
+                Ok(())
+            }
         }
 
         enum MockTopic {
@@ -58,19 +66,28 @@ mod tests {
         #[async_trait::async_trait]
         impl TopicCommand for MockTopic {
             type Args = ();
-            fn from_args(_: Self::Args) -> Self { Self::Mock(MockCmd) }
+            fn from_args(_: Self::Args) -> Self {
+                Self::Mock(MockCmd)
+            }
             async fn execute(self) -> Result<(), CliError> {
-                match self { Self::Mock(cmd) => cmd.run().await }
+                match self {
+                    Self::Mock(cmd) => cmd.run().await,
+                }
             }
         }
 
-        let flags = GlobalFlags { verbose: false, no_color: false, path: None };
+        let flags = GlobalFlags {
+            verbose: false,
+            no_color: false,
+            path: None,
+        };
         let flushed = Arc::new(AtomicBool::new(false));
         let f = flushed.clone();
 
         let result = run_cli(MockTopic::Mock(MockCmd), &flags, |_data| {
             f.store(true, Ordering::SeqCst);
-        }).await;
+        })
+        .await;
 
         assert!(result.is_ok());
         assert!(flushed.load(Ordering::SeqCst));
@@ -84,10 +101,18 @@ mod tests {
 
         #[async_trait::async_trait]
         impl BaseCommand for MockCmd {
-            fn name() -> &'static str { "mock" }
-            fn topic() -> &'static str { "mock" }
-            fn description() -> &'static str { "mock" }
-            async fn run(&self) -> Result<(), CliError> { Ok(()) }
+            fn name() -> &'static str {
+                "mock"
+            }
+            fn topic() -> &'static str {
+                "mock"
+            }
+            fn description() -> &'static str {
+                "mock"
+            }
+            async fn run(&self) -> Result<(), CliError> {
+                Ok(())
+            }
         }
 
         enum MockTopic {
@@ -97,19 +122,29 @@ mod tests {
         #[async_trait::async_trait]
         impl TopicCommand for MockTopic {
             type Args = ();
-            fn from_args(_: Self::Args) -> Self { Self::Mock(MockCmd) }
+            fn from_args(_: Self::Args) -> Self {
+                Self::Mock(MockCmd)
+            }
             async fn execute(self) -> Result<(), CliError> {
-                match self { Self::Mock(cmd) => cmd.run().await }
+                match self {
+                    Self::Mock(cmd) => cmd.run().await,
+                }
             }
         }
 
-        let flags = GlobalFlags { verbose: true, no_color: false, path: Some("/tmp".into()) };
+        let flags = GlobalFlags {
+            verbose: true,
+            no_color: false,
+            path: Some("/tmp".into()),
+        };
 
         run_cli(MockTopic::Mock(MockCmd), &flags, |data| {
             assert_eq!(data.get("cmd_all_verbose").unwrap(), "true");
             assert_eq!(data.get("cmd_all_path_override").unwrap(), "true");
             assert!(data.contains_key("cmd_all_path_override_hash"));
-        }).await.unwrap();
+        })
+        .await
+        .unwrap();
     }
 
     #[tokio::test]
@@ -120,9 +155,15 @@ mod tests {
 
         #[async_trait::async_trait]
         impl BaseCommand for ErrCmd {
-            fn name() -> &'static str { "err" }
-            fn topic() -> &'static str { "err" }
-            fn description() -> &'static str { "err" }
+            fn name() -> &'static str {
+                "err"
+            }
+            fn topic() -> &'static str {
+                "err"
+            }
+            fn description() -> &'static str {
+                "err"
+            }
             async fn run(&self) -> Result<(), CliError> {
                 Err(CliError::abort("failed"))
             }
@@ -135,13 +176,21 @@ mod tests {
         #[async_trait::async_trait]
         impl TopicCommand for ErrTopic {
             type Args = ();
-            fn from_args(_: Self::Args) -> Self { Self::Err(ErrCmd) }
+            fn from_args(_: Self::Args) -> Self {
+                Self::Err(ErrCmd)
+            }
             async fn execute(self) -> Result<(), CliError> {
-                match self { Self::Err(cmd) => cmd.run().await }
+                match self {
+                    Self::Err(cmd) => cmd.run().await,
+                }
             }
         }
 
-        let flags = GlobalFlags { verbose: false, no_color: false, path: None };
+        let flags = GlobalFlags {
+            verbose: false,
+            no_color: false,
+            path: None,
+        };
         let result = run_cli(ErrTopic::Err(ErrCmd), &flags, |_| {}).await;
         assert!(result.is_err());
     }
@@ -149,16 +198,22 @@ mod tests {
     #[tokio::test]
     async fn test_run_cli_flush_called_on_error() {
         use crate::command::BaseCommand;
-        use std::sync::Arc;
         use std::sync::atomic::{AtomicBool, Ordering};
+        use std::sync::Arc;
 
         struct ErrCmd;
 
         #[async_trait::async_trait]
         impl BaseCommand for ErrCmd {
-            fn name() -> &'static str { "err" }
-            fn topic() -> &'static str { "err" }
-            fn description() -> &'static str { "err" }
+            fn name() -> &'static str {
+                "err"
+            }
+            fn topic() -> &'static str {
+                "err"
+            }
+            fn description() -> &'static str {
+                "err"
+            }
             async fn run(&self) -> Result<(), CliError> {
                 Err(CliError::abort("failed"))
             }
@@ -171,19 +226,28 @@ mod tests {
         #[async_trait::async_trait]
         impl TopicCommand for ErrTopic {
             type Args = ();
-            fn from_args(_: Self::Args) -> Self { Self::Err(ErrCmd) }
+            fn from_args(_: Self::Args) -> Self {
+                Self::Err(ErrCmd)
+            }
             async fn execute(self) -> Result<(), CliError> {
-                match self { Self::Err(cmd) => cmd.run().await }
+                match self {
+                    Self::Err(cmd) => cmd.run().await,
+                }
             }
         }
 
-        let flags = GlobalFlags { verbose: false, no_color: false, path: None };
+        let flags = GlobalFlags {
+            verbose: false,
+            no_color: false,
+            path: None,
+        };
         let flushed = Arc::new(AtomicBool::new(false));
         let f = flushed.clone();
 
         let _result = run_cli(ErrTopic::Err(ErrCmd), &flags, |_data| {
             f.store(true, Ordering::SeqCst);
-        }).await;
+        })
+        .await;
 
         assert!(flushed.load(Ordering::SeqCst));
     }

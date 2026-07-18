@@ -1,12 +1,27 @@
 #[derive(Debug, Clone, clap::Args)]
 pub struct GlobalFlags {
-    #[arg(short = 'v', long = "verbose", global = true, help = "Increase verbosity")]
+    #[arg(
+        short = 'v',
+        long = "verbose",
+        global = true,
+        help = "Increase verbosity"
+    )]
     pub verbose: bool,
 
-    #[arg(long = "no-color", alias = "no-colour", global = true, help = "Disable color output")]
+    #[arg(
+        long = "no-color",
+        alias = "no-colour",
+        global = true,
+        help = "Disable color output"
+    )]
     pub no_color: bool,
 
-    #[arg(short = 'p', long = "path", global = true, help = "Path to the project directory")]
+    #[arg(
+        short = 'p',
+        long = "path",
+        global = true,
+        help = "Path to the project directory"
+    )]
     pub path: Option<String>,
 }
 

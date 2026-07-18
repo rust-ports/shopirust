@@ -17,7 +17,10 @@ impl MetadataCollector {
     pub fn add_from_parsed_flags(&self, flags: &GlobalFlags) {
         let mut data = self.data.lock().unwrap();
         data.insert("cmd_all_verbose".into(), flags.verbose.to_string());
-        data.insert("cmd_all_path_override".into(), flags.path.is_some().to_string());
+        data.insert(
+            "cmd_all_path_override".into(),
+            flags.path.is_some().to_string(),
+        );
         if let Some(ref path) = flags.path {
             let hash = sha256_hash(path);
             data.insert("cmd_all_path_override_hash".into(), hash);

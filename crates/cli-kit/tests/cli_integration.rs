@@ -11,7 +11,9 @@ fn test_help_flag() {
         .arg("--help")
         .assert()
         .success()
-        .stdout(predicate::str::contains("A CLI tool to build for the Shopify platform"))
+        .stdout(predicate::str::contains(
+            "A CLI tool to build for the Shopify platform",
+        ))
         .stdout(predicate::str::contains("auth"))
         .stdout(predicate::str::contains("organization"));
 }
@@ -31,7 +33,9 @@ fn test_help_command() {
         .arg("help")
         .assert()
         .success()
-        .stdout(predicate::str::contains("A CLI tool to build for the Shopify platform"));
+        .stdout(predicate::str::contains(
+            "A CLI tool to build for the Shopify platform",
+        ));
 }
 
 #[test]

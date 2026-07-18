@@ -47,7 +47,9 @@ mod tests {
 
     #[test]
     fn test_organization_subcommand_variants() {
-        assert!(std::mem::discriminant(&OrganizationSubcommand::List { json: false })
-            == std::mem::discriminant(&OrganizationSubcommand::List { json: true }));
+        assert!(
+            std::mem::discriminant(&OrganizationSubcommand::List { json: false })
+                == std::mem::discriminant(&OrganizationSubcommand::List { json: true })
+        );
     }
 }

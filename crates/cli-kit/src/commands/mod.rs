@@ -39,8 +39,14 @@ impl TopicCommand for CliTopic {
 
     fn from_args(args: Self::Args) -> Self {
         match args.command {
-            CliSubcommand::Auth(cmd) => Self::Auth(AuthTopic::from_args(AuthTopicArgs { command: cmd })),
-            CliSubcommand::Organization(cmd) => Self::Organization(OrganizationTopic::from_args(OrganizationTopicArgs { command: cmd })),
+            CliSubcommand::Auth(cmd) => {
+                Self::Auth(AuthTopic::from_args(AuthTopicArgs { command: cmd }))
+            }
+            CliSubcommand::Organization(cmd) => {
+                Self::Organization(OrganizationTopic::from_args(OrganizationTopicArgs {
+                    command: cmd,
+                }))
+            }
             CliSubcommand::Help => Self::Help,
             CliSubcommand::Version => Self::Version,
         }
@@ -55,7 +61,10 @@ impl TopicCommand for CliTopic {
                 Ok(())
             }
             Self::Version => {
-                println!("@shopify/cli/{} linux-x64 node-rust", env!("CARGO_PKG_VERSION"));
+                println!(
+                    "@shopify/cli/{} linux-x64 node-rust",
+                    env!("CARGO_PKG_VERSION")
+                );
                 Ok(())
             }
         }
@@ -75,7 +84,9 @@ mod tests {
 
     fn parse_topic(args: &[&str]) -> CliTopic {
         let cli = TestCli::parse_from(args);
-        CliTopic::from_args(CliTopicArgs { command: cli.command })
+        CliTopic::from_args(CliTopicArgs {
+            command: cli.command,
+        })
     }
 
     #[test]
