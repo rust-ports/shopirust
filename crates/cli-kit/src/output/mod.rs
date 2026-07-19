@@ -1,7 +1,11 @@
 mod token;
 pub use token::{render_tokens_plain, render_tokens_styled, strip_ansi, Token};
 
+pub mod alert;
 pub mod banner;
+pub mod inflector;
+pub mod link;
+pub mod list;
 pub mod progress;
 pub mod prompt;
 
