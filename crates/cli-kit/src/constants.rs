@@ -74,6 +74,7 @@ pub fn is_env_truthy(
 ///
 /// - `Local` → dev server FQDNs (not yet supported, resolves to production)
 /// - `Production` → production FQDNs
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ServiceEnvironment {
     Local,
     Production,
