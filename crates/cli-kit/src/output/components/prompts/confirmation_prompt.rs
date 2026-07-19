@@ -8,7 +8,7 @@ use std::fmt::Write as _;
 /// Mirrors upstream `@clack/prompts` confirm function.
 pub struct ConfirmationPrompt {
     message: String,
-    active: bool, // true = Yes selected, false = No selected
+    pub active: bool, // true = Yes selected, false = No selected
     default_value: bool,
     confirm_label: String,
     cancel_label: String,

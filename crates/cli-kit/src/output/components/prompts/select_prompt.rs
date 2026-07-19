@@ -12,7 +12,7 @@ pub struct SelectPrompt<T: Clone> {
     inner: SelectInput<T>,
     layout: PromptLayout,
     prompt: UsePrompt<T>,
-    selected_label: Option<String>,
+    pub selected_label: Option<String>,
 }
 
 impl<T: Clone> SelectPrompt<T> {

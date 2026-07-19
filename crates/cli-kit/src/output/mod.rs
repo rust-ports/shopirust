@@ -10,6 +10,7 @@ pub mod engine;
 pub mod figures;
 pub mod hooks;
 pub mod inflector;
+pub mod public_api;
 pub mod tokens;
 pub mod utilities;
 pub mod link;
