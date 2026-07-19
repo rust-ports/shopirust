@@ -1,6 +1,11 @@
+pub mod alert;
+pub mod banner;
 pub mod command;
+pub mod fatal_error;
 pub mod file_path;
 pub mod link;
 pub mod list;
 pub mod subdued;
+pub mod table;
+pub mod tabular_data;
 pub mod user_input;
