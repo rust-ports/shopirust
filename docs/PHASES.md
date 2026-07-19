@@ -1,6 +1,6 @@
 # CLI-Kit Phase Plan & Checklist
 
-**Current**: ~8,200 LOC / 52 files / ~30% of upstream cli-kit
+**Current**: ~10,500 LOC / 56 files / ~35% of upstream cli-kit
 **Target**: ~22,000 LOC / 100+ files / 100% of upstream cli-kit
 
 ---
@@ -85,70 +85,138 @@
 
 ---
 
-## Phase 3 — UI System (+3,500 LOC)
+## Phase 3 — UI System (ratatui rewrite, ~5,650 LOC)
 
-### 3.1 `output/inflector.rs` (new, ~100 LOC)
-- [ ] Format styles: bold, italic, subdued, error, info, warning
-- [ ] Token types: Command, Link, FilePath, UserInput
-- [ ] Match upstream `content-tokens.ts` (131 LOC) + `output.ts` (447 LOC)
+**Architecture**: ratatui-based Ink-equivalent engine. Every component renders to either `RenderMode::Ansi` (static colored string for non-TTY/tests) or `RenderMode::Tui` (ratatui Frame for interactive TTY). Engine runs event loop via crossterm + tokio. No virtual DOM — canvas-style redraw. Static components (Banner, Alert, List, Link, Table, FatalError) stay as `colored` ANSI functions; only interactive (prompts, text input) and streaming (concurrent output, tasks) use ratatui.
 
-### 3.2 `output/banner.rs` (173 → ~400 LOC)
-- [ ] Info/warning/success/error banner types with colors
-- [ ] Headings with accent color
-- [ ] Next-steps rendering
-- [ ] Fatal error with stack trace
-- [ ] Match upstream `Banner.tsx` (112 LOC) + `FatalError.tsx` (100 LOC)
+### 3A — Foundation (~900 LOC, 15 files)
 
-### 3.3 `output/prompt.rs` (131 → ~500 LOC)
-- [ ] `SelectPrompt` — scrollable list selection
-- [ ] `AutocompletePrompt` — searchable/filterable selection
-- [ ] `TextPrompt` — free-text input
-- [ ] `DangerousConfirmationPrompt` — type-to-confirm
-- [ ] `SelectInput` component — keyboard-navigable list
-- [ ] Match upstream `SelectPrompt.tsx` (70 LOC), `AutocompletePrompt.tsx` (197 LOC), `TextPrompt.tsx` (149 LOC), `DangerousConfirmationPrompt.tsx` (166 LOC), `SelectInput.tsx` (320 LOC)
+- [ ] **3A.1** Add deps: ratatui, crossterm, tokio to Cargo.toml
+- [ ] **3A.2** `output/engine/mod.rs` — `RenderMode`, `RenderContext`, `RenderFragment` (Ansi/Span split), `Component` trait
+- [ ] **3A.3** `output/engine/event_loop.rs` — crossterm event stream → `Event` enum, dispatch to component, re-render cycle
+- [ ] **3A.4** `output/engine/lifecycle.rs` — `run_prompt()` (interactive loop), `run_streaming()` (channel-based loop), `render_static()` (one-shot String)
+- [ ] **3A.5** `output/engine/contexts.rs` — `CompletionContext`, `LinksContext` passed through `RenderContext`
+- [ ] **3A.6** `output/engine/layout.rs` — `calculate_layout()` → `Layout { two_thirds, one_third, full_width }`
+- [ ] **3A.7** `output/tokens/mod.rs` — `ContentToken<T>` trait, unify old token.rs + inflector.rs into one system
+- [ ] **3A.8** `output/tokens/token_item.rs` — `Token` UN, `TokenItem<T>`, `InlineToken`, `BoldToken`, `LinkToken`, `ListToken` types matching upstream discriminated unions
+- [ ] **3A.9** `output/tokens/tokenized_text.rs` — `TokenizedText` rendering engine: block/inline splitting, markdown link detection (`[label](url)` + `<url>`), dispatch to sub-components
+- [ ] **3A.10** `output/tokens/lines_diff.rs` — `LinesDiffContentToken` rendering `Change[]` as green `+`/magenta `-`
+- [ ] **3A.11** `output/colors.rs` — Color function wrappers (cyan, gray, magentaBright, etc.)
+- [ ] **3A.12** `output/figures.rs` — Unicode symbols: `✔`, `✖`, `•`, `◆`, `‖`, `─`, `△`, `▽`, `■`, `▔`, `│`, `║`, `◉`, `→`
+- [ ] **3A.13** `output/utilities.rs` — `message_with_punctuation()` helper
+- [ ] **3A.14** Remove old `token.rs`, `inflector.rs` — replaced by `tokens/` module
+- [ ] **3A.15** All 3A tests pass, clippy clean
 
-### 3.4 `output/tasks.rs` (new, ~300 LOC)
-- [ ] Task runner with states: pending → running → done/failed/skipped
-- [ ] Sub-task nesting
-- [ ] Elapsed time display
-- [ ] Spinner animation
-- [ ] Match upstream `Tasks.tsx` (117 LOC) + `SingleTask.tsx` (61 LOC)
+### 3B — Static Components (~700 LOC, 12 files)
 
-### 3.5 `output/table.rs` (new, ~200 LOC)
-- [ ] Table builder: headers, rows, column config
-- [ ] Column alignment, borders, padding
-- [ ] Match upstream `Table.tsx` (58 LOC), `Row.tsx` (50 LOC), `Column.ts` (5 LOC)
+Small rendering-only components. Each produces `RenderFragment` (ANSI string or ratatui Span). Parent components compose them.
 
-### 3.6 `output/alert.rs` (new, ~150 LOC)
-- [ ] Alert types: info, warning, error, success
-- [ ] Styled message boxes with icons
-- [ ] Match upstream `Alert.tsx` (74 LOC)
+- [ ] **3B.1** `output/components/command.rs` — `` `{command}` `` in magentaBright
+- [ ] **3B.2** `output/components/user_input.rs` — `{text}` in cyan
+- [ ] **3B.3** `output/components/subdued.rs` — `{text}` in dim
+- [ ] **3B.4** `output/components/file_path.rs` — `{path}` in italic
+- [ ] **3B.5** `output/components/link.rs` — hyperlink `\x1b]8;;` vs `label (url)` vs footnote `[N]`, `LinksContext` integration
+- [ ] **3B.6** `output/components/list.rs` — ordered/unordered, `TokenItem` items, per-item bullet/color override
+- [ ] **3B.7** `output/components/tabular_data.rs` — column-aligned grid, `first_column_subdued`, max-width calculation
+- [ ] **3B.8** `output/components/banner.rs` — `BannerType` enum, `BoxWithBorder` (rounded `╭╮╰╯`), `BoxWithTopBottomLines` (`──`), `Footnotes` block, `LinksContext` provider
+- [ ] **3B.9** `output/components/alert.rs` — `AlertProps` with rich `TokenItem` for headline/body/nextSteps/reference, `CustomSection` with TabularData support
+- [ ] **3B.10** `output/components/fatal_error.rs` — stack trace with `StackTracey`-style source lines, `ExternalError` tool display, markdown link detection, custom sections with TabularData
+- [ ] **3B.11** `output/components/table.rs` — `Table` + `Row` + `Column`: headers, `─` separator row, auto-width, per-column color, `ScalarDict` row type
+- [ ] **3B.12** All 3B tests pass, clippy clean
 
-### 3.7 `output/list.rs` (new, ~150 LOC)
-- [ ] Ordered (numbered) lists
-- [ ] Unordered (bullet) lists
-- [ ] Match upstream `List.tsx` (93 LOC)
+### 3C — Infrastructure Components (~800 LOC, 13 files)
 
-### 3.8 `output/link.rs` (new, ~80 LOC)
-- [ ] Hyperlink rendering with terminal detection
-- [ ] Match upstream `Link.tsx` (42 LOC)
+Building blocks for interactive prompts and animated displays.
 
-### 3.9 `output/text_input.rs` (new, ~200 LOC)
-- [ ] Inline text input with cursor, placeholder, masking
-- [ ] Match upstream `TextInput.tsx` (125 LOC)
+- [ ] **3C.1** `output/components/scrollbar.rs` — visual scrollbar: `│` background, `║` position, `△`/`▽` arrows, proportional scrolling, no-color mode
+- [ ] **3C.2** `output/components/text_input.rs` — dual-mode: cursor movement, insert/delete, password masking, placeholder rendering (first char inverse, rest dim), Tab-fill. ANSI mode → inline `\x1b[7m` cursor. TUI mode → ratatui widget.
+- [ ] **3C.3** `output/components/loading_bar.rs` — animated bar: `hillString` pattern (`▁▁▂▃▄▅▆▇█`) + title + `...`. Rainbow gradient via TextAnimation. TTY detection. `noColor`/`noProgressBar` options.
+- [ ] **3C.4** `output/components/text_animation.rs` — rainbow HSV gradient animation, 35ms frame rate, `gradient-string`-style hue rotation, terminal resize handling
+- [ ] **3C.5** `output/components/prompts/prompt_layout.rs` — shared shell: `?` prefix + message, optional header/search bar, `InfoTable`, `InfoMessage`, input area, submitted state (green `✔` + answer). Dynamic height from terminal rows. `availableLines` calculation.
+- [ ] **3C.6** `output/components/prompts/info_table.rs` — `Record<string, Items[]>` or `InfoTableSection[]` with headers, colored bullets, helper text, empty state placeholder
+- [ ] **3C.7** `output/components/prompts/info_message.rs` — colored title + body block
+- [ ] **3C.8** `output/hooks/use_prompt.rs` — `PromptState` enum (`Idle`/`Loading`/`Submitted`/`Error`/`Cancelled`), `answer`, `setAnswer`, `setPromptState`
+- [ ] **3C.9** `output/hooks/use_select_state.rs` — `OptionMap<T>` (linked-list map with `first`, `next`, `prev`), `useSelectState` reducer with `selectNext`/`selectPrevious`/`selectOption`, pagination (`visibleFromIndex`/`visibleToIndex`), disabled option skipping
+- [ ] **3C.10** `output/hooks/use_layout.rs` — `Layout { two_thirds, one_third, full_width }`, terminal resize listener, `MIN_FULL_WIDTH = 20`, `MIN_FRACTION_WIDTH = 80`
+- [ ] **3C.11** `output/hooks/use_abort_signal.rs` — tokio channel-based abort listener, sets `isAborted`, triggers `onAbort` callback
+- [ ] **3C.12** `output/hooks/use_async_and_unmount.rs` — runs async task in tokio, calls `onFulfilled`/`onRejected`, signals completion
+- [ ] **3C.13** `output/hooks/use_exit_on_ctrl_c.rs` — Ctrl+C handler that calls `tree_kill(process.pid, 'SIGINT')`
+- [ ] **3C.14** All 3C tests pass, clippy clean
 
-### 3.10 `output/loading_bar.rs` (new, ~100 LOC)
-- [ ] Animated progress bar with percentage
-- [ ] Match upstream `LoadingBar.tsx` (41 LOC)
+### 3D — Interactive Prompt Components (~1,100 LOC, 6 files)
 
-### 3.11 `output/concurrent_output.rs` (new, ~300 LOC)
-- [ ] Interleaved output from concurrent processes with prefixes
-- [ ] Match upstream `ConcurrentOutput.tsx` (233 LOC)
+Full prompt suite. All use `PromptLayout` + hooks internally. Each implements the `Prompt` trait with `render()` and `handle_event()`.
 
-### 3.12 `output/mod.rs` (193 → ~300 LOC)
-- [ ] Re-export all new modules
-- [ ] `format_message` with inflector
-- [ ] Verbosity levels
+- [ ] **3D.1** `output/components/prompts/select_input.rs` — `Item<T>` with `label`, `value`, `key` (shortcut), `group`, `helperText`, `disabled`. Group sorting per `groupOrder`. Shortcut key validation (all ≤1 char). Arrow navigation + shortcut keys + Enter submit. `loading`/`errorMessage`/`emptyMessage` states. `hasMorePages` + `morePagesMessage`. Scrollbar integration. `availableLines` limit (default 25).
+- [ ] **3D.2** `output/components/prompts/select_prompt.rs` — wraps `SelectInput` in `PromptLayout`. `message`, `choices`, `infoTable`, `infoMessage`, `defaultValue`, `abortSignal`, `groupOrder`. `onSubmit` → `complete()`.
+- [ ] **3D.3** `output/components/prompts/confirmation_prompt.rs` — thin wrapper: `SelectPrompt<bool>` with Yes/No choices. `confirmationMessage` (default `"Yes, confirm"`), `cancellationMessage` (default `"No, cancel"`), `defaultValue` (default `true`).
+- [ ] **3D.4** `output/components/prompts/autocomplete_prompt.rs` — search `TextInput` + debounced `search` callback + `SelectInput`. Default in-memory filter on `label`/`group` with `searchDebounceMs: 0`. Custom search with `searchDebounceMs: 400`. Loading state (100ms delay before showing). Error state on search failure. `hasMorePages` messaging. `MIN_NUMBER_OF_ITEMS_FOR_SEARCH = 5`.
+- [ ] **3D.5** `output/components/prompts/text_prompt.rs` — `TextInput` + validation + preview + `▔▔▔` underline. `allowEmpty`, `emptyDisplayedValue` (default `"(empty)"`), `defaultValue`, `password`, `validate`, `preview` callback. Submitted state: green `✔` + answer. Error state: red `>` + error text. `useLayout` → `oneThird` width.
+- [ ] **3D.6** `output/components/prompts/dangerous_confirmation_prompt.rs` — exact-string `TextInput` + `⚠ WARNING` banner in red + `InfoTable`. Escape → submit `false`. Value matches `confirmation` → submit `true`. Completed: green `✔ Confirmed` / red `✖ Cancelled`.
+- [ ] **3D.7** All 3D tests pass, clippy clean
+
+### 3E — Streaming Components (~650 LOC, 5 files)
+
+Components that maintain a render loop while work progresses. Processes write to `tokio::sync::mpsc` channels, chunks are collected and re-rendered incrementally.
+
+- [ ] **3E.1** `output/components/single_task.rs` — wraps one async task with `LoadingBar`. `updateStatus: (TokenizedString) => void` callback. Ctrl+C abort via `onAbort` or default `tree_kill`. `onComplete` → `complete()`.
+- [ ] **3E.2** `output/components/tasks.rs` — sequential task runner via `Task<TContext>` trait with `title` (string or `TokenizedString`), `task: (ctx, task) => Promise<void | Task[]>`, `retry`, `skip`, `errors`. Shared context passing. Shows `LoadingBar` for current task. `silent`/`noColor`/`noProgressBar`/`abortSignal` options. Subtask support.
+- [ ] **3E.3** `output/components/concurrent_output.rs` — `OutputProcess` with `prefix` + `action: (stdout, stderr, signal) => Promise<void>` callback model. `Writable`-equivalent channels per process. Color cycling (5 default / 6 alternative). `prefixColumnSize` (max 25). `showTimestamps` (`HH:MM:SS`). `keepRunningAfterProcessesResolve`. ANSI stripping per process. `ConcurrentOutputContext` for nested prefix overrides.
+- [ ] **3E.4** `output/components/static_component.rs` — Ink `<Static>` equivalent: sticky non-interactive output that persists across re-renders
+- [ ] **3E.5** `output/engine/streaming_loop.rs` — modified event loop: multiplexes keyboard input, channel data, timer ticks via `tokio::select!`. Exits when all processes resolve or any throws.
+- [ ] **3E.6** All 3E tests pass, clippy clean
+
+### 3F — Public API & Test Infrastructure (~1,200 LOC, 12 files)
+
+Wire everything into the public-facing API. Build test tooling.
+
+- [ ] **3F.1** `output/public_api.rs` — all 14 `render*` functions:
+  - [ ] `renderInfo(options) → String` — info banner via `renderOnce(<Alert type="info">)`
+  - [ ] `renderSuccess(options) → String` — success banner
+  - [ ] `renderWarning(options) → String` — warning banner
+  - [ ] `renderError(options) → String` — error banner
+  - [ ] `renderFatalError(error, options?) → String` — fatal error with stack trace
+  - [ ] `renderSelectPrompt(options) → Promise<T>` — interactive select
+  - [ ] `renderConfirmationPrompt(options) → Promise<bool>` — yes/no confirm
+  - [ ] `renderAutocompletePrompt(options) → Promise<T>` — search + select
+  - [ ] `renderTextPrompt(options) → Promise<String>` — free-text input
+  - [ ] `renderDangerousConfirmationPrompt(options) → Promise<bool>` — type-to-confirm
+  - [ ] `renderConcurrent(options) → Promise<void>` — streaming concurrent output
+  - [ ] `renderTasks(tasks, options?) → Promise<TContext>` — sequential task runner
+  - [ ] `renderSingleTask(options) → Promise<T>` — single task with loading bar
+  - [ ] `renderTable(options) → String` — table rendering
+- [ ] **3F.2** `output/output_api.rs` — output token factory and output functions:
+  - [ ] `outputToken` factory with all 17 methods: `raw`, `genericShellCommand`, `json`, `path`, `link`, `heading`, `subheading`, `italic`, `errorText`, `cyan`, `yellow`, `magenta`, `green`, `gray`, `packagejsonScript`, `successIcon` (green `✔`), `failIcon` (`✖`), `linesDiff`
+  - [ ] `outputContent` — tagged-template equivalent (macro or builder)
+  - [ ] `OutputMessage` type (`String | TokenizedString`)
+  - [ ] `TokenizedString` class
+  - [ ] `stringifyMessage(message) → String`
+  - [ ] `itemToString(item) → String`
+  - [ ] `outputInfo`, `outputSuccess`, `outputWarn`, `outputDebug`, `outputResult`, `outputNewline`
+  - [ ] `formatSection(title, body) → String`
+  - [ ] `unstyled(message) → String` — ANSI strip
+  - [ ] `shouldDisplayColors() → bool` — memoized
+  - [ ] `collectedLogs`, `collectLog(key, content)`, `clearCollectedLogs()` — test infra
+  - [ ] `logLevelValue(level)`, `currentLogLevel()`, `shouldOutput(level)` — log gating
+- [ ] **3F.3** `output/engine/stdout_mock.rs` — `Stdout` mock: `EventEmitter`, `frames[]`, `lastFrame()`, `columns`/`rows`, `write(frame)`
+- [ ] **3F.4** `output/engine/render_once.rs` — `renderOnce(element)` → renders to `Stdout`, returns `lastFrame()`, used by tests and static render* functions
+- [ ] **3F.5** `output/engine/render.rs` — `render(element)` → wraps in `InkLifecycleRoot`, runs event loop, waits for `waitUntilExit()`
+- [ ] **3F.6** Tests for all 26 components using `renderOnce` + simulated key events (minimum 5 tests per component)
+- [ ] **3F.7** All 3F tests pass, clippy clean
+
+### 3G — Integration & Legacy Cleanup (~300 LOC, 8 files)
+
+- [ ] **3G.1** `output/mod.rs` — wire everything, public re-exports match upstream `output.ts` + `ui.tsx`
+- [ ] **3G.2** Remove old `token.rs` — functionality absorbed by `tokens/` module
+- [ ] **3G.3** Remove old `inflector.rs` — absorbed by `tokens/` module
+- [ ] **3G.4** Remove old `alert.rs` — replaced by `components/alert.rs`
+- [ ] **3G.5** Remove old `banner.rs` inline render functions — replaced by `components/banner.rs`
+- [ ] **3G.6** Deprecate old `prompt.rs` — keep as non-TTY fallback path, mark deprecated
+- [ ] **3G.7** Update `link.rs`, `list.rs`, `table.rs` to go through new component system
+- [ ] **3G.8** Update all callers of old output functions throughout crates
+- [ ] **3G.9** Final `cargo clippy -D warnings` — zero warnings
+- [ ] **3G.10** Final `cargo test` — all tests pass across all crates
+- [ ] **3G.11** Update `docs/PHASES.md` with final numbers
 
 ---
 
