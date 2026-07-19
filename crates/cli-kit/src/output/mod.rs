@@ -8,6 +8,7 @@ pub mod colors;
 pub mod components;
 pub mod engine;
 pub mod figures;
+pub mod hooks;
 pub mod inflector;
 pub mod tokens;
 pub mod utilities;
