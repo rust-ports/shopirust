@@ -2,17 +2,24 @@ use crate::api::rate_limiter::ApiRateLimiter;
 use crate::error::{abort_error, FatalError};
 use crate::http::{build_client, build_headers};
 use crate::util::cache::CacheStore;
+use crate::util::conf_store::{composite_cache_key, LocalStorage};
 use crate::util::retry::{is_transient_network_error, RetryAction, RetryConfig};
 use reqwest::header::HeaderMap;
 use reqwest::StatusCode;
 use serde::de::DeserializeOwned;
 use serde::Deserialize;
 use serde_json::Value;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+/// Maximum fraction of a second to wait after a rate-limited query.
 const MAX_RATE_LIMIT_RESTORE_SECONDS: f64 = 0.3;
 
+/// Current CLI kit version, embedded in cache keys for cache invalidation
+/// across releases.
+const CLI_KIT_VERSION: &str = "3.94.3";
+
+/// Standard GraphQL response envelope.
 #[derive(Debug, Deserialize)]
 pub struct GraphqlResponse<T> {
     pub data: Option<T>,
@@ -20,40 +27,48 @@ pub struct GraphqlResponse<T> {
     pub extensions: Option<GraphqlExtensions>,
 }
 
+/// A single error item in the `errors` array.
 #[derive(Debug, Deserialize)]
 pub struct GraphqlError {
     pub message: Option<String>,
     pub extensions: Option<GraphqlErrorExtensions>,
 }
 
+/// Per-error extensions containing a machine-readable code and (optionally)
+/// user-facing app errors.
 #[derive(Debug, Deserialize)]
 pub struct GraphqlErrorExtensions {
     pub code: Option<Value>,
     pub app_errors: Option<GraphqlAppErrors>,
 }
 
+/// Container for application-level errors reported by the API.
 #[derive(Debug, Deserialize)]
 pub struct GraphqlAppErrors {
     pub errors: Option<Vec<GraphqlAppError>>,
 }
 
+/// A single application-level error.
 #[derive(Debug, Deserialize)]
 pub struct GraphqlAppError {
     pub message: Option<String>,
     pub category: Option<String>,
 }
 
+/// Rate-limit cost/throttle information returned in extensions.
 #[derive(Debug, Deserialize)]
 pub struct GraphqlExtensions {
     pub cost: Option<GraphqlCost>,
 }
 
+/// Actual and throttled cost of a query.
 #[derive(Debug, Deserialize)]
 pub struct GraphqlCost {
     pub actual_query_cost: Option<f64>,
     pub throttle_status: Option<GraphqlThrottleStatus>,
 }
 
+/// Throttle bucket state for the current client.
 #[derive(Debug, Deserialize)]
 pub struct GraphqlThrottleStatus {
     pub restore_rate: Option<f64>,
@@ -61,10 +76,14 @@ pub struct GraphqlThrottleStatus {
     pub maximum_available: Option<f64>,
 }
 
+/// Errors that can occur during a GraphQL operation.
 #[derive(Debug)]
 pub enum GraphqlRequestError {
+    /// Transport-level failure (connection refused, DNS, TLS, timeout).
     Network(String),
+    /// The API returned an error (HTTP status + message).
     ApiError(String, u16),
+    /// The response body could not be parsed as the expected type.
     Parse(String, String),
 }
 
@@ -92,6 +111,58 @@ impl From<GraphqlRequestError> for FatalError {
     }
 }
 
+/// Hook called when a 401 (Unauthorized) response is received.
+///
+/// Implementors should refresh the session token and return the new value.
+/// The returned token replaces the stored token and the request is retried
+/// automatically.
+pub trait UnauthorizedHandler: Send + Sync {
+    fn refresh_token(&self) -> Option<String>;
+}
+
+impl<F> UnauthorizedHandler for F
+where
+    F: Fn() -> Option<String> + Send + Sync,
+{
+    fn refresh_token(&self) -> Option<String> {
+        self()
+    }
+}
+
+/// Cache configuration for GraphQL queries.
+///
+/// Mirrors the upstream `CacheOptions` type. When both `CacheStore` and
+/// `LocalStorage` are configured the client checks both on read and
+/// writes to both on write.
+#[derive(Debug, Clone)]
+pub struct CacheOptions {
+    pub cache_ttl_ms: u64,
+    pub cache_extra_key: Option<String>,
+    pub cache_store: Option<Arc<LocalStorage>>,
+}
+
+impl Default for CacheOptions {
+    fn default() -> Self {
+        Self {
+            cache_ttl_ms: 60_000,
+            cache_extra_key: None,
+            cache_store: None,
+        }
+    }
+}
+
+/// Reusable GraphQL API client with retry, caching, rate limiting, and
+/// automatic token refresh.
+///
+/// ## Features
+/// - Exponential-backoff retry for transient errors and 5xx responses
+/// - Composite cache keys via [`composite_cache_key`] (deterministic UUID v5)
+/// - Dual cache backends: [`CacheStore`] (the legacy file-based store) and
+///   [`LocalStorage`] (the new conf-store)
+/// - 401 interception with [`UnauthorizedHandler`] for transparent token
+///   refresh
+/// - GraphQL cost-based rate-limit back-off (``wait_for_rate_limit_restore``)
+/// - Optional [`ApiRateLimiter`] for concurrency control
 pub struct GraphqlClient {
     client: reqwest::Client,
     pub url: String,
@@ -100,9 +171,16 @@ pub struct GraphqlClient {
     cache: Option<Arc<CacheStore>>,
     extra_headers: Option<HeaderMap>,
     rate_limiter: Option<ApiRateLimiter>,
+    token_refresh_handler: Option<Arc<dyn UnauthorizedHandler>>,
+    cache_options: Option<CacheOptions>,
 }
 
 impl GraphqlClient {
+    /// Create a new GraphQL client for the given endpoint URL.
+    ///
+    /// The client is built with [`build_client`] (default timeout, no TLS
+    /// enforcement). Use [`with_client`](Self::with_client) if a custom
+    /// `reqwest::Client` is required.
     pub fn new(url: impl Into<String>, token: Option<String>) -> Self {
         let client = build_client(None).expect("failed to build HTTP client");
         Self {
@@ -113,9 +191,13 @@ impl GraphqlClient {
             cache: None,
             extra_headers: None,
             rate_limiter: None,
+            token_refresh_handler: None,
+            cache_options: None,
         }
     }
 
+    /// Create a client with a pre-built `reqwest::Client` (useful when
+    /// custom TLS settings or timeouts are needed).
     pub fn with_client(
         url: impl Into<String>,
         token: Option<String>,
@@ -129,29 +211,53 @@ impl GraphqlClient {
             cache: None,
             extra_headers: None,
             rate_limiter: None,
+            token_refresh_handler: None,
+            cache_options: None,
         }
     }
 
+    /// Set the retry configuration (backoff, max time, etc.).
     pub fn with_retry(mut self, config: RetryConfig) -> Self {
         self.retry_config = config;
         self
     }
 
+    /// Enable response caching via the legacy [`CacheStore`].
     pub fn with_cache(mut self, cache: Arc<CacheStore>) -> Self {
         self.cache = Some(cache);
         self
     }
 
+    /// Set caching options (TTL, extra key component, optional
+    /// [`LocalStorage`] backend).
+    pub fn with_cache_options(mut self, options: CacheOptions) -> Self {
+        self.cache_options = Some(options);
+        self
+    }
+
+    /// Attach an [`UnauthorizedHandler`] for automatic token refresh on 401.
+    pub fn with_token_refresh_handler(
+        mut self,
+        handler: Arc<dyn UnauthorizedHandler>,
+    ) -> Self {
+        self.token_refresh_handler = Some(handler);
+        self
+    }
+
+    /// Attach extra HTTP headers to every request.
     pub fn with_extra_headers(mut self, headers: HeaderMap) -> Self {
         self.extra_headers = Some(headers);
         self
     }
 
+    /// Attach a rate limiter for concurrency control.
     pub fn with_rate_limiter(mut self, limiter: ApiRateLimiter) -> Self {
         self.rate_limiter = Some(limiter);
         self
     }
 
+    /// Execute a query without variables (delegates to
+    /// [`query_with_variables`](Self::query_with_variables)).
     pub async fn query<T: DeserializeOwned + serde::Serialize>(
         &self,
         query: &str,
@@ -159,6 +265,22 @@ impl GraphqlClient {
         self.query_with_variables::<T, Value>(query, None).await
     }
 
+    /// Execute a GraphQL query with optional variables.
+    ///
+    /// ## Flow
+    /// 1. Compute a composite cache key from `query`, `variables`,
+    ///    `CLI_KIT_VERSION`, and (optionally) `cache_extra_key`.
+    /// 2. Check both [`CacheStore`] and [`LocalStorage`] for a cached
+    ///    response.
+    /// 3. Build request headers from the stored token (or from the
+    ///    refresh handler if the token was updated on a previous 401).
+    /// 4. Send the request through the retry loop:
+    ///    - 401 → call [`UnauthorizedHandler::refresh_token`] and retry
+    ///    - 429 → parse `Retry-After` header and retry
+    ///    - 5xx → retry (upstream retry config decides max time)
+    ///    - 4xx → fail immediately
+    ///    - 2xx → parse, apply rate-limit back-off, return
+    /// 5. On success, write the result to both cache backends.
     pub async fn query_with_variables<
         T: DeserializeOwned + serde::Serialize,
         V: serde::Serialize,
@@ -167,11 +289,31 @@ impl GraphqlClient {
         query: &str,
         variables: Option<V>,
     ) -> Result<T, GraphqlRequestError> {
+        let extra_key = self
+            .cache_options
+            .as_ref()
+            .and_then(|o| o.cache_extra_key.as_deref())
+            .unwrap_or("");
+        let variables_json = serde_json::to_string(&variables).unwrap_or_default();
+        let composite_key = if extra_key.is_empty() {
+            composite_cache_key(&[query, &variables_json, CLI_KIT_VERSION])
+        } else {
+            composite_cache_key(&[query, &variables_json, CLI_KIT_VERSION, extra_key])
+        };
+
         if let Some(ref cache) = self.cache {
-            let cache_key = format!("q-{}", CacheStore::key_hash(query));
-            if let Ok(Some(cached)) = cache.retrieve::<String>(&cache_key) {
+            if let Ok(Some(cached)) = cache.retrieve::<String>(&composite_key) {
                 if let Ok(val) = serde_json::from_str(&cached) {
                     return Ok(val);
+                }
+            }
+        }
+        if let Some(ref opts) = self.cache_options {
+            if let Some(ref ls) = opts.cache_store {
+                if let Some(cached) = ls.get::<String>(&composite_key) {
+                    if let Ok(val) = serde_json::from_str(&cached) {
+                        return Ok(val);
+                    }
                 }
             }
         }
@@ -187,23 +329,51 @@ impl GraphqlClient {
         let client = self.client.clone();
         let cache = self.cache.clone();
         let rate_limiter = self.rate_limiter.clone();
+        let token_refresh = self.token_refresh_handler.clone();
+        let token_mutex = Arc::new(Mutex::new(self.token.clone()));
 
         let result: Result<T, GraphqlRequestError> = self
             .retry_config
             .execute(move || {
                 let client = client.clone();
                 let url = url.clone();
-                let headers = headers.clone();
+                let mut headers = headers.clone();
                 let body = body.clone();
                 let rate_limiter = rate_limiter.clone();
+                let token_refresh = token_refresh.clone();
+                let token_mutex = token_mutex.clone();
 
                 async move {
                     if let Some(ref limiter) = rate_limiter {
                         limiter.acquire().await;
                     }
 
+                    // Read the current token (possibly refreshed by a
+                    // previous retry iteration).
+                    let current_token = token_mutex.lock().unwrap().clone();
+
+                    if let Some(ref token) = current_token {
+                        let auth_val = if token.starts_with("shpat")
+                            || token.starts_with("shpua")
+                            || token.starts_with("shpca")
+                            || token.starts_with("shptka")
+                        {
+                            token.clone()
+                        } else {
+                            format!("Bearer {token}")
+                        };
+                        headers.insert(
+                            reqwest::header::AUTHORIZATION,
+                            reqwest::header::HeaderValue::from_str(&auth_val).unwrap(),
+                        );
+                        headers.insert(
+                            reqwest::header::HeaderName::from_static("x-shopify-access-token"),
+                            reqwest::header::HeaderValue::from_str(&auth_val).unwrap(),
+                        );
+                    }
+
                     let response_result =
-                        client.post(&url).headers(headers).json(&body).send().await;
+                        client.post(&url).headers(headers.clone()).json(&body).send().await;
 
                     let response = match response_result {
                         Ok(r) => r,
@@ -217,6 +387,25 @@ impl GraphqlClient {
 
                     let status = response.status();
 
+                    // 401 → refresh token and retry
+                    if status == StatusCode::UNAUTHORIZED {
+                        if let Some(ref handler) = token_refresh {
+                            if let Some(new_token) = handler.refresh_token() {
+                                *token_mutex.lock().unwrap() = Some(new_token);
+                                return RetryAction::Retry(GraphqlRequestError::ApiError(
+                                    "token_refreshed".into(),
+                                    401,
+                                ));
+                            }
+                        }
+                        let text = response.text().await.unwrap_or_default();
+                        return RetryAction::Err(GraphqlRequestError::ApiError(
+                            format!("Unauthorized: {text}"),
+                            401,
+                        ));
+                    }
+
+                    // 429 → parse Retry-After and wait
                     if status == StatusCode::TOO_MANY_REQUESTS {
                         let retry_after = response
                             .headers()
@@ -306,9 +495,15 @@ impl GraphqlClient {
             .await;
 
         if let (Ok(ref val), Some(ref cache)) = (&result, &cache) {
-            let cache_key = format!("q-{}", CacheStore::key_hash(query));
             if let Ok(json_str) = serde_json::to_string(val) {
-                let _ = cache.store(&cache_key, &json_str);
+                let _ = cache.store(&composite_key, &json_str);
+            }
+        }
+        if let (Ok(ref val), Some(ref opts)) = (&result, &self.cache_options) {
+            if let Some(ref ls) = opts.cache_store {
+                if let Ok(json_str) = serde_json::to_string(val) {
+                    ls.set(&composite_key, &json_str);
+                }
             }
         }
 
@@ -316,6 +511,12 @@ impl GraphqlClient {
     }
 }
 
+/// Sleep for a short duration proportional to the GraphQL cost's
+/// `actualQueryCost / restoreRate`, capped at
+/// [`MAX_RATE_LIMIT_RESTORE_SECONDS`].
+///
+/// This lets the API's rate-limit bucket recover before the next query,
+/// reducing 429 responses.
 async fn wait_for_rate_limit_restore(cost: &GraphqlCost) {
     if let (Some(actual), Some(restore_rate)) = (
         cost.actual_query_cost,
@@ -328,6 +529,11 @@ async fn wait_for_rate_limit_restore(cost: &GraphqlCost) {
     }
 }
 
+/// Collate all user-facing error messages from a GraphQL `errors` array.
+///
+/// App-level errors with `category: "access_denied"` produce a standard
+/// permission-denied message. Returns `"Unknown error"` if the array is
+/// empty after processing.
 fn extract_error_messages(errors: &[GraphqlError]) -> String {
     let mut messages: Vec<String> = Vec::new();
     for error in errors {
@@ -429,7 +635,10 @@ mod tests {
                 extensions: None,
             },
         ];
-        assert_eq!(extract_error_messages(&errors), "first error\nsecond error");
+        assert_eq!(
+            extract_error_messages(&errors),
+            "first error\nsecond error"
+        );
     }
 
     #[test]
@@ -583,7 +792,8 @@ mod tests {
     #[tokio::test]
     async fn client_with_custom_reqwest_client() {
         let custom_client = build_client(Some(5000)).unwrap();
-        let _client = GraphqlClient::with_client("http://example.com/graphql", None, custom_client);
+        let _client =
+            GraphqlClient::with_client("http://example.com/graphql", None, custom_client);
     }
 
     #[tokio::test]
@@ -621,7 +831,8 @@ mod tests {
             .mount(&mock_server)
             .await;
 
-        let client = GraphqlClient::new(mock_server.uri(), None).with_retry(RetryConfig::new());
+        let client =
+            GraphqlClient::new(mock_server.uri(), None).with_retry(RetryConfig::new());
         let result: serde_json::Value = client.query("{ ok }").await.unwrap();
         assert_eq!(result, json!({ "ok": true }));
     }

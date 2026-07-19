@@ -1,9 +1,12 @@
 use std::num::ParseIntError;
 
-/// GID prefix for Shopify resources.
+/// Prefix shared by all Shopify GID URIs.
 const GID_PREFIX: &str = "gid://shopify/";
 
-/// Regex-like parsing: `gid://shopify/{Type}/{NumericId}`
+/// Internal parser: split `gid://shopify/{Type}/{NumericId}` into its parts.
+///
+/// Returns `None` for any malformed input (wrong prefix, missing type, missing
+/// slash, or non-numeric ID).
 fn split_gid(gid: &str) -> Option<(&str, u64)> {
     let rest = gid.strip_prefix(GID_PREFIX)?;
     let slash_pos = rest.find('/')?;
@@ -13,51 +16,59 @@ fn split_gid(gid: &str) -> Option<(&str, u64)> {
     Some((type_name, id))
 }
 
-/// Extract the numeric ID from a GID string.
+/// Extract the numeric ID from a Shopify GID URI.
+///
+/// For example, `gid://shopify/Product/123456` returns `123456`.
 ///
 /// # Errors
-/// Returns an error if the GID format is invalid or the ID is not a valid u64.
+/// Returns [`GidError::InvalidFormat`] when the input is not a valid GID.
 pub fn parse_gid(gid: &str) -> Result<u64, GidError> {
     split_gid(gid)
         .map(|(_, id)| id)
         .ok_or_else(|| GidError::InvalidFormat(gid.to_string()))
 }
 
-/// Extract the type name from a GID string.
+/// Extract the resource type name from a Shopify GID URI.
+///
+/// For example, `gid://shopify/Product/123456` returns `"Product"`.
 ///
 /// # Errors
-/// Returns an error if the GID format is invalid.
+/// Returns [`GidError::InvalidFormat`] when the input is not a valid GID.
 pub fn gid_to_type(gid: &str) -> Result<String, GidError> {
     split_gid(gid)
         .map(|(type_name, _)| type_name.to_string())
         .ok_or_else(|| GidError::InvalidFormat(gid.to_string()))
 }
 
-/// Create a GID string for a given type and numeric ID.
+/// Build a GID string from a resource type name and numeric ID.
 pub fn compose_gid(type_name: &str, id: u64) -> String {
     format!("{GID_PREFIX}{type_name}/{id}")
 }
 
-/// Create a GID for an OnlineStoreTheme.
+/// Shorthand for [`compose_gid`] with `"OnlineStoreTheme"` as the type.
 pub fn compose_theme_gid(id: u64) -> String {
     compose_gid("OnlineStoreTheme", id)
 }
 
-/// Create a GID for a Shop.
+/// Shorthand for [`compose_gid`] with `"Shop"` as the type.
 pub fn compose_shop_gid(id: u64) -> String {
     compose_gid("Shop", id)
 }
 
-/// Check if a string is a valid GID.
+/// Check whether a string is a syntactically valid Shopify GID.
+///
+/// This is equivalent to `parse_gid(gid).is_ok()` but avoids the `Result` overhead.
 pub fn is_gid(s: &str) -> bool {
     split_gid(s).is_some()
 }
 
-/// Errors that can occur during GID operations.
+/// Errors produced by GID parsing and composition.
 #[derive(Debug, thiserror::Error)]
 pub enum GidError {
+    /// The input string does not match the `gid://shopify/{Type}/{Id}` pattern.
     #[error("Invalid GID format: {0}")]
     InvalidFormat(String),
+    /// The ID portion of the GID could not be parsed as an integer.
     #[error("Failed to parse GID ID as integer: {0}")]
     ParseInt(#[from] ParseIntError),
 }

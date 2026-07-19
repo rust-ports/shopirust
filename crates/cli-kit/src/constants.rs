@@ -1,5 +1,7 @@
-use std::collections::HashMap;
-
+/// Registry of all Shopify CLI environment variable names.
+///
+/// Centralizes env var lookups so they're greppable and typos are impossible.
+/// Every constant maps to the upstream `environmentVariables` object.
 pub struct EnvVars;
 impl EnvVars {
     pub const ALWAYS_LOG_ANALYTICS: &'static str = "SHOPIFY_CLI_ALWAYS_LOG_ANALYTICS";
@@ -43,29 +45,44 @@ impl EnvVars {
     pub const BACKEND_PORT: &'static str = "BACKEND_PORT";
 }
 
-pub fn get_env(env: Option<&HashMap<String, String>>, key: &str) -> String {
+/// Read an env var, falling back to process env, returning empty string on miss.
+pub fn get_env(env: Option<&std::collections::HashMap<String, String>>, key: &str) -> String {
     env.and_then(|e| e.get(key).cloned())
         .or_else(|| std::env::var(key).ok())
         .unwrap_or_default()
 }
 
-pub fn get_env_opt(env: Option<&HashMap<String, String>>, key: &str) -> Option<String> {
+/// Read an env var, falling back to process env, returning `None` on miss.
+pub fn get_env_opt(
+    env: Option<&std::collections::HashMap<String, String>>,
+    key: &str,
+) -> Option<String> {
     env.and_then(|e| e.get(key).cloned())
         .or_else(|| std::env::var(key).ok())
 }
 
-pub fn is_env_truthy(env: Option<&HashMap<String, String>>, key: &str) -> bool {
+/// Check whether an env var is set to a truthy value (1/true/TRUE/yes/YES).
+pub fn is_env_truthy(
+    env: Option<&std::collections::HashMap<String, String>>,
+    key: &str,
+) -> bool {
     let val = get_env(env, key);
     matches!(val.as_str(), "1" | "true" | "TRUE" | "yes" | "YES")
 }
 
-/// Returns the service environment to determine which FQDN to use.
+/// Shopify service deployment environment.
+///
+/// - `Local` → dev server FQDNs (not yet supported, resolves to production)
+/// - `Production` → production FQDNs
 pub enum ServiceEnvironment {
     Local,
     Production,
 }
 
-pub fn service_environment(env: Option<&HashMap<String, String>>) -> ServiceEnvironment {
+/// Determine the current service environment from `SHOPIFY_SERVICE_ENV`.
+pub fn service_environment(
+    env: Option<&std::collections::HashMap<String, String>>,
+) -> ServiceEnvironment {
     let value = get_env(env, EnvVars::SERVICE_ENV);
     if value == "local" {
         ServiceEnvironment::Local
@@ -74,47 +91,56 @@ pub fn service_environment(env: Option<&HashMap<String, String>>) -> ServiceEnvi
     }
 }
 
-pub fn is_local_environment(env: Option<&HashMap<String, String>>) -> bool {
+/// Shortcut — is the service running in local dev mode?
+pub fn is_local_environment(
+    env: Option<&std::collections::HashMap<String, String>>,
+) -> bool {
     matches!(service_environment(env), ServiceEnvironment::Local)
 }
 
-/// Identity FQDN.
+/// Production Identity FQDN: `accounts.shopify.com`
 pub const IDENTITY_FQDN: &str = "accounts.shopify.com";
 
-/// Partners API FQDN.
+/// Production Partners API FQDN: `partners.shopify.com`
 pub const PARTNERS_FQDN: &str = "partners.shopify.com";
 
-/// App Management FQDN.
+/// Production App Management FQDN: `app.shopify.com`
 pub const APP_MANAGEMENT_FQDN: &str = "app.shopify.com";
 
-/// Business Platform FQDN.
+/// Production Business Platform FQDN: `destinations.shopifysvc.com`
 pub const BUSINESS_PLATFORM_FQDN: &str = "destinations.shopifysvc.com";
 
-/// Admin FQDN.
+/// Production Admin FQDN: `admin.shopify.com`
 pub const ADMIN_FQDN: &str = "admin.shopify.com";
 
-/// Developer Dashboard FQDN.
+/// Production Developer Dashboard FQDN: `dev.shopify.com`
 pub const DEVELOPER_DASHBOARD_FQDN: &str = "dev.shopify.com";
 
-/// Default theme kit access domain.
+/// Default theme kit access proxy domain.
 pub const DEFAULT_THEME_KIT_ACCESS_DOMAIN: &str = "theme-kit-access.shopifyapps.com";
 
-/// Bugsnag API key for error reporting.
+/// Bugsnag API key for crash/error reporting.
 pub const BUGSNAG_API_KEY: &str = "9e1e6889176fd0c795d5c659225e0fae";
 
-/// Reporting rate limit configuration.
+/// Maximum analytics events per report interval.
 pub const REPORTING_RATE_LIMIT_MAX: u32 = 300;
+
+/// Report interval in days for analytics rate limiting.
 pub const REPORTING_RATE_LIMIT_TIMEOUT_DAYS: u64 = 1;
 
-/// Session expiration margin in minutes.
+/// How many minutes before a session identity token actually expires we treat it as expired.
 pub const SESSION_EXPIRATION_MARGIN_MINUTES: u64 = 4;
 
-/// OAuth client ID for device authorization flow.
+/// OAuth client ID for Shopify Identity device-authorization flow.
 pub fn identity_client_id() -> &'static str {
     "fbdb2649-e327-4907-8f67-908d24cfd7e3"
 }
 
-/// Application ID per API surface for token exchange.
+/// Application ID per API surface, used when exchanging identity tokens
+/// for API-specific session tokens.
+///
+/// ## Panics
+/// Panics on unknown API names.
 pub fn identity_application_id(api: &str) -> &'static str {
     match api {
         "admin" => "7ee65a63608843c577db8b23c4d7316ea0a01bd2f7594f8a9c06ea668c1b775c",
@@ -126,54 +152,69 @@ pub fn identity_application_id(api: &str) -> &'static str {
     }
 }
 
-/// Resolve the FQDN for a given API surface.
-fn resolve_fqdn(production_fqdn: &str, env: Option<&HashMap<String, String>>) -> String {
+/// Resolve an FQDN, respecting the service environment.
+///
+/// Currently always returns `production_fqdn` regardless of environment;
+/// local-dev overrides will be wired once the dev server integration exists.
+fn resolve_fqdn(production_fqdn: &str, env: Option<&std::collections::HashMap<String, String>>) -> String {
     match service_environment(env) {
         ServiceEnvironment::Local => production_fqdn.to_string(),
         ServiceEnvironment::Production => production_fqdn.to_string(),
     }
 }
 
-pub fn partners_fqdn(env: Option<&HashMap<String, String>>) -> String {
+/// Resolved Partners API FQDN.
+pub fn partners_fqdn(env: Option<&std::collections::HashMap<String, String>>) -> String {
     resolve_fqdn(PARTNERS_FQDN, env)
 }
 
-pub fn admin_fqdn(env: Option<&HashMap<String, String>>) -> String {
+/// Resolved Admin API FQDN.
+pub fn admin_fqdn(env: Option<&std::collections::HashMap<String, String>>) -> String {
     resolve_fqdn(ADMIN_FQDN, env)
 }
 
-pub fn app_management_fqdn(env: Option<&HashMap<String, String>>) -> String {
+/// Resolved App Management FQDN.
+pub fn app_management_fqdn(env: Option<&std::collections::HashMap<String, String>>) -> String {
     resolve_fqdn(APP_MANAGEMENT_FQDN, env)
 }
 
-pub fn business_platform_fqdn(env: Option<&HashMap<String, String>>) -> String {
+/// Resolved Business Platform FQDN.
+pub fn business_platform_fqdn(env: Option<&std::collections::HashMap<String, String>>) -> String {
     resolve_fqdn(BUSINESS_PLATFORM_FQDN, env)
 }
 
-pub fn identity_fqdn(env: Option<&HashMap<String, String>>) -> String {
+/// Resolved Identity FQDN.
+pub fn identity_fqdn(env: Option<&std::collections::HashMap<String, String>>) -> String {
     resolve_fqdn(IDENTITY_FQDN, env)
 }
 
-pub fn developer_dashboard_fqdn(env: Option<&HashMap<String, String>>) -> String {
+/// Resolved Developer Dashboard FQDN.
+pub fn developer_dashboard_fqdn(env: Option<&std::collections::HashMap<String, String>>) -> String {
     resolve_fqdn(DEVELOPER_DASHBOARD_FQDN, env)
 }
 
-/// Resolve the App Dev FQDN, which is the store FQDN in production.
-pub fn app_dev_fqdn(store_fqdn: &str, env: Option<&HashMap<String, String>>) -> String {
+/// Resolve the App Dev FQDN, which maps to the store's own domain in production
+/// and to the App Management FQDN in local dev.
+pub fn app_dev_fqdn(store_fqdn: &str, env: Option<&std::collections::HashMap<String, String>>) -> String {
     match service_environment(env) {
         ServiceEnvironment::Local => app_management_fqdn(env),
         ServiceEnvironment::Production => store_fqdn.to_string(),
     }
 }
 
-/// Get the theme kit access domain, with env override support.
-pub fn theme_kit_access_domain(env: Option<&HashMap<String, String>>) -> String {
+/// Resolve the theme kit access domain, optionally overridden via env var.
+pub fn theme_kit_access_domain(
+    env: Option<&std::collections::HashMap<String, String>>,
+) -> String {
     get_env_opt(env, EnvVars::THEME_KIT_ACCESS_DOMAIN)
         .unwrap_or_else(|| DEFAULT_THEME_KIT_ACCESS_DOMAIN.to_string())
 }
 
-/// Normalize a store name to its FQDN.
-/// Adds `.myshopify.com` if no recognized domain suffix is present.
+/// Normalise a raw store value to a full `*.myshopify.com` FQDN.
+///
+/// Strips `https://` prefix, `/admin` suffix, and trailing slashes.
+/// If the cleaned string doesn't end with a recognised Shopify domain it
+/// appends `.myshopify.com`.
 pub fn normalize_store_fqdn(store: &str) -> String {
     let cleaned = store
         .trim_start_matches("https://")
@@ -191,7 +232,10 @@ pub fn normalize_store_fqdn(store: &str) -> String {
     }
 }
 
-/// Cache directory path.
+/// Platform-appropriate directory for persistent cache data.
+///
+/// Respects `$XDG_CACHE_HOME/shopify-cli`, falling back to
+/// `$HOME/.cache/shopify-cli` (Linux) or `/tmp/shopify-cli/cache`.
 pub fn cache_path() -> String {
     if let Ok(xdg) = std::env::var("XDG_CACHE_HOME") {
         return format!("{}/shopify-cli", xdg.trim_end_matches('/'));
@@ -203,12 +247,15 @@ pub fn cache_path() -> String {
     }
 }
 
-/// Vendor binaries directory under cache.
+/// Vendor binaries directory under the cache tree.
 pub fn vendor_binaries_path() -> String {
     format!("{}/vendor/binaries", cache_path())
 }
 
-/// Logs directory path.
+/// Platform-appropriate directory for log files.
+///
+/// Respects `$XDG_DATA_HOME/shopify-cli/logs`, falling back to
+/// `$HOME/.local/share/shopify-cli/logs` (Linux) or `/tmp/shopify-cli/logs`.
 pub fn logs_path() -> String {
     if let Ok(xdg) = std::env::var("XDG_DATA_HOME") {
         return format!("{}/shopify-cli/logs", xdg.trim_end_matches('/'));
@@ -234,7 +281,7 @@ mod tests {
 
     #[test]
     fn test_service_environment_local() {
-        let mut env = HashMap::new();
+        let mut env = std::collections::HashMap::new();
         env.insert(EnvVars::SERVICE_ENV.to_string(), "local".to_string());
         assert!(matches!(
             service_environment(Some(&env)),
@@ -244,7 +291,7 @@ mod tests {
 
     #[test]
     fn test_is_local_environment() {
-        let mut env = HashMap::new();
+        let mut env = std::collections::HashMap::new();
         env.insert(EnvVars::SERVICE_ENV.to_string(), "local".to_string());
         assert!(is_local_environment(Some(&env)));
         assert!(!is_local_environment(None));
@@ -302,12 +349,15 @@ mod tests {
 
     #[test]
     fn test_theme_kit_access_domain_default() {
-        assert_eq!(theme_kit_access_domain(None), DEFAULT_THEME_KIT_ACCESS_DOMAIN);
+        assert_eq!(
+            theme_kit_access_domain(None),
+            DEFAULT_THEME_KIT_ACCESS_DOMAIN
+        );
     }
 
     #[test]
     fn test_theme_kit_access_domain_override() {
-        let mut env = HashMap::new();
+        let mut env = std::collections::HashMap::new();
         env.insert(
             EnvVars::THEME_KIT_ACCESS_DOMAIN.to_string(),
             "custom.example.com".to_string(),
@@ -337,7 +387,7 @@ mod tests {
 
     #[test]
     fn test_is_env_truthy() {
-        let mut env = HashMap::new();
+        let mut env = std::collections::HashMap::new();
         env.insert("TEST_FLAG".to_string(), "1".to_string());
         assert!(is_env_truthy(Some(&env), "TEST_FLAG"));
         assert!(!is_env_truthy(None, "TEST_FLAG"));
@@ -345,9 +395,12 @@ mod tests {
 
     #[test]
     fn test_get_env_opt() {
-        let mut env = HashMap::new();
+        let mut env = std::collections::HashMap::new();
         env.insert("TEST_KEY".to_string(), "val".to_string());
-        assert_eq!(get_env_opt(Some(&env), "TEST_KEY"), Some("val".to_string()));
+        assert_eq!(
+            get_env_opt(Some(&env), "TEST_KEY"),
+            Some("val".to_string())
+        );
         assert_eq!(get_env_opt(None, "TEST_KEY"), None);
     }
 

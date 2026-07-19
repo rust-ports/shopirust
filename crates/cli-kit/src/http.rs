@@ -15,11 +15,21 @@ const USER_AGENT_STRING: &str = "Shopify CLI; v=3.94.3";
 
 // ── Custom Error ────────────────────────────────────────────────────
 
+/// Errors that can occur during HTTP operations.
+///
+/// Wraps `reqwest::Error`, HTTP status codes, timeouts, and I/O errors
+/// into a single enum so callers don't need to handle each source type
+/// separately. `reqwest::Error` has no public constructor so returning
+/// it directly from helper functions is not feasible.
 #[derive(Debug)]
 pub enum HttpError {
+    /// A `reqwest`-level error (connection refused, TLS, etc.).
     Reqwest(reqwest::Error),
+    /// A non-2xx HTTP status code with an optional body excerpt.
     Status(u16, String),
+    /// The request exceeded the configured timeout.
     Timeout,
+    /// A filesystem-level error (mostly from `download_file`).
     Io(std::io::Error),
 }
 
@@ -58,29 +68,41 @@ impl From<std::io::Error> for HttpError {
 
 // ── Request Modes ───────────────────────────────────────────────────
 
+/// Whether network-level retry on transient failures is enabled and its
+/// maximum total retry duration.
 #[derive(Debug, Clone)]
 pub struct NetworkRetryBehaviour {
     pub enabled: bool,
     pub max_retry_time_ms: u64,
 }
 
+/// Whether the request should be cancelled after a timeout.
 #[derive(Debug, Clone)]
 pub struct AutoCancelBehaviour {
     pub enabled: bool,
     pub timeout_ms: u64,
 }
 
+/// Combined request behaviour: retry policy + timeout policy.
 #[derive(Debug, Clone)]
 pub struct RequestBehaviour {
     pub use_network_retry: NetworkRetryBehaviour,
     pub use_abort_signal: AutoCancelBehaviour,
 }
 
+/// Predefined request mode presets.
+///
+/// Mirrors the upstream `RequestMode` enum used to select the appropriate
+/// HTTP client configuration for different API surfaces and contexts.
 #[derive(Debug, Clone)]
 pub enum RequestMode {
+    /// Full retry + timeout (used for Shopify API calls).
     Default,
+    /// No retry, but with timeout (used for general HTTP calls).
     NonBlocking,
+    /// No retry, no timeout (used for long-running file uploads/downloads).
     SlowRequest,
+    /// Fully custom behaviour.
     Custom(RequestBehaviour),
 }
 
@@ -122,6 +144,12 @@ impl From<RequestMode> for RequestBehaviour {
     }
 }
 
+/// Resolve the effective [`RequestBehaviour`] from a preset and env vars.
+///
+/// The `SHOPIFY_CLI_SKIP_NETWORK_LEVEL_RETRY` env var globally disables
+/// network-level retry regardless of the preset. The
+/// `SHOPIFY_CLI_MAX_REQUEST_TIME_FOR_NETWORK_CALLS` env var overrides
+/// the per-request timeout.
 pub fn request_mode(
     preset: Option<RequestMode>,
     env: Option<&HashMap<String, String>>,
@@ -176,6 +204,14 @@ pub fn request_mode(
 
 // ── Header Building ─────────────────────────────────────────────────
 
+/// Build standard HTTP headers for a Shopify API request.
+///
+/// Always includes `User-Agent`, `Cache-Control: no-cache`, and
+/// `Content-Type: application/json`. If a token is provided it is set
+/// as both the `Authorization` header and `X-Shopify-Access-Token`.
+///
+/// Token prefixes (`shpat`, `shpua`, `shpca`, `shptka`) are passed
+/// through as-is; everything else gets a `Bearer ` prefix.
 pub fn build_headers(token: Option<&str>) -> HeaderMap {
     let mut headers = HeaderMap::new();
 
@@ -214,6 +250,7 @@ pub fn build_headers(token: Option<&str>) -> HeaderMap {
 
 // ── Client Building ─────────────────────────────────────────────────
 
+/// Build a default HTTP client (no TLS enforcement).
 fn default_client() -> Client {
     Client::builder()
         .timeout(Duration::from_millis(DEFAULT_TIMEOUT_MS))
@@ -223,6 +260,7 @@ fn default_client() -> Client {
         .expect("Failed to build HTTP client")
 }
 
+/// Build a Shopify-specific HTTP client (HTTPS-only enforced).
 fn shopify_client() -> Client {
     Client::builder()
         .timeout(Duration::from_millis(DEFAULT_TIMEOUT_MS))
@@ -233,6 +271,9 @@ fn shopify_client() -> Client {
         .expect("Failed to build Shopify HTTP client")
 }
 
+/// Build a reusable [`reqwest::Client`] with a configurable timeout.
+///
+/// When `timeout_ms` is `None` the default 30-second timeout is used.
 pub fn build_client(timeout_ms: Option<u64>) -> reqwest::Result<Client> {
     Client::builder()
         .timeout(Duration::from_millis(timeout_ms.unwrap_or(DEFAULT_TIMEOUT_MS)))
@@ -241,6 +282,7 @@ pub fn build_client(timeout_ms: Option<u64>) -> reqwest::Result<Client> {
         .build()
 }
 
+/// Build a Shopify [`reqwest::Client`] that enforces HTTPS-only connections.
 pub fn build_shopify_client(timeout_ms: Option<u64>) -> reqwest::Result<Client> {
     Client::builder()
         .timeout(Duration::from_millis(timeout_ms.unwrap_or(DEFAULT_TIMEOUT_MS)))
@@ -252,6 +294,7 @@ pub fn build_shopify_client(timeout_ms: Option<u64>) -> reqwest::Result<Client> 
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
+/// Return `true` for header names that are useful in request/response logs.
 fn is_interesting_header(name: &str) -> bool {
     matches!(
         name,
@@ -259,6 +302,7 @@ fn is_interesting_header(name: &str) -> bool {
     )
 }
 
+/// Format interesting response headers into a human-readable string for debug logs.
 fn sanitized_headers_output(headers: &HeaderMap) -> String {
     let mut out = String::new();
     for (name, value) in headers.iter() {
@@ -271,13 +315,14 @@ fn sanitized_headers_output(headers: &HeaderMap) -> String {
     out
 }
 
+/// Extract the `x-request-id` header value from an HTTP response if present.
 pub fn extract_request_id(response: &Response) -> Option<&str> {
     response.headers().get("x-request-id")?.to_str().ok()
 }
 
 // ── Core Request Execution ──────────────────────────────────────────
 
-/// Build a request and send it once.
+/// Issue a single HTTP request without any retry logic.
 async fn send_once(
     client: &Client,
     method: reqwest::Method,
@@ -295,7 +340,15 @@ async fn send_once(
     req.send().await.map_err(HttpError::Reqwest)
 }
 
-/// Execute a single request, optionally with network-level retry.
+/// Execute a single HTTP request, optionally retrying on transient errors.
+///
+/// When `behaviour.use_network_retry.enabled` is `true` this loops with
+/// exponential backoff (1s, 2s, 4s… capped at 5s) up to the configured
+/// `max_retry_time_ms`. Only server errors (5xx) and transient network
+/// errors (connection reset, timeouts, etc.) are retried.
+///
+/// If `log_request` is `true`, the request URL and interesting headers
+/// are logged at `debug` level.
 async fn execute_request(
     client: &Client,
     method: reqwest::Method,
@@ -380,7 +433,10 @@ async fn execute_request(
 
 // ── Public API ───────────────────────────────────────────────────────
 
-/// Basic fetch (non-blocking by default).
+/// Issue a non-Shopify HTTP request (non-blocking mode, no retry).
+///
+/// Defaults to GET when no method is provided. Use [`shopify_fetch`] for
+/// Shopify API calls that need TLS enforcement and retry logic.
 pub async fn fetch(
     url: &str,
     method: Option<reqwest::Method>,
@@ -401,7 +457,10 @@ pub async fn fetch(
     .await
 }
 
-/// Shopify-specific fetch (default mode, TLS, logging).
+/// Issue a Shopify API request with TLS enforcement and default retry.
+///
+/// Logs request/response metadata at `debug` level. Retries on transient
+/// network errors and 5xx responses with exponential backoff.
 pub async fn shopify_fetch(
     url: &str,
     method: Option<reqwest::Method>,
@@ -422,7 +481,11 @@ pub async fn shopify_fetch(
     .await
 }
 
-/// Fetch with explicit behaviour configuration.
+/// Issue a request with explicit [`RequestBehaviour`] and logging control.
+///
+/// Uses the default (non-Shopify) HTTP client — callers that need
+/// HTTPS-only can pass a pre-built `shopify_client` via the
+/// [`execute_request`] internals or use [`shopify_fetch`] directly.
 pub async fn fetch_with_behaviour(
     url: &str,
     method: reqwest::Method,
@@ -444,7 +507,11 @@ pub async fn fetch_with_behaviour(
     .await
 }
 
-/// Download a file from a URL to a local path.
+/// Download a file from a URL and save it to a local path, creating
+/// parent directories as needed.
+///
+/// Uses [`shopify_fetch`] internally (TLS enforced, with retry).
+/// Returns the string representation of the destination path on success.
 pub async fn download_file(url: &str, to: &std::path::Path) -> Result<String, HttpError> {
     debug!("Downloading {url} to {}", to.display());
 
@@ -454,10 +521,7 @@ pub async fn download_file(url: &str, to: &std::path::Path) -> Result<String, Ht
 
     let response = shopify_fetch(url, Some(reqwest::Method::GET), None, None).await?;
 
-    let bytes = response
-        .bytes()
-        .await
-        .map_err(HttpError::Reqwest)?;
+    let bytes = response.bytes().await.map_err(HttpError::Reqwest)?;
 
     std::fs::write(to, &bytes).map_err(HttpError::Io)?;
     Ok(to.to_string_lossy().to_string())

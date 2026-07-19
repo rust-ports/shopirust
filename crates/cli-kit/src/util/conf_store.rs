@@ -7,7 +7,9 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-/// Time interval with optional days, hours, minutes, seconds.
+/// A human-friendly time interval with optional days/hours/minutes/seconds.
+///
+/// Used as a parameter type for cache TTLs, rate-limit windows, etc.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct TimeInterval {
     pub days: Option<u64>,
@@ -17,6 +19,7 @@ pub struct TimeInterval {
 }
 
 impl TimeInterval {
+    /// Create a [`TimeInterval`] from a number of seconds.
     pub fn from_secs(secs: u64) -> Self {
         Self {
             seconds: Some(secs),
@@ -24,6 +27,7 @@ impl TimeInterval {
         }
     }
 
+    /// Create a [`TimeInterval`] from a number of minutes.
     pub fn from_mins(mins: u64) -> Self {
         Self {
             minutes: Some(mins),
@@ -31,6 +35,7 @@ impl TimeInterval {
         }
     }
 
+    /// Create a [`TimeInterval`] from a number of hours.
     pub fn from_hours(hours: u64) -> Self {
         Self {
             hours: Some(hours),
@@ -39,7 +44,7 @@ impl TimeInterval {
     }
 }
 
-/// Convert a TimeInterval to milliseconds.
+/// Convert a [`TimeInterval`] to its equivalent in milliseconds.
 pub fn time_interval_to_ms(interval: TimeInterval) -> u64 {
     let total_secs = interval.days.unwrap_or(0) * 86400
         + interval.hours.unwrap_or(0) * 3600
@@ -48,6 +53,7 @@ pub fn time_interval_to_ms(interval: TimeInterval) -> u64 {
     total_secs * 1000
 }
 
+/// Monotonic milliseconds since UNIX epoch (used for cache expiry).
 fn now_ms() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -57,8 +63,11 @@ fn now_ms() -> u64 {
 
 // ── Sliding-window rate limiter ──────────────────────────────────────
 
-/// A simple sliding-window rate limiter for conf-store disk I/O.
-/// Limits writes to at most `max_ops` per `window_ms`.
+/// Sliding-window rate limiter that caps disk-write frequency.
+///
+/// Protects the config file from being written too many times per second
+/// (default: 100 ops/sec window). Callers `acquire()` before writing and
+/// sleep for the returned duration if the rate limit is exceeded.
 #[derive(Debug)]
 pub struct IoRateLimiter {
     max_ops: usize,
@@ -67,6 +76,7 @@ pub struct IoRateLimiter {
 }
 
 impl IoRateLimiter {
+    /// Create a limiter allowing at most `max_ops` per `window_ms`.
     pub fn new(max_ops: usize, window_ms: u64) -> Self {
         Self {
             max_ops,
@@ -75,14 +85,15 @@ impl IoRateLimiter {
         }
     }
 
-    /// Wait if needed to stay within the rate limit.
-    /// Returns the duration in ms the caller should wait.
+    /// Check if the operation is within the rate limit.
+    ///
+    /// Returns `Some(wait_ms)` if the caller should sleep before proceeding
+    /// to stay under the limit, or `None` if the operation can proceed.
     pub fn acquire(&self) -> Option<u64> {
         let mut timestamps = self.timestamps.lock().unwrap();
         let now = now_ms();
         let window_start = now.saturating_sub(self.window_ms);
 
-        // Remove expired timestamps
         timestamps.retain(|&t| t > window_start);
 
         if timestamps.len() < self.max_ops {
@@ -104,12 +115,14 @@ impl Default for IoRateLimiter {
 
 // ── Cache entry ──────────────────────────────────────────────────────
 
+/// A single cache entry with a value and insertion timestamp.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct CacheEntry {
     value: serde_json::Value,
     timestamp: u64,
 }
 
+/// Flat key-value map of [`CacheEntry`] items stored inside [`ConfSchema`].
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct CacheData {
     #[serde(flatten)]
@@ -118,7 +131,12 @@ pub struct CacheData {
 
 // ── ConfSchema ───────────────────────────────────────────────────────
 
-/// Schema for the CLI configuration store.
+/// Root shape of the CLI config JSON file.
+///
+/// Persisted at `~/.config/shopify-cli-{project}/config.json`.
+/// Mirrors the upstream `ConfSchema` pattern: session stores, cache, and
+/// pending device-auth records live under well-known top-level keys while
+/// arbitrary cache entries are stored in the `cache` sub-object.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ConfSchema {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -135,7 +153,10 @@ pub struct ConfSchema {
     pub pending_device_auth: Option<PendingDeviceAuth>,
 }
 
-/// Pending device auth for non-interactive login flow resumption.
+/// A partially-completed device-authorization flow.
+///
+/// Stored so the CLI can resume polling after a restart or crash before
+/// the user completes the browser-based identity handshake.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PendingDeviceAuth {
     pub device_code: String,
@@ -147,15 +168,27 @@ pub struct PendingDeviceAuth {
 
 // ── LocalStorage ─────────────────────────────────────────────────────
 
-/// A file-backed, strongly-typed persistent storage.
+/// File-backed, strongly-typed persistent config store.
+///
+/// Wraps a JSON file on disk (one per project) and exposes a
+/// `get`/`set`/`delete`/`clear` API. Writes are rate-limited via
+/// [`IoRateLimiter`] to avoid hammering the disk during rapid sequential
+/// writes (e.g., token refresh loops).
+///
+/// Distinguished keys (`"session_store"`, `"current_session_id"`, etc.)
+/// map to first-class [`ConfSchema`] fields. Everything else goes into
+/// the `cache` sub-object.
+#[derive(Debug)]
 pub struct LocalStorage {
     path: PathBuf,
     rate_limiter: IoRateLimiter,
 }
 
 impl LocalStorage {
-    /// Create a LocalStorage with the given project name.
-    /// The file is stored at `~/.config/shopify-cli-{project_name}/config.json`.
+    /// Create a [`LocalStorage`] under `~/.config/shopify-cli-{project_name}/config.json`.
+    ///
+    /// Each project gets its own directory so session and cache data for
+    /// different Shopify apps don't collide.
     pub fn new(project_name: &str) -> Self {
         let dir = dirs::config_dir()
             .unwrap_or_else(|| PathBuf::from("."))
@@ -167,7 +200,7 @@ impl LocalStorage {
         }
     }
 
-    /// Create a LocalStorage at an explicit path (for testing).
+    /// Create a [`LocalStorage`] at an explicit file path (useful in tests).
     pub fn with_path(path: PathBuf) -> Self {
         Self {
             path,
@@ -175,18 +208,24 @@ impl LocalStorage {
         }
     }
 
-    /// The path to the storage file.
+    /// The on-disk path of the config file.
     pub fn path(&self) -> &PathBuf {
         &self.path
     }
 
-    /// Get a typed value for the given key.
+    /// Deserialise the value stored at `key`.
+    ///
+    /// Returns `None` if the key doesn't exist or the stored value can't
+    /// be deserialised into `T`.
     pub fn get<T: DeserializeOwned>(&self, key: &str) -> Option<T> {
         let schema = self.load_schema().unwrap_or_default();
         Self::extract_value(&schema, key)
     }
 
-    /// Set a value for the given key.
+    /// Serialise `value` and store it at `key`.
+    ///
+    /// Respects the [`IoRateLimiter`] — may block the calling thread for
+    /// a few milliseconds if the write rate exceeds 100 ops/sec.
     pub fn set<T: Serialize>(&self, key: &str, value: &T) {
         if let Some(wait) = self.rate_limiter.acquire() {
             std::thread::sleep(Duration::from_millis(wait));
@@ -196,14 +235,14 @@ impl LocalStorage {
         let _ = self.save_schema(&schema);
     }
 
-    /// Delete a key from storage.
+    /// Remove a key from the store.
     pub fn delete(&self, key: &str) {
         let mut schema = self.load_schema().unwrap_or_default();
         Self::remove_key(&mut schema, key);
         let _ = self.save_schema(&schema);
     }
 
-    /// Clear all data.
+    /// Delete the entire config file from disk.
     pub fn clear(&self) {
         let _ = fs::remove_file(&self.path);
     }
@@ -234,10 +273,24 @@ impl LocalStorage {
     fn extract_value<T: DeserializeOwned>(schema: &ConfSchema, key: &str) -> Option<T> {
         let value = match key {
             "session_store" => schema.session_store.as_ref()?,
-            "current_session_id" => return schema.current_session_id.clone().and_then(|s| serde_json::from_value(serde_json::Value::String(s)).ok()),
+            "current_session_id" => {
+                return schema
+                    .current_session_id
+                    .clone()
+                    .and_then(|s| serde_json::from_value(serde_json::Value::String(s)).ok())
+            }
             "dev_session_store" => schema.dev_session_store.as_ref()?,
-            "current_dev_session_id" => return schema.current_dev_session_id.clone().and_then(|s| serde_json::from_value(serde_json::Value::String(s)).ok()),
-            "pending_device_auth" => return serde_json::to_value(&schema.pending_device_auth).ok().and_then(|v| serde_json::from_value(v).ok()),
+            "current_dev_session_id" => {
+                return schema
+                    .current_dev_session_id
+                    .clone()
+                    .and_then(|s| serde_json::from_value(serde_json::Value::String(s)).ok())
+            }
+            "pending_device_auth" => {
+                return serde_json::to_value(&schema.pending_device_auth)
+                    .ok()
+                    .and_then(|v| serde_json::from_value(v).ok())
+            }
             _ => {
                 if let Some(ref cache) = schema.cache {
                     let entry = cache.entries.get(key)?;
@@ -253,10 +306,16 @@ impl LocalStorage {
         let json_value = serde_json::to_value(value).unwrap_or(serde_json::Value::Null);
         match key {
             "session_store" => schema.session_store = Some(json_value),
-            "current_session_id" => schema.current_session_id = json_value.as_str().map(String::from),
+            "current_session_id" => {
+                schema.current_session_id = json_value.as_str().map(String::from)
+            }
             "dev_session_store" => schema.dev_session_store = Some(json_value),
-            "current_dev_session_id" => schema.current_dev_session_id = json_value.as_str().map(String::from),
-            "pending_device_auth" => schema.pending_device_auth = serde_json::from_value(json_value).ok(),
+            "current_dev_session_id" => {
+                schema.current_dev_session_id = json_value.as_str().map(String::from)
+            }
+            "pending_device_auth" => {
+                schema.pending_device_auth = serde_json::from_value(json_value).ok()
+            }
             _ => {
                 let cache = schema.cache.get_or_insert_with(CacheData::default);
                 cache.entries.insert(
@@ -288,16 +347,25 @@ impl LocalStorage {
 
 // ── Cache-aside operations ──────────────────────────────────────────
 
-/// The key type for cache entries.
+/// Type alias for GraphQL request cache keys.
 pub type GraphQLRequestKey = String;
 
-/// Compute a composite cache key using nonRandomUUID.
+/// Produce a deterministic composite cache key from several string parts.
+///
+/// Uses [`non_random_uuid`] (a UUID v5-style deterministic hash) so the
+/// same inputs always produce the same key. Upstream equivalent:
+/// `nonRandomUUID(parts.join("-"))`.
 pub fn composite_cache_key(parts: &[&str]) -> String {
     let joined = parts.join("-");
     non_random_uuid(&joined)
 }
 
-/// Retrieve a value from cache, or call `fetcher` to populate it.
+/// Read from cache, or call `fetcher` to populate it.
+///
+/// If `store` is `None`, a static default [`LocalStorage`] for
+/// `"shopify-cli"` is used automatically.
+///
+/// TTL is checked via the entry timestamp stored alongside the value.
 pub fn cache_retrieve_or_repopulate<V, F>(
     key: &str,
     ttl_ms: u64,
@@ -332,7 +400,7 @@ where
     value
 }
 
-/// Store a value in the cache section.
+/// Store a string value in the cache section.
 pub fn cache_store(key: &str, value: &str, store: Option<&LocalStorage>) {
     let storage = store.unwrap_or_else(|| {
         static STORE: std::sync::OnceLock<LocalStorage> = std::sync::OnceLock::new();
@@ -345,7 +413,7 @@ pub fn cache_store(key: &str, value: &str, store: Option<&LocalStorage>) {
     storage.set(key, &entry);
 }
 
-/// Retrieve a value from the cache section.
+/// Retrieve a string value from the cache section.
 pub fn cache_retrieve(key: &str, store: Option<&LocalStorage>) -> Option<String> {
     let storage = store.unwrap_or_else(|| {
         static STORE: std::sync::OnceLock<LocalStorage> = std::sync::OnceLock::new();
@@ -358,7 +426,7 @@ pub fn cache_retrieve(key: &str, store: Option<&LocalStorage>) -> Option<String>
     }
 }
 
-/// Clear all cached data.
+/// Delete all entries from the cache section.
 pub fn cache_clear(store: Option<&LocalStorage>) {
     let storage = store.unwrap_or_else(|| {
         static STORE: std::sync::OnceLock<LocalStorage> = std::sync::OnceLock::new();
@@ -369,39 +437,42 @@ pub fn cache_clear(store: Option<&LocalStorage>) {
 
 // ── Session persistence ─────────────────────────────────────────────
 
-/// Get the stored sessions JSON from the config store.
+/// Read the serialised session store from the config file.
 pub fn get_session(store: &LocalStorage) -> Option<String> {
     store.get::<String>("session_store")
 }
 
-/// Store sessions JSON in the config store.
+/// Write serialised session data to the config file.
 pub fn set_session(json: &str, store: &LocalStorage) {
     store.set("session_store", &json.to_string());
 }
 
-/// Remove stored sessions.
+/// Remove the session store from the config file.
 pub fn remove_session(store: &LocalStorage) {
     store.delete("session_store");
 }
 
-/// Get the current session ID.
+/// Read the currently-active session identifier.
 pub fn get_current_session_id(store: &LocalStorage) -> Option<String> {
     store.get::<String>("current_session_id")
 }
 
-/// Set the current session ID.
+/// Persist the currently-active session identifier.
 pub fn set_current_session_id(id: &str, store: &LocalStorage) {
     store.set("current_session_id", &id.to_string());
 }
 
-/// Remove the current session ID.
+/// Clear the currently-active session identifier.
 pub fn remove_current_session_id(store: &LocalStorage) {
     store.delete("current_session_id");
 }
 
 // ── Most-recent-occurrence ──────────────────────────────────────────
 
-/// Execute a task only if the most recent occurrence is older than `timeout_ms`.
+/// Execute a task only if the last recorded execution is older than `timeout_ms`.
+///
+/// Wraps [`cache_retrieve_or_repopulate`] with a namespaced key
+/// `"most-recent-occurrence::{key}"`.
 pub fn most_recent_occurrence<V, F>(
     key: &str,
     timeout_ms: u64,
@@ -422,14 +493,17 @@ where
 
 // ── Pending device auth ─────────────────────────────────────────────
 
+/// Read the saved device-authorization state.
 pub fn get_pending_device_auth(store: &LocalStorage) -> Option<PendingDeviceAuth> {
     store.get::<PendingDeviceAuth>("pending_device_auth")
 }
 
+/// Save device-authorization state for resumption after restart.
 pub fn set_pending_device_auth(auth: &PendingDeviceAuth, store: &LocalStorage) {
     store.set("pending_device_auth", auth);
 }
 
+/// Remove any saved device-authorization state.
 pub fn clear_pending_device_auth(store: &LocalStorage) {
     store.delete("pending_device_auth");
 }
@@ -529,7 +603,10 @@ mod tests {
         assert!(get_current_session_id(&store).is_none());
 
         set_current_session_id("session-123", &store);
-        assert_eq!(get_current_session_id(&store), Some("session-123".to_string()));
+        assert_eq!(
+            get_current_session_id(&store),
+            Some("session-123".to_string())
+        );
 
         remove_current_session_id(&store);
         assert!(get_current_session_id(&store).is_none());
@@ -572,7 +649,6 @@ mod tests {
         );
         assert_eq!(val, "fresh-value");
 
-        // Second call should return cached
         let val2: String = cache_retrieve_or_repopulate(
             "test-key",
             60000,
@@ -589,7 +665,7 @@ mod tests {
 
         let _: String = cache_retrieve_or_repopulate(
             "exp-key",
-            0, // 0 TTL = expires immediately
+            0,
             || "old".to_string(),
             Some(&store),
         );
@@ -616,7 +692,6 @@ mod tests {
     #[test]
     fn test_local_storage_new_project_name() {
         let dir = tempfile::tempdir().unwrap();
-        // Override config dir for testing
         let store = LocalStorage::with_path(dir.path().join("shopify-cli-test/config.json"));
         store.set("test", &42u64);
         let val: Option<u64> = store.get("test");
