@@ -1,89 +1,200 @@
-use crate::error::{FatalError, FatalErrorType};
 use colored::Colorize;
 
-fn box_width() -> usize {
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum BannerType {
+    Success,
+    Error,
+    Warning,
+    Info,
+    ExternalError,
+}
+
+fn type_to_color(t: BannerType) -> &'static str {
+    match t {
+        BannerType::Success => "green",
+        BannerType::Error => "red",
+        BannerType::Warning => "yellow",
+        BannerType::Info => "dim",
+        BannerType::ExternalError => "red",
+    }
+}
+
+fn type_label(t: BannerType) -> &'static str {
+    match t {
+        BannerType::Success => "success",
+        BannerType::Error => "error",
+        BannerType::Warning => "warning",
+        BannerType::Info => "info",
+        BannerType::ExternalError => "external error",
+    }
+}
+
+fn terminal_width() -> usize {
     console::Term::stderr().size().1 as usize
 }
 
-fn horizontal_line() -> String {
-    let width = box_width().min(80);
-    "─".repeat(width.saturating_sub(2))
+fn two_thirds_width() -> usize {
+    (terminal_width() * 2 / 3).max(40)
 }
 
-fn wrapped_line(text: &str, prefix: &str) -> String {
-    let width = box_width().min(80);
-    let available = width.saturating_sub(4);
-    let mut result = String::new();
+fn colorize(text: &str, color_name: &str) -> String {
+    match color_name {
+        "green" => text.green().to_string(),
+        "red" => text.red().to_string(),
+        "yellow" => text.yellow().to_string(),
+        "blue" => text.blue().to_string(),
+        "cyan" => text.cyan().to_string(),
+        "magenta" => text.magenta().to_string(),
+        "dim" => text.dimmed().to_string(),
+        _ => text.to_string(),
+    }
+}
+
+fn wrapped_line(text: &str, width: usize) -> Vec<String> {
+    let mut lines = Vec::new();
     let mut remaining = text;
     while !remaining.is_empty() {
-        if remaining.chars().count() <= available {
-            result.push_str(&format!("{} {}\n", prefix, remaining));
+        if remaining.chars().count() <= width {
+            lines.push(remaining.to_string());
             break;
         }
-        let mut split_pos = available;
+        let mut split_pos = width;
         for (i, c) in remaining.char_indices() {
-            if c.is_whitespace() && i > 0 && i < available {
+            if c.is_whitespace() && i > 0 && i <= width {
                 split_pos = i;
             }
-            if i >= available {
+            if i >= width {
                 break;
             }
         }
         let (line, rest) = remaining.split_at(split_pos);
-        result.push_str(&format!("{} {}\n", prefix, line.trim_end()));
+        lines.push(line.trim_end().to_string());
         remaining = rest.trim_start();
     }
-    result
+    lines
 }
 
-fn banner_box(headline: &str, body: &str, border_color: &str) -> String {
-    let hline = horizontal_line();
-    let border = match border_color {
-        "green" => hline.green().to_string(),
-        "yellow" => hline.yellow().to_string(),
-        "red" => hline.red().to_string(),
-        _ => hline.blue().to_string(),
-    };
-    let top = format!("┌{}┐\n", border);
-    let headline_line = format!("│ {}\n", headline.bold());
-    let body_lines = wrapped_line(body, "│");
-    let bottom = format!("└{}┘", border);
-    format!("{}{}{}{}", top, headline_line, body_lines, bottom)
+fn render_box_with_border(
+    t: BannerType,
+    headline: Option<&str>,
+    body: &str,
+    footnotes: &[(String, String)],
+) -> String {
+    let color = type_to_color(t);
+    let label = type_label(t);
+    let width = two_thirds_width();
+
+    let mut out = String::new();
+
+    let hline = "─".repeat(width - 2);
+    out.push_str(&format!("┌{}┐\n", colorize(&hline, color)));
+
+    let indent = "  ";
+    out.push_str(&format!("│{indent}{}\n", colorize(&format!(" {label} "), color)));
+
+    if let Some(h) = headline {
+        out.push_str(&format!("│ {}\n", h.bold()));
+    }
+
+    let body_width = width.saturating_sub(4);
+    for line in body.lines() {
+        let wrapped = wrapped_line(line, body_width);
+        for l in &wrapped {
+            out.push_str(&format!("│ {l}\n"));
+        }
+    }
+
+    out.push_str(&format!("└{}┘", colorize(&hline, color)));
+
+    if !footnotes.is_empty() {
+        out.push('\n');
+        for (i, (flabel, furl)) in footnotes.iter().enumerate() {
+            let display = if flabel.is_empty() { furl } else { flabel };
+            out.push_str(&format!("[{i}] {display} — {furl}\n"));
+        }
+    }
+
+    out
 }
 
-pub fn render_info(headline: &str, body: &str) {
-    let out = banner_box(headline, body, "blue");
-    eprintln!("{}", out);
+fn render_box_with_top_bottom_lines(
+    t: BannerType,
+    headline: Option<&str>,
+    body: &str,
+) -> String {
+    let color = type_to_color(t);
+    let label = type_label(t);
+    let width = two_thirds_width();
+
+    let mut out = String::new();
+
+    let prefix = colorize("──", color);
+    let label_str = format!(" {label} ");
+    let remaining = width.saturating_sub(2).saturating_sub(label_str.len().saturating_sub(2));
+    let suffix = colorize(&"─".repeat(remaining), color);
+    out.push_str(&format!("{prefix}{label_str}{suffix}\n"));
+
+    if let Some(h) = headline {
+        out.push_str(&format!("{}\n", h));
+    }
+
+    let body_width = width.saturating_sub(2);
+    for line in body.lines() {
+        let wrapped = wrapped_line(line, body_width);
+        for l in &wrapped {
+            out.push_str(&format!("{l}\n"));
+        }
+    }
+
+    out.push_str(&colorize(&"─".repeat(width), color));
+    out.push('\n');
+
+    out
 }
 
-pub fn render_success(headline: &str, body: &str) {
-    let out = banner_box(headline, body, "green");
-    eprintln!("{}", out);
+pub fn render_banner(
+    t: BannerType,
+    headline: Option<&str>,
+    body: &str,
+    footnotes: &[(String, String)],
+) -> String {
+    match t {
+        BannerType::ExternalError => {
+            render_box_with_top_bottom_lines(t, headline, body)
+        }
+        _ => render_box_with_border(t, headline, body, footnotes),
+    }
 }
 
-pub fn render_warning(headline: &str, body: &str) {
-    let out = banner_box(headline, body, "yellow");
-    eprintln!("{}", out);
+pub fn render_info(headline: &str, body: &str) -> String {
+    render_banner(BannerType::Info, Some(headline), body, &[])
 }
 
-pub fn render_error(headline: &str, body: &str) {
-    let out = banner_box(headline, body, "red");
-    eprintln!("{}", out);
+pub fn render_success(headline: &str, body: &str) -> String {
+    render_banner(BannerType::Success, Some(headline), body, &[])
 }
 
-pub fn render_fatal_error(err: &FatalError) {
-    if err.r#type == FatalErrorType::AbortSilent {
-        return;
+pub fn render_warning(headline: &str, body: &str) -> String {
+    render_banner(BannerType::Warning, Some(headline), body, &[])
+}
+
+pub fn render_error(headline: &str, body: &str) -> String {
+    render_banner(BannerType::Error, Some(headline), body, &[])
+}
+
+pub fn render_fatal_error(err: &crate::error::FatalError) -> String {
+    if matches!(err.r#type, crate::error::FatalErrorType::AbortSilent) {
+        return String::new();
     }
 
     let label = match err.r#type {
-        FatalErrorType::Bug => "Bug",
+        crate::error::FatalErrorType::Bug => "Bug",
         _ => "Error",
     };
 
     let message = err.formatted_message.as_deref().unwrap_or(&err.message);
 
-    let mut body = String::from(message);
+    let mut body = message.to_string();
     if let Some(try_msg) = &err.try_message {
         body.push_str(&format!("\n{} {}", "→".yellow(), try_msg));
     }
@@ -94,7 +205,7 @@ pub fn render_fatal_error(err: &FatalError) {
         }
     }
 
-    render_error(label, &body);
+    render_banner(BannerType::Error, Some(label), &body, &[])
 }
 
 #[cfg(test)]
@@ -102,72 +213,76 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_banner_contains_borders() {
-        let result = banner_box("Test", "This is a test body", "blue");
-        assert!(result.starts_with('┌'));
-        assert!(result.contains("Test"));
-        assert!(result.contains("This is a test body"));
-        assert!(result.ends_with('┘'));
-    }
-
-    #[test]
-    fn test_banner_headline_bold() {
-        colored::control::set_override(true);
-        let result = banner_box("Headline", "Body", "green");
-        assert!(result.contains("\x1b[1m"));
+    fn test_info_banner_contains_type() {
+        let result = render_info("Headline", "Body");
+        assert!(result.contains("info"));
         assert!(result.contains("Headline"));
+        assert!(result.contains("Body"));
     }
 
     #[test]
-    fn test_wrapped_line_splits_long_text() {
-        let long = "a b c d e f g h i j k l m n o p";
-        let result = wrapped_line(long, "│");
-        assert!(result.contains("│"));
-        assert!(result.contains("a b c d e f g h i j k"));
+    fn test_success_banner_contains_type() {
+        let result = render_success("Done", "All good");
+        assert!(result.contains("success"));
     }
 
     #[test]
-    fn test_horizontal_line_length() {
-        let line = horizontal_line();
-        assert!(!line.is_empty());
-        assert!(line.chars().all(|c| c == '─'));
+    fn test_warning_banner_contains_type() {
+        let result = render_warning("Caution", "Watch out");
+        assert!(result.contains("warning"));
     }
 
     #[test]
-    fn test_error_uses_red() {
-        colored::control::set_override(true);
-        let result = banner_box("Err", "body", "red");
-        assert!(result.contains("\x1b[31m"));
+    fn test_error_banner_contains_type() {
+        let result = render_error("Fail", "Something broke");
+        assert!(result.contains("error"));
     }
 
     #[test]
-    fn test_success_uses_green() {
-        colored::control::set_override(true);
-        let result = banner_box("OK", "body", "green");
-        assert!(result.contains("\x1b[32m"));
+    fn test_external_error_uses_top_bottom_lines() {
+        let result = render_banner(BannerType::ExternalError, Some("Ext"), "ext body", &[]);
+        assert!(result.starts_with("──"));
     }
 
     #[test]
-    fn test_fatal_error_renders_message() {
-        colored::control::set_override(true);
-        let err = crate::error::abort_error("Something broke", None::<String>, vec![]);
-        render_fatal_error(&err);
+    fn test_banner_has_borders() {
+        let result = render_success("Test", "body");
+        assert!(result.starts_with('┌'));
+    }
+
+    #[test]
+    fn test_banner_with_footnotes() {
+        let footnotes = vec![("label".into(), "url".into())];
+        let result = render_banner(BannerType::Info, None, "body", &footnotes);
+        assert!(result.contains("[0]"));
+    }
+
+    #[test]
+    fn test_render_fatal_error() {
+        use crate::error::abort_error;
+        let err = abort_error("Broke", None::<String>, vec![]);
+        let result = render_fatal_error(&err);
+        assert!(result.contains("error"));
+        assert!(result.contains("Broke"));
     }
 
     #[test]
     fn test_fatal_error_with_next_steps() {
-        colored::control::set_override(true);
-        let err = crate::error::abort_error(
+        use crate::error::abort_error;
+        let err = abort_error(
             "Deploy failed",
-            Some("Check your config"),
-            vec!["Run `railway up` again".into(), "Check logs".into()],
+            Some("Check config"),
+            vec!["Retry".into()],
         );
-        render_fatal_error(&err);
+        let result = render_fatal_error(&err);
+        assert!(result.contains("Next steps"));
     }
 
     #[test]
-    fn test_fatal_error_abort_silent_skips_output() {
-        let err = crate::error::abort_silent_error();
-        render_fatal_error(&err);
+    fn test_fatal_error_abort_silent_is_empty() {
+        use crate::error::abort_silent_error;
+        let err = abort_silent_error();
+        let result = render_fatal_error(&err);
+        assert_eq!(result, "");
     }
 }
