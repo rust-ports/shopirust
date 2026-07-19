@@ -1,6 +1,7 @@
 pub mod analytics;
 pub mod cache;
 pub mod collections;
+pub mod conf_store;
 pub mod config;
 pub mod context;
 pub mod crypto;
