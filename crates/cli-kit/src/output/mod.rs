@@ -8,6 +8,8 @@ pub mod link;
 pub mod list;
 pub mod progress;
 pub mod prompt;
+pub mod table;
+pub mod tasks;
 
 use colored::Colorize;
 
