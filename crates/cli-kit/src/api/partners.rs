@@ -1,7 +1,14 @@
-use crate::api::graphql::GraphqlClient;
+use crate::api::graphql::{GraphqlClient, GraphqlRequestError};
+use crate::api::rate_limiter::ApiRateLimiter;
+use crate::api::utilities::add_cursor_and_filters_to_app_logs_url;
+use crate::constants::partners_fqdn;
 use serde::{Deserialize, Serialize};
+use std::sync::OnceLock;
 
-// ── Domain types ─────────────────────────────────────────────────
+fn partners_rate_limiter() -> ApiRateLimiter {
+    static LIMITER: OnceLock<ApiRateLimiter> = OnceLock::new();
+    LIMITER.get_or_init(ApiRateLimiter::shopify_default).clone()
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -120,8 +127,6 @@ pub struct CreateAppResult {
     pub app: Option<OrganizationApp>,
     pub user_errors: Vec<UserError>,
 }
-
-// ── GraphQL response wrappers (private) ──────────────────────────
 
 #[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -244,8 +249,6 @@ struct DevStoreOrg {
 struct CurrentAccountInfoResponse {
     current_account_info: AccountInfo,
 }
-
-// ── Query constants ─────────────────────────────────────────────
 
 const ALL_ORGS_QUERY: &str = r#"
 query AllOrgs {
@@ -441,37 +444,59 @@ query currentAccountInfo {
 }
 "#;
 
-// ── PartnersClient ──────────────────────────────────────────────
-
+/// Client for the Shopify Partners GraphQL API.
+///
+/// Wraps [`GraphqlClient`] with Partners-specific rate limiting (150 ms
+/// minimum interval, 10 max concurrent), FQDN resolution, and cache/auth
+/// passthrough. Provides high-level query methods for organizations, apps,
+/// extension registrations, dev stores, and deployments.
 pub struct PartnersClient {
     graphql: GraphqlClient,
 }
 
 impl PartnersClient {
+    /// Wrap an existing [`GraphqlClient`] as a Partners client.
     pub fn new(graphql: GraphqlClient) -> Self {
         Self { graphql }
     }
 
+    /// Build a Partners client from a raw token and optional env map.
+    ///
+    /// The client is configured with the Partners rate limiter and resolves
+    /// the FQDN at construction time.
+    pub fn new_with_token(
+        token: String,
+        env: Option<std::collections::HashMap<String, String>>,
+    ) -> Self {
+        let url = format!(
+            "https://{}/api/cli/graphql",
+            partners_fqdn(env.as_ref()),
+        );
+        let graphql = GraphqlClient::new(url, Some(token))
+            .with_rate_limiter(partners_rate_limiter());
+        Self { graphql }
+    }
+
+    /// Consume the client and return the underlying [`GraphqlClient`].
     pub fn into_inner(self) -> GraphqlClient {
         self.graphql
     }
 
+    /// Fetch all organizations accessible with the current token.
     pub async fn organizations(
         &self,
-    ) -> Result<Vec<Organization>, crate::api::graphql::GraphqlRequestError> {
+    ) -> Result<Vec<Organization>, GraphqlRequestError> {
         let resp: OrgsResponse = self.graphql.query(ALL_ORGS_QUERY).await?;
-        tracing::trace!(
-            "organizations response: {} nodes",
-            resp.organizations.nodes.len()
-        );
         Ok(resp.organizations.nodes)
     }
 
+    /// Fetch an organization by ID, including its apps (optionally filtered
+    /// by title).
     pub async fn org_from_id(
         &self,
         id: &str,
         app_title: Option<&str>,
-    ) -> Result<Option<OrgWithAppsInfo>, crate::api::graphql::GraphqlRequestError> {
+    ) -> Result<Option<OrgWithAppsInfo>, GraphqlRequestError> {
         let vars = serde_json::json!({ "id": id, "title": app_title });
         let resp: OrgDetailResponse = self
             .graphql
@@ -499,10 +524,11 @@ impl PartnersClient {
             }))
     }
 
+    /// Fetch an organization by ID, returning only its ID and name.
     pub async fn org_from_id_basic(
         &self,
         id: &str,
-    ) -> Result<Option<Organization>, crate::api::graphql::GraphqlRequestError> {
+    ) -> Result<Option<Organization>, GraphqlRequestError> {
         let vars = serde_json::json!({ "id": id });
         let resp: OrgsResponse = self
             .graphql
@@ -511,10 +537,11 @@ impl PartnersClient {
         Ok(resp.organizations.nodes.into_iter().next())
     }
 
+    /// Fetch an app by its API key.
     pub async fn app_from_id(
         &self,
         api_key: &str,
-    ) -> Result<Option<OrganizationApp>, crate::api::graphql::GraphqlRequestError> {
+    ) -> Result<Option<OrganizationApp>, GraphqlRequestError> {
         let vars = serde_json::json!({ "apiKey": api_key });
         let resp: AppResponse = self
             .graphql
@@ -523,13 +550,14 @@ impl PartnersClient {
         Ok(resp.app)
     }
 
+    /// Create a new app in the given organization.
     pub async fn create_app(
         &self,
         org_id: i64,
         title: &str,
         app_url: &str,
         redirect_urls: Vec<&str>,
-    ) -> Result<CreateAppResult, crate::api::graphql::GraphqlRequestError> {
+    ) -> Result<CreateAppResult, GraphqlRequestError> {
         let vars = serde_json::json!({
             "org": org_id,
             "title": title,
@@ -544,11 +572,12 @@ impl PartnersClient {
         Ok(resp.app_create)
     }
 
+    /// Deploy an app version from a bundle URL.
     pub async fn deploy_app(
         &self,
         api_key: &str,
         bundle_url: &str,
-    ) -> Result<DeployResult, crate::api::graphql::GraphqlRequestError> {
+    ) -> Result<DeployResult, GraphqlRequestError> {
         let vars = serde_json::json!({
             "apiKey": api_key,
             "bundleUrl": bundle_url,
@@ -560,12 +589,13 @@ impl PartnersClient {
         Ok(resp.app_deploy)
     }
 
+    /// Update the application URL and redirect URL whitelist for an app.
     pub async fn update_urls(
         &self,
         api_key: &str,
         application_url: &str,
         redirect_url_whitelist: Vec<&str>,
-    ) -> Result<Vec<UserError>, crate::api::graphql::GraphqlRequestError> {
+    ) -> Result<Vec<UserError>, GraphqlRequestError> {
         let vars = serde_json::json!({
             "apiKey": api_key,
             "applicationUrl": application_url,
@@ -578,10 +608,12 @@ impl PartnersClient {
         Ok(resp.app_update.user_errors)
     }
 
+    /// Fetch all extension registrations (standard, configuration, and
+    /// dashboard-managed) for an app.
     pub async fn extension_registrations(
         &self,
         api_key: &str,
-    ) -> Result<Vec<ExtensionRegistration>, crate::api::graphql::GraphqlRequestError> {
+    ) -> Result<Vec<ExtensionRegistration>, GraphqlRequestError> {
         let vars = serde_json::json!({ "apiKey": api_key });
         let resp: ExtensionRegistrationsResponse = self
             .graphql
@@ -593,10 +625,11 @@ impl PartnersClient {
         Ok(all)
     }
 
+    /// Fetch dev stores for a given organization.
     pub async fn dev_stores_by_org(
         &self,
         org_id: &str,
-    ) -> Result<Vec<OrganizationStore>, crate::api::graphql::GraphqlRequestError> {
+    ) -> Result<Vec<OrganizationStore>, GraphqlRequestError> {
         let vars = serde_json::json!({ "id": org_id });
         let resp: DevStoresResponse = self
             .graphql
@@ -612,15 +645,27 @@ impl PartnersClient {
             .unwrap_or_default())
     }
 
+    /// Fetch the current account info (user email or service account name).
     pub async fn current_account_info(
         &self,
-    ) -> Result<AccountInfo, crate::api::graphql::GraphqlRequestError> {
+    ) -> Result<AccountInfo, GraphqlRequestError> {
         let resp: CurrentAccountInfoResponse =
             self.graphql.query(CURRENT_ACCOUNT_INFO_QUERY).await?;
         Ok(resp.current_account_info)
     }
+
+    /// Build a Partners app logs polling URL with optional cursor and filters.
+    pub fn generate_fetch_app_log_url(
+        cursor: Option<&str>,
+        filters: Option<std::collections::HashMap<String, String>>,
+    ) -> String {
+        let fqdn = partners_fqdn(None);
+        let url = format!("https://{fqdn}/app_logs/poll");
+        add_cursor_and_filters_to_app_logs_url(&url, cursor, filters)
+    }
 }
 
+/// Summary of an organization with its apps and pagination info.
 #[derive(Debug, Clone)]
 pub struct OrgWithAppsInfo {
     pub id: String,
@@ -629,6 +674,7 @@ pub struct OrgWithAppsInfo {
     pub apps_page_info: bool,
 }
 
+/// Minimal app info returned in org listings.
 #[derive(Debug, Clone)]
 pub struct MinimalApp {
     pub id: String,
@@ -647,6 +693,24 @@ mod tests {
     fn mock_client(server: &MockServer) -> PartnersClient {
         let gql = GraphqlClient::new(server.uri(), None);
         PartnersClient::new(gql)
+    }
+
+    #[test]
+    fn new_with_token_sets_fqdn() {
+        let client = PartnersClient::new_with_token("shpat_test".into(), None);
+        assert!(client.graphql.url.contains("partners.shopify.com"));
+    }
+
+    #[test]
+    fn generate_fetch_app_log_url_basic() {
+        let url = PartnersClient::generate_fetch_app_log_url(None, None);
+        assert!(url.starts_with("https://partners.shopify.com/app_logs/poll"));
+    }
+
+    #[test]
+    fn generate_fetch_app_log_url_with_cursor() {
+        let url = PartnersClient::generate_fetch_app_log_url(Some("abc"), None);
+        assert!(url.contains("abc"));
     }
 
     #[tokio::test]

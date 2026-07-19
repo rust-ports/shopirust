@@ -12,15 +12,19 @@ const THEME_KIT_ACCESS_DOMAIN: &str = "theme-kit-access.shopifyapps.com";
 const PUBLIC_API_VERSIONS_QUERY: &str =
     "query publicApiVersions { publicApiVersions { handle supported } }";
 
+/// A session bound to a specific store with its FQDN and auth token.
 #[derive(Debug, Clone)]
 pub struct AdminSession {
     pub store_fqdn: String,
     pub token: String,
 }
 
+/// Errors that can occur during Admin API operations.
 #[derive(Debug)]
 pub enum AdminError {
+    /// Recoverable error with an optional try-message.
     Abort(String, Option<String>),
+    /// Internal bug that should be reported.
     Bug(String),
 }
 
@@ -49,12 +53,19 @@ struct ApiVersionsResponse {
     public_api_versions: Vec<ApiVersion>,
 }
 
+/// A single API version returned by the public API versions endpoint.
 #[derive(Debug, Deserialize, Serialize)]
 pub struct ApiVersion {
     pub handle: String,
     pub supported: bool,
 }
 
+/// Client for the Shopify Admin GraphQL and REST APIs.
+///
+/// Supports both normal store tokens and theme access tokens (`shptka_*`).
+/// When using theme access, requests are routed through
+/// `theme-kit-access.shopifyapps.com` with `x-shopify-shop` and
+/// `x-shopify-access-token` headers injected automatically.
 pub struct AdminClient {
     session: AdminSession,
     client: reqwest::Client,
@@ -62,6 +73,7 @@ pub struct AdminClient {
 }
 
 impl AdminClient {
+    /// Create a new client from an [`AdminSession`].
     pub fn new(session: AdminSession) -> Self {
         let client = crate::http::build_client(None).expect("failed to build HTTP client");
         Self {
@@ -71,6 +83,7 @@ impl AdminClient {
         }
     }
 
+    /// Create a client with a pre-built `reqwest::Client`.
     pub fn with_client(session: AdminSession, client: reqwest::Client) -> Self {
         Self {
             session,
@@ -79,10 +92,12 @@ impl AdminClient {
         }
     }
 
+    /// Whether the session token is a theme access token (`shptka_*`).
     pub fn is_theme_access_session(&self) -> bool {
         self.session.token.starts_with("shptka_")
     }
 
+    /// Access the underlying session.
     pub fn session(&self) -> &AdminSession {
         &self.session
     }
@@ -144,6 +159,7 @@ impl AdminClient {
         client
     }
 
+    /// Fetch the latest supported API version, caching the result per store.
     pub async fn fetch_latest_api_version(&self) -> Result<String, AdminError> {
         {
             let cache = self.latest_version.lock().unwrap();
@@ -165,6 +181,7 @@ impl AdminClient {
         Ok(latest)
     }
 
+    /// Fetch the list of public API versions from the store.
     pub async fn fetch_api_versions(&self) -> Result<Vec<ApiVersion>, AdminError> {
         let client = self.graphql_client_for_version("unstable");
         let result: Result<ApiVersionsResponse, GraphqlRequestError> =
@@ -202,6 +219,8 @@ impl AdminClient {
         }
     }
 
+    /// Execute a GraphQL query against the Admin API, auto-resolving the
+    /// latest API version.
     pub async fn query<T: DeserializeOwned + serde::Serialize>(
         &self,
         query: &str,
@@ -215,6 +234,7 @@ impl AdminClient {
         client.query_with_variables(query, variables).await
     }
 
+    /// Execute a REST request (GET, POST, PUT, DELETE) against the Admin API.
     pub async fn rest_request<T: DeserializeOwned>(
         &self,
         method: reqwest::Method,
@@ -252,6 +272,7 @@ impl AdminClient {
         }
     }
 
+    /// Execute a GET request against the Admin REST API.
     pub async fn get<T: DeserializeOwned>(
         &self,
         path: &str,
@@ -261,6 +282,7 @@ impl AdminClient {
             .await
     }
 
+    /// Execute a POST request against the Admin REST API.
     pub async fn post<T: DeserializeOwned>(
         &self,
         path: &str,
@@ -270,6 +292,7 @@ impl AdminClient {
             .await
     }
 
+    /// Execute a PUT request against the Admin REST API.
     pub async fn put<T: DeserializeOwned>(
         &self,
         path: &str,
@@ -279,6 +302,7 @@ impl AdminClient {
             .await
     }
 
+    /// Execute a DELETE request against the Admin REST API.
     pub async fn delete(&self, path: &str) -> Result<RestResponse<serde_json::Value>, RestError> {
         self.rest_request(reqwest::Method::DELETE, path, None, None, None)
             .await
