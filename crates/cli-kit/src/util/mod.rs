@@ -6,6 +6,7 @@ pub mod context;
 pub mod crypto;
 pub mod environment;
 pub mod fs;
+pub mod gid;
 pub mod git;
 pub mod json;
 pub mod metadata;
