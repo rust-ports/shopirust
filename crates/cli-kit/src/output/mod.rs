@@ -5,6 +5,7 @@ pub mod alert;
 pub mod banner;
 pub mod concurrent_output;
 pub mod colors;
+pub mod components;
 pub mod engine;
 pub mod figures;
 pub mod inflector;
