@@ -1,31 +1,118 @@
 use crate::api::graphql::{CacheOptions, GraphqlClient, GraphqlRequestError, UnauthorizedHandler};
 use crate::constants::business_platform_fqdn;
 use serde::de::DeserializeOwned;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 
-/// Client for the Shopify Business Platform APIs.
-///
-/// Supports two endpoints:
-/// - **Destinations API** (`/destinations/api/2020-07/graphql`) — general business
-///   platform queries via [`request`](Self::request).
-/// - **Organizations API** (`/organizations/api/unstable/organization/{id}/graphql`) —
-///   organization-scoped queries via [`organizations_request`](Self::organizations_request).
+const DESTINATIONS_QUERY: &str = r#"
+query BusinessPlatformDestinations {
+  destinations {
+    nodes {
+      id
+      name
+      type
+      enabled
+    }
+  }
+}
+"#;
+
+const ORGANIZATIONS_QUERY: &str = r#"
+query BusinessPlatformOrganizations {
+  organizations {
+    nodes {
+      id
+      name
+      email
+    }
+  }
+}
+"#;
+
+const ORG_BY_HASHED_EMAIL_QUERY: &str = r#"
+query OrgByHashedEmail($hashedEmail: String!) {
+  organizationByHashedEmail(hashedEmail: $hashedEmail) {
+    id
+    name
+    email
+  }
+}
+"#;
+
+const USER_EMAIL_QUERY: &str = r#"
+query CurrentAccountInfo {
+  currentAccountInfo {
+    email
+  }
+}
+"#;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Destination {
+    pub id: String,
+    pub name: String,
+    pub r#type: Option<String>,
+    pub enabled: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BusinessPlatformOrganization {
+    pub id: String,
+    pub name: String,
+    pub email: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CurrentAccountInfo {
+    pub email: Option<String>,
+}
+
+#[derive(Deserialize, Serialize)]
+struct DestinationsData {
+    destinations: DestinationsConnection,
+}
+
+#[derive(Deserialize, Serialize)]
+struct DestinationsConnection {
+    nodes: Vec<Destination>,
+}
+
+#[derive(Deserialize, Serialize)]
+struct OrganizationsData {
+    organizations: OrganizationsConnection,
+}
+
+#[derive(Deserialize, Serialize)]
+struct OrganizationsConnection {
+    nodes: Vec<BusinessPlatformOrganization>,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct OrgByHashedEmailData {
+    organization_by_hashed_email: Option<BusinessPlatformOrganization>,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct UserEmailData {
+    current_account_info: CurrentAccountInfo,
+}
+
 pub struct BusinessPlatformClient {
-    /// Authentication token for every request.
     pub token: String,
-    /// Optional environment overrides (used for FQDN resolution).
     pub env: Option<HashMap<String, String>>,
 }
 
 impl BusinessPlatformClient {
-    /// Create a new client with the given auth token and optional env map.
     pub fn new(token: String, env: Option<HashMap<String, String>>) -> Self {
         Self { token, env }
     }
 
-    /// Execute a GraphQL query against the Destinations API.
     pub async fn request<T, V>(
         &self,
         query: &str,
@@ -53,8 +140,6 @@ impl BusinessPlatformClient {
         client.query_with_variables(query, variables).await
     }
 
-    /// Execute a GraphQL query against the Organizations API, scoped to the
-    /// given `organization_id`.
     pub async fn organizations_request<T, V>(
         &self,
         organization_id: &str,
@@ -81,6 +166,65 @@ impl BusinessPlatformClient {
         }
 
         client.query_with_variables(query, variables).await
+    }
+
+    pub async fn destinations_query(
+        &self,
+    ) -> Result<Vec<Destination>, GraphqlRequestError> {
+        let resp: DestinationsData = self
+            .request(DESTINATIONS_QUERY, None::<serde_json::Value>, None, None)
+            .await?;
+        Ok(resp.destinations.nodes)
+    }
+
+    pub async fn organizations_query(
+        &self,
+        organization_id: &str,
+    ) -> Result<Vec<BusinessPlatformOrganization>, GraphqlRequestError> {
+        let resp: OrganizationsData = self
+            .organizations_request(
+                organization_id,
+                ORGANIZATIONS_QUERY,
+                None::<serde_json::Value>,
+                None,
+                None,
+            )
+            .await?;
+        Ok(resp.organizations.nodes)
+    }
+
+    pub async fn org_by_hashed_email(
+        &self,
+        organization_id: &str,
+        hashed_email: &str,
+    ) -> Result<Option<BusinessPlatformOrganization>, GraphqlRequestError> {
+        let vars = serde_json::json!({ "hashedEmail": hashed_email });
+        let resp: OrgByHashedEmailData = self
+            .organizations_request(
+                organization_id,
+                ORG_BY_HASHED_EMAIL_QUERY,
+                Some(vars),
+                None,
+                None,
+            )
+            .await?;
+        Ok(resp.organization_by_hashed_email)
+    }
+
+    pub async fn user_email(
+        &self,
+        organization_id: &str,
+    ) -> Result<Option<String>, GraphqlRequestError> {
+        let resp: UserEmailData = self
+            .organizations_request(
+                organization_id,
+                USER_EMAIL_QUERY,
+                None::<serde_json::Value>,
+                None,
+                None,
+            )
+            .await?;
+        Ok(resp.current_account_info.email)
     }
 }
 
@@ -124,5 +268,55 @@ mod tests {
     fn client_new_env_none() {
         let client = BusinessPlatformClient::new("t".into(), None);
         assert!(client.env.is_none());
+    }
+
+    #[test]
+    fn destination_deserialize() {
+        let json = serde_json::json!({
+            "id": "dest-1",
+            "name": "My Store",
+            "type": "online_store",
+            "enabled": true
+        });
+        let d: Destination = serde_json::from_value(json).unwrap();
+        assert_eq!(d.name, "My Store");
+    }
+
+    #[test]
+    fn business_platform_org_deserialize() {
+        let json = serde_json::json!({
+            "id": "org-1",
+            "name": "Test Org",
+            "email": "admin@test.com"
+        });
+        let o: BusinessPlatformOrganization = serde_json::from_value(json).unwrap();
+        assert_eq!(o.name, "Test Org");
+    }
+
+    #[test]
+    fn current_account_info_deserialize() {
+        let json = serde_json::json!({"email": "user@shop.com"});
+        let info: CurrentAccountInfo = serde_json::from_value(json).unwrap();
+        assert_eq!(info.email, Some("user@shop.com".into()));
+    }
+
+    #[test]
+    fn destinations_has_query() {
+        assert!(DESTINATIONS_QUERY.contains("destinations"));
+    }
+
+    #[test]
+    fn organizations_has_query() {
+        assert!(ORGANIZATIONS_QUERY.contains("organizations"));
+    }
+
+    #[test]
+    fn org_by_hashed_email_has_query() {
+        assert!(ORG_BY_HASHED_EMAIL_QUERY.contains("organizationByHashedEmail"));
+    }
+
+    #[test]
+    fn user_email_has_query() {
+        assert!(USER_EMAIL_QUERY.contains("currentAccountInfo"));
     }
 }

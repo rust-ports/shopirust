@@ -389,50 +389,21 @@ Wire everything into the public-facing API. Build test tooling.
 
 ---
 
-## Phase 8 — `cli-api` Crate (+1,000 LOC)
-
-### 8.1 New crate `crates/cli-api/`
-- [x] `Cargo.toml` with `cli-kit`, `async-trait`, `serde` deps
-
-### 8.2 `crates/cli-api/src/traits.rs`
-- [x] `DeveloperPlatformClient` trait with ~50 methods
-- [x] `organizations()`, `org_and_apps()`, `org_from_id()`
-- [x] `app_from_id()`, `app_from_id_basic()`, `app_from_name()`
-- [x] `app_extension_registrations()`, `specifications()`, `template_specifications()`
-- [x] `create_app()`, `update_urls()`, `deploy()`, `release()`
-- [x] `dev_session_create/update/delete()`, `generate_signed_upload_url()`
-- [x] `active_app_version()`, `app_versions()`, `app_versions_diff()`
-- [x] `send_sample_webhook()`, `api_versions()`, `topics()`
-- [x] `subscribe_to_app_logs()`, `app_logs()`
-- [x] `target_schema_definition()`, `api_schema_definition()`
-- [x] `create_extension()` etc.
-
-### 8.3 `crates/cli-api/src/select.rs`
-- [x] `select_developer_platform_client()` — runtime resolution
-
-### 8.4 `crates/cli-api/src/partners.rs`
-- [x] `PartnersClient` implements `DeveloperPlatformClient`
-
-### 8.5 `crates/cli-api/src/app_management.rs`
-- [x] `AppManagementClient` implements `DeveloperPlatformClient`
-
----
-
-## Phase 9 — Theme Crate (+3,500 LOC)
+## Phase 8 — Theme Crate (+3,500 LOC)
 
 New crate `crates/theme/`. Details in PORT.md §5.3.
 Commands: `push`, `pull`, `dev`, `delete`, `list`, `info`, `open`, `share`, `check`.
 
 ---
 
-## Phase 10 — App Crate (+5,000 LOC)
+## Phase 9 — App Crate (+5,000 LOC)
 
 New crate `crates/app/`. Details in PORT.md §5.2.
 Commands: `dev`, `deploy`, `build`, `init`, `generate`, `env`, `config`, `function`, `logs`, `versions`, `webhook`, `release`, `bulk`.
 
 ---
 
-## Phase 11 — Remaining Domain Crates (+3,000 LOC)
+## Phase 10 — Remaining Domain Crates (+3,000 LOC)
 
 - [x] `store` crate — `store create` command
 - [x] `organizations` crate — org selection
@@ -443,7 +414,7 @@ Commands: `dev`, `deploy`, `build`, `init`, `generate`, `env`, `config`, `functi
 
 ---
 
-## Phase 12 — Polish & Release (+1,500 LOC)
+## Phase 11 — Polish & Release (+1,500 LOC)
 
 - [x] `cargo doc` — fix all doc warnings
 - [x] Full integration test suite — every command
