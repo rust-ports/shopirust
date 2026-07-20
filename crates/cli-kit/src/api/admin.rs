@@ -783,11 +783,6 @@ mod tests {
     }
 
     #[test]
-    fn list_themes_path() {
-        assert!(true, "list_themes calls GET /themes.json");
-    }
-
-    #[test]
     fn metafield_definitions_has_query() {
         assert!(METAFIELD_DEFINITIONS_QUERY.contains("metafieldDefinitions"));
     }
