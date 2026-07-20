@@ -135,9 +135,7 @@ impl WebhooksClient {
         client.query_with_variables(query, variables).await
     }
 
-    pub async fn api_versions(
-        &self,
-    ) -> Result<Vec<WebhookApiVersion>, GraphqlRequestError> {
+    pub async fn api_versions(&self) -> Result<Vec<WebhookApiVersion>, GraphqlRequestError> {
         let resp: ApiVersionsResponse = self
             .request(API_VERSIONS_QUERY, None::<serde_json::Value>, None, None)
             .await?;
@@ -149,9 +147,7 @@ impl WebhooksClient {
         api_version: &str,
     ) -> Result<Vec<WebhookTopic>, GraphqlRequestError> {
         let vars = serde_json::json!({ "apiVersion": api_version });
-        let resp: TopicsResponse = self
-            .request(TOPICS_QUERY, Some(vars), None, None)
-            .await?;
+        let resp: TopicsResponse = self.request(TOPICS_QUERY, Some(vars), None, None).await?;
         Ok(resp.webhook_topics)
     }
 

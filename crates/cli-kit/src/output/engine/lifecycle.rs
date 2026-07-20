@@ -24,22 +24,23 @@ pub fn run_prompt<T>(
 
     let mut last_line_count: usize = 0;
 
-    let render_frame = |comp: &mut dyn Prompt<Value = T>, ctx: &RenderContext, line_count: usize| {
-        if line_count > 0 {
-            let _ = crossterm::execute!(
-                std::io::stdout(),
-                MoveToPreviousLine(line_count as u16),
-                Clear(ClearType::FromCursorDown),
-            );
-        }
-        let mut buf = String::new();
-        comp.render(&mut RenderMode::Ansi(&mut buf), ctx);
-        let lines = buf.lines().count();
-        let output = buf.replace('\n', "\r\n");
-        let _ = write!(std::io::stdout(), "\r{}", output);
-        let _ = std::io::stdout().flush();
-        lines
-    };
+    let render_frame =
+        |comp: &mut dyn Prompt<Value = T>, ctx: &RenderContext, line_count: usize| {
+            if line_count > 0 {
+                let _ = crossterm::execute!(
+                    std::io::stdout(),
+                    MoveToPreviousLine(line_count as u16),
+                    Clear(ClearType::FromCursorDown),
+                );
+            }
+            let mut buf = String::new();
+            comp.render(&mut RenderMode::Ansi(&mut buf), ctx);
+            let lines = buf.lines().count();
+            let output = buf.replace('\n', "\r\n");
+            let _ = write!(std::io::stdout(), "\r{}", output);
+            let _ = std::io::stdout().flush();
+            lines
+        };
 
     let result = loop {
         last_line_count = render_frame(component, ctx, last_line_count);

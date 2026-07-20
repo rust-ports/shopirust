@@ -168,9 +168,7 @@ impl BusinessPlatformClient {
         client.query_with_variables(query, variables).await
     }
 
-    pub async fn destinations_query(
-        &self,
-    ) -> Result<Vec<Destination>, GraphqlRequestError> {
+    pub async fn destinations_query(&self) -> Result<Vec<Destination>, GraphqlRequestError> {
         let resp: DestinationsData = self
             .request(DESTINATIONS_QUERY, None::<serde_json::Value>, None, None)
             .await?;

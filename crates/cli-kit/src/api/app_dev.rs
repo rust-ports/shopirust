@@ -120,11 +120,7 @@ pub struct AppDevClient {
 }
 
 impl AppDevClient {
-    pub fn new(
-        shop_fqdn: String,
-        token: String,
-        env: Option<HashMap<String, String>>,
-    ) -> Self {
+    pub fn new(shop_fqdn: String, token: String, env: Option<HashMap<String, String>>) -> Self {
         Self {
             shop_fqdn,
             token,
@@ -152,10 +148,7 @@ impl AppDevClient {
 
         let mut extra_headers = HeaderMap::new();
         if let Ok(value) = HeaderValue::from_str(&self.shop_fqdn) {
-            extra_headers.insert(
-                HeaderName::from_static("x-forwarded-host"),
-                value,
-            );
+            extra_headers.insert(HeaderName::from_static("x-forwarded-host"), value);
         }
         client = client.with_extra_headers(extra_headers);
 
