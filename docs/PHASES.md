@@ -1,6 +1,6 @@
 # CLI-Kit Phase Plan & Checklist
 
-**Current**: ~19,574 LOC / 104 files / ~40% of upstream cli-kit
+**Current**: 773 tests / clippy clean / wiremock tests complete for all Phase 2 clients
 **Target**: ~22,000 LOC / 100+ files / 100% of upstream cli-kit
 
 ---
@@ -43,7 +43,7 @@
 - [x] `organizations_query()` — organizations API query
 - [x] `org_by_hashed_email()` — find org by email hash
 - [x] `user_email()` — get user email
-- [ ] Wiremock tests
+- [x] Wiremock tests (6 tests)
 
 ### 2.3 `api/functions.rs` (121 → ~200 LOC)
 - [x] Struct `FunctionsClient`
@@ -51,7 +51,7 @@
 - [x] `api_schema_definition()` — schema for a given API
 - [x] `target_schema_definition()` — schema for function target
 - [x] `function_active_version()` — active function version
-- [ ] Wiremock tests
+- [x] Wiremock tests (4 tests)
 
 ### 2.4 `api/webhooks.rs` (113 → ~200 LOC)
 - [x] Struct `WebhooksClient`
@@ -59,7 +59,7 @@
 - [x] `api_versions()` — available API versions
 - [x] `topics()` — available webhook topics
 - [x] `send_sample_webhook()` — send test webhook
-- [ ] Wiremock tests
+- [x] Wiremock tests (5 tests)
 
 ### 2.5 `api/app_dev.rs` (127 → ~200 LOC)
 - [x] Struct `AppDevClient` with `x-forwarded-host` injection
@@ -67,7 +67,7 @@
 - [x] `dev_session_create()`
 - [x] `dev_session_update()`
 - [x] `dev_session_delete()`
-- [ ] Wiremock tests
+- [x] Wiremock tests (4 tests)
 
 ### 2.6 `api/partners.rs` (1,045 → ~1,500 LOC)
 - [x] All 11 domain methods implemented (organizations, apps, extensions, deploy, stores, account)
@@ -78,8 +78,8 @@
 - [x] Struct `AdminClient` + `AdminError` + query/rest_request infrastructure
 - [x] `fetch_latest_api_version()` with caching per store
 - [x] `fetch_api_versions()` with 403/401/404 handling
-- [ ] `list_themes()` — all themes for a store
-- [ ] `get_theme()` — single theme by ID
+- [x] `list_themes()` — all themes for a store
+- [x] `get_theme()` — single theme by ID
 - [ ] `create_theme()` — create new theme
 - [ ] `update_theme()` — update theme metadata
 - [ ] `delete_theme()` — delete theme
@@ -90,9 +90,9 @@
 - [ ] `upsert_theme_files()` — create/update theme files
 - [ ] `delete_theme_files()` — delete theme files
 - [ ] `public_api_versions()` — discover available API versions (cached)
-- [ ] `metafield_definitions_by_owner_type()`
-- [ ] `online_store_password_protection()`
-- [ ] Wiremock tests for every method
+- [x] `metafield_definitions_by_owner_type()`
+- [x] `online_store_password_protection()`
+- [x] Wiremock tests for 6 methods (themes list/get, fetch_api_versions, metafield_definitions, password_protection)
 
 ---
 
