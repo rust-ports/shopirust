@@ -36,34 +36,34 @@
 - [x] Struct `BusinessPlatformClient`
 - [x] `new()` — two base URLs (Destinations + Organizations)
 - [x] Generic `request()` + `organizations_request()`
-- [ ] `destinations_query()` — destinations API query
-- [ ] `organizations_query()` — organizations API query
-- [ ] `org_by_hashed_email()` — find org by email hash
-- [ ] `user_email()` — get user email
+- [x] `destinations_query()` — destinations API query
+- [x] `organizations_query()` — organizations API query
+- [x] `org_by_hashed_email()` — find org by email hash
+- [x] `user_email()` — get user email
 - [ ] Wiremock tests
 
 ### 2.3 `api/functions.rs` (121 → ~200 LOC)
 - [x] Struct `FunctionsClient`
 - [x] `new()` + generic `request()` + rate limiter
-- [ ] `api_schema_definition()` — schema for a given API
-- [ ] `target_schema_definition()` — schema for function target
-- [ ] `function_active_version()` — active function version
+- [x] `api_schema_definition()` — schema for a given API
+- [x] `target_schema_definition()` — schema for function target
+- [x] `function_active_version()` — active function version
 - [ ] Wiremock tests
 
 ### 2.4 `api/webhooks.rs` (113 → ~200 LOC)
 - [x] Struct `WebhooksClient`
 - [x] `new()` + generic `request()` + rate limiter
-- [ ] `api_versions()` — available API versions
-- [ ] `topics()` — available webhook topics
-- [ ] `send_sample_webhook()` — send test webhook
+- [x] `api_versions()` — available API versions
+- [x] `topics()` — available webhook topics
+- [x] `send_sample_webhook()` — send test webhook
 - [ ] Wiremock tests
 
 ### 2.5 `api/app_dev.rs` (127 → ~200 LOC)
 - [x] Struct `AppDevClient` with `x-forwarded-host` injection
 - [x] `new()` + generic `request()` + rate limiter
-- [ ] `dev_session_create()`
-- [ ] `dev_session_update()`
-- [ ] `dev_session_delete()`
+- [x] `dev_session_create()`
+- [x] `dev_session_update()`
+- [x] `dev_session_delete()`
 - [ ] Wiremock tests
 
 ### 2.6 `api/partners.rs` (1,045 → ~1,500 LOC)
