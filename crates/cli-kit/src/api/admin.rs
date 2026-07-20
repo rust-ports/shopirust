@@ -129,6 +129,7 @@ struct PasswordProtectionResponse {
 }
 
 #[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
 struct ApiVersionsResponse {
     public_api_versions: Vec<ApiVersion>,
 }
@@ -174,6 +175,8 @@ pub struct AdminClient {
     session: AdminSession,
     client: reqwest::Client,
     latest_version: Mutex<HashMap<String, String>>,
+    graphql_client: Option<GraphqlClient>,
+    rest_client: Option<RestClient>,
 }
 
 impl AdminClient {
@@ -183,6 +186,8 @@ impl AdminClient {
             session,
             client,
             latest_version: Mutex::new(HashMap::new()),
+            graphql_client: None,
+            rest_client: None,
         }
     }
 
@@ -191,6 +196,22 @@ impl AdminClient {
             session,
             client,
             latest_version: Mutex::new(HashMap::new()),
+            graphql_client: None,
+            rest_client: None,
+        }
+    }
+
+    pub fn with_clients(
+        session: AdminSession,
+        graphql_client: GraphqlClient,
+        rest_client: RestClient,
+    ) -> Self {
+        Self {
+            session,
+            client: crate::http::build_client(None).expect("failed to build HTTP client"),
+            latest_version: Mutex::new(HashMap::new()),
+            graphql_client: Some(graphql_client),
+            rest_client: Some(rest_client),
         }
     }
 
@@ -221,8 +242,11 @@ impl AdminClient {
         }
     }
 
-    fn graphql_client_for_version(&self, version: &str) -> GraphqlClient {
-        let url = self.admin_graphql_url(version);
+    fn graphql_client_for_version(&self, _version: &str) -> GraphqlClient {
+        if let Some(ref gql) = self.graphql_client {
+            return gql.clone();
+        }
+        let url = self.admin_graphql_url(_version);
         let mut client =
             GraphqlClient::with_client(url, Some(self.session.token.clone()), self.client.clone());
         if self.is_theme_access_session() {
@@ -240,8 +264,11 @@ impl AdminClient {
         client
     }
 
-    fn rest_client_for_version(&self, version: &str) -> RestClient {
-        let base_url = self.admin_rest_base_url(version);
+    fn rest_client_for_version(&self, _version: &str) -> RestClient {
+        if let Some(ref rest) = self.rest_client {
+            return rest.clone();
+        }
+        let base_url = self.admin_rest_base_url(_version);
         let mut client =
             RestClient::with_client(base_url, self.session.token.clone(), self.client.clone());
         if self.is_theme_access_session() {
@@ -790,5 +817,203 @@ mod tests {
     #[test]
     fn password_protection_has_query() {
         assert!(ONLINE_STORE_PASSWORD_PROTECTION_QUERY.contains("onlineStorePasswordProtection"));
+    }
+
+    // ===== Wiremock Tests =====
+
+    fn mock_admin_client(server: &wiremock::MockServer) -> AdminClient {
+        let session = AdminSession {
+            store_fqdn: "test-store.myshopify.com".into(),
+            token: "shpat_test".into(),
+        };
+        let gql = GraphqlClient::new(server.uri(), Some("shpat_test".into()));
+        let rest = RestClient::new(server.uri(), "shpat_test");
+        AdminClient::with_clients(session, gql, rest)
+    }
+
+    #[tokio::test]
+    async fn list_themes_returns_list() {
+        let mock_server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(wiremock::matchers::method("GET"))
+            .and(wiremock::matchers::path("/themes.json"))
+            .respond_with(
+                wiremock::ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                    "themes": [
+                        { "id": 1, "name": "Default", "role": "main" },
+                        { "id": 2, "name": "Custom", "role": null },
+                    ]
+                })),
+            )
+            .mount(&mock_server)
+            .await;
+
+        let client = mock_admin_client(&mock_server);
+        let themes = client.list_themes().await.unwrap();
+        assert_eq!(themes.len(), 2);
+        assert_eq!(themes[0].name, "Default");
+    }
+
+    #[tokio::test]
+    async fn list_themes_returns_empty() {
+        let mock_server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(wiremock::matchers::method("GET"))
+            .and(wiremock::matchers::path("/themes.json"))
+            .respond_with(
+                wiremock::ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                    "themes": []
+                })),
+            )
+            .mount(&mock_server)
+            .await;
+
+        let client = mock_admin_client(&mock_server);
+        let themes = client.list_themes().await.unwrap();
+        assert!(themes.is_empty());
+    }
+
+    #[tokio::test]
+    async fn get_theme_returns_theme() {
+        let mock_server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(wiremock::matchers::method("GET"))
+            .and(wiremock::matchers::path("/themes/1.json"))
+            .respond_with(
+                wiremock::ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                    "theme": { "id": 1, "name": "Default", "role": "main" }
+                })),
+            )
+            .mount(&mock_server)
+            .await;
+
+        let client = mock_admin_client(&mock_server);
+        let theme = client.get_theme(1).await.unwrap();
+        assert!(theme.is_some());
+        assert_eq!(theme.unwrap().name, "Default");
+    }
+
+    #[tokio::test]
+    async fn get_theme_returns_none_when_not_found() {
+        let mock_server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(wiremock::matchers::method("GET"))
+            .and(wiremock::matchers::path("/themes/999.json"))
+            .respond_with(wiremock::ResponseTemplate::new(404))
+            .mount(&mock_server)
+            .await;
+
+        let client = mock_admin_client(&mock_server);
+        let result = client.get_theme(999).await;
+        assert!(result.is_err());
+    }
+
+    fn mock_version_response() -> wiremock::MockBuilder {
+        wiremock::Mock::given(wiremock::matchers::method("POST")).and(
+            wiremock::matchers::body_string_contains("publicApiVersions"),
+        )
+    }
+
+    fn mock_version_template() -> wiremock::ResponseTemplate {
+        wiremock::ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": {
+                "publicApiVersions": [
+                    { "handle": "2024-07", "supported": true },
+                    { "handle": "unstable", "supported": true },
+                ]
+            },
+            "extensions": { "cost": { "actualQueryCost": null, "throttleStatus": null } }
+        }))
+    }
+
+    #[tokio::test]
+    async fn fetch_api_versions_returns_versions() {
+        let mock_server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(wiremock::matchers::method("POST"))
+            .and(wiremock::matchers::body_string_contains(
+                "publicApiVersions",
+            ))
+            .respond_with(
+                wiremock::ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                    "data": {
+                        "publicApiVersions": [
+                            { "handle": "2024-07", "supported": true },
+                            { "handle": "2024-10", "supported": true },
+                        ]
+                    },
+                    "extensions": { "cost": { "actualQueryCost": null, "throttleStatus": null } }
+                })),
+            )
+            .mount(&mock_server)
+            .await;
+
+        let client = mock_admin_client(&mock_server);
+        let versions = client.fetch_api_versions().await.unwrap();
+        assert_eq!(versions.len(), 2);
+        assert_eq!(versions[0].handle, "2024-07");
+    }
+
+    #[tokio::test]
+    async fn metafield_definitions_returns_list() {
+        let mock_server = wiremock::MockServer::start().await;
+        mock_version_response()
+            .respond_with(mock_version_template())
+            .mount(&mock_server)
+            .await;
+
+        wiremock::Mock::given(wiremock::matchers::method("POST"))
+            .respond_with(
+                wiremock::ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                    "data": {
+                        "metafieldDefinitions": [
+                            {
+                                "id": "gid://shopify/MetafieldDefinition/1",
+                                "name": "Brand Color",
+                                "namespace": "custom",
+                                "key": "brand_color",
+                                "type": { "name": "single_line_text_field" },
+                                "description": "Primary brand color",
+                                "pinnedPosition": 1,
+                            }
+                        ]
+                    },
+                    "extensions": { "cost": { "actualQueryCost": null, "throttleStatus": null } }
+                })),
+            )
+            .mount(&mock_server)
+            .await;
+
+        let client = mock_admin_client(&mock_server);
+        let defs = client
+            .metafield_definitions_by_owner_type("PRODUCT")
+            .await
+            .unwrap();
+        assert_eq!(defs.len(), 1);
+        assert_eq!(defs[0].name, "Brand Color");
+    }
+
+    #[tokio::test]
+    async fn online_store_password_protection_returns_status() {
+        let mock_server = wiremock::MockServer::start().await;
+        mock_version_response()
+            .respond_with(mock_version_template())
+            .mount(&mock_server)
+            .await;
+
+        wiremock::Mock::given(wiremock::matchers::method("POST"))
+            .respond_with(
+                wiremock::ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                    "data": {
+                        "onlineStorePasswordProtection": {
+                            "enabled": true,
+                            "password": "secret123"
+                        }
+                    },
+                    "extensions": { "cost": { "actualQueryCost": null, "throttleStatus": null } }
+                })),
+            )
+            .mount(&mock_server)
+            .await;
+
+        let client = mock_admin_client(&mock_server);
+        let protection = client.online_store_password_protection().await.unwrap();
+        assert!(protection.is_some());
+        assert!(protection.unwrap().enabled);
     }
 }

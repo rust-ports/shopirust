@@ -91,6 +91,7 @@ pub struct WebhooksClient {
     pub organization_id: String,
     pub token: String,
     pub env: Option<HashMap<String, String>>,
+    graphql: Option<GraphqlClient>,
 }
 
 impl WebhooksClient {
@@ -103,6 +104,16 @@ impl WebhooksClient {
             organization_id,
             token,
             env,
+            graphql: None,
+        }
+    }
+
+    pub fn with_graphql(organization_id: String, graphql: GraphqlClient) -> Self {
+        Self {
+            organization_id,
+            token: String::new(),
+            env: None,
+            graphql: Some(graphql),
         }
     }
 
@@ -117,6 +128,10 @@ impl WebhooksClient {
         T: DeserializeOwned + Serialize,
         V: Serialize,
     {
+        if let Some(ref gql) = self.graphql {
+            return gql.query_with_variables(query, variables).await;
+        }
+
         let url = format!(
             "https://{}/webhooks/unstable/organizations/{}/graphql.json",
             app_management_fqdn(self.env.as_ref()),
@@ -250,5 +265,132 @@ mod tests {
     #[test]
     fn send_sample_webhook_has_mutation() {
         assert!(SEND_SAMPLE_WEBHOOK_MUTATION.contains("sendSampleWebhook"));
+    }
+
+    // ===== Wiremock Tests =====
+
+    #[tokio::test]
+    async fn api_versions_returns_list() {
+        let mock_server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(wiremock::matchers::method("POST"))
+            .respond_with(
+                wiremock::ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                    "data": {
+                        "webhookApiVersions": [
+                            { "id": "1", "handle": "2024-07" },
+                            { "id": "2", "handle": "2024-10" },
+                        ]
+                    },
+                    "extensions": { "cost": { "actualQueryCost": null, "throttleStatus": null } }
+                })),
+            )
+            .mount(&mock_server)
+            .await;
+
+        let client = mock_webhooks_client(&mock_server);
+        let versions = client.api_versions().await.unwrap();
+        assert_eq!(versions.len(), 2);
+        assert_eq!(versions[0].handle, "2024-07");
+    }
+
+    #[tokio::test]
+    async fn api_versions_returns_empty() {
+        let mock_server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(wiremock::matchers::method("POST"))
+            .respond_with(
+                wiremock::ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                    "data": { "webhookApiVersions": [] },
+                    "extensions": { "cost": { "actualQueryCost": null, "throttleStatus": null } }
+                })),
+            )
+            .mount(&mock_server)
+            .await;
+
+        let client = mock_webhooks_client(&mock_server);
+        let versions = client.api_versions().await.unwrap();
+        assert!(versions.is_empty());
+    }
+
+    #[tokio::test]
+    async fn topics_returns_list() {
+        let mock_server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(wiremock::matchers::method("POST"))
+            .respond_with(
+                wiremock::ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                    "data": {
+                        "webhookTopics": [
+                            { "topic": "orders/create", "description": "Order created" },
+                            { "topic": "products/update", "description": "Product updated" },
+                        ]
+                    },
+                    "extensions": { "cost": { "actualQueryCost": null, "throttleStatus": null } }
+                })),
+            )
+            .mount(&mock_server)
+            .await;
+
+        let client = mock_webhooks_client(&mock_server);
+        let topics = client.topics("2024-07").await.unwrap();
+        assert_eq!(topics.len(), 2);
+        assert_eq!(topics[0].topic, "orders/create");
+    }
+
+    #[tokio::test]
+    async fn send_sample_webhook_sends() {
+        let mock_server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(wiremock::matchers::method("POST"))
+            .respond_with(
+                wiremock::ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                    "data": {
+                        "sendSampleWebhook": {
+                            "sampleWebhookId": "wh-123",
+                            "userErrors": []
+                        }
+                    },
+                    "extensions": { "cost": { "actualQueryCost": null, "throttleStatus": null } }
+                })),
+            )
+            .mount(&mock_server)
+            .await;
+
+        let client = mock_webhooks_client(&mock_server);
+        let result = client
+            .send_sample_webhook("orders/create", "2024-07", "https://hook.example", "secret")
+            .await
+            .unwrap();
+        assert_eq!(result.sample_webhook_id, Some("wh-123".into()));
+        assert!(result.user_errors.is_empty());
+    }
+
+    #[tokio::test]
+    async fn send_sample_webhook_returns_errors() {
+        let mock_server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(wiremock::matchers::method("POST"))
+            .respond_with(
+                wiremock::ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                    "data": {
+                        "sendSampleWebhook": {
+                            "sampleWebhookId": null,
+                            "userErrors": [{ "field": ["topic"], "message": "Invalid topic" }]
+                        }
+                    },
+                    "extensions": { "cost": { "actualQueryCost": null, "throttleStatus": null } }
+                })),
+            )
+            .mount(&mock_server)
+            .await;
+
+        let client = mock_webhooks_client(&mock_server);
+        let result = client
+            .send_sample_webhook("bad/topic", "2024-07", "https://hook.example", "secret")
+            .await
+            .unwrap();
+        assert!(result.sample_webhook_id.is_none());
+        assert_eq!(result.user_errors.len(), 1);
+    }
+
+    fn mock_webhooks_client(server: &wiremock::MockServer) -> WebhooksClient {
+        let gql = GraphqlClient::new(server.uri(), None);
+        WebhooksClient::with_graphql("org-1".into(), gql)
     }
 }

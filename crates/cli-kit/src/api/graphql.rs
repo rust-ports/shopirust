@@ -163,6 +163,7 @@ impl Default for CacheOptions {
 ///   refresh
 /// - GraphQL cost-based rate-limit back-off (``wait_for_rate_limit_restore``)
 /// - Optional [`ApiRateLimiter`] for concurrency control
+#[derive(Clone)]
 pub struct GraphqlClient {
     client: reqwest::Client,
     pub url: String,

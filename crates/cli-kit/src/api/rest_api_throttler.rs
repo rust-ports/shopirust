@@ -37,6 +37,7 @@ pub struct RestResponse<T> {
 ///
 /// Constructs URLs as `{base_url}/{path}.json` and sends the appropriate
 /// authorization header based on token prefix.
+#[derive(Clone)]
 pub struct RestClient {
     client: reqwest::Client,
     base_url: String,

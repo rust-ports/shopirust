@@ -106,11 +106,24 @@ struct UserEmailData {
 pub struct BusinessPlatformClient {
     pub token: String,
     pub env: Option<HashMap<String, String>>,
+    graphql: Option<GraphqlClient>,
 }
 
 impl BusinessPlatformClient {
     pub fn new(token: String, env: Option<HashMap<String, String>>) -> Self {
-        Self { token, env }
+        Self {
+            token,
+            env,
+            graphql: None,
+        }
+    }
+
+    pub fn with_graphql(graphql: GraphqlClient) -> Self {
+        Self {
+            token: String::new(),
+            env: None,
+            graphql: Some(graphql),
+        }
     }
 
     pub async fn request<T, V>(
@@ -124,6 +137,10 @@ impl BusinessPlatformClient {
         T: DeserializeOwned + Serialize,
         V: Serialize,
     {
+        if let Some(ref gql) = self.graphql {
+            return gql.query_with_variables(query, variables).await;
+        }
+
         let url = format!(
             "https://{}/destinations/api/2020-07/graphql",
             business_platform_fqdn(self.env.as_ref()),
@@ -152,6 +169,10 @@ impl BusinessPlatformClient {
         T: DeserializeOwned + Serialize,
         V: Serialize,
     {
+        if let Some(ref gql) = self.graphql {
+            return gql.query_with_variables(query, variables).await;
+        }
+
         let url = format!(
             "https://{}/organizations/api/unstable/organization/{organization_id}/graphql",
             business_platform_fqdn(self.env.as_ref()),
@@ -316,5 +337,149 @@ mod tests {
     #[test]
     fn user_email_has_query() {
         assert!(USER_EMAIL_QUERY.contains("currentAccountInfo"));
+    }
+
+    // ===== Wiremock Tests =====
+
+    #[tokio::test]
+    async fn destinations_query_returns_list() {
+        let mock_server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(wiremock::matchers::method("POST"))
+            .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "data": {
+                    "destinations": {
+                        "nodes": [
+                            { "id": "dest-1", "name": "My Store", "type": "online_store", "enabled": true },
+                            { "id": "dest-2", "name": "Other Store", "type": "pos", "enabled": false },
+                        ]
+                    }
+                },
+                "extensions": { "cost": { "actualQueryCost": null, "throttleStatus": null } }
+            })))
+            .mount(&mock_server)
+            .await;
+
+        let client = mock_biz_platform_client(&mock_server);
+        let destinations = client.destinations_query().await.unwrap();
+        assert_eq!(destinations.len(), 2);
+        assert_eq!(destinations[0].name, "My Store");
+    }
+
+    #[tokio::test]
+    async fn destinations_query_returns_empty() {
+        let mock_server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(wiremock::matchers::method("POST"))
+            .respond_with(
+                wiremock::ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                    "data": { "destinations": { "nodes": [] } },
+                    "extensions": { "cost": { "actualQueryCost": null, "throttleStatus": null } }
+                })),
+            )
+            .mount(&mock_server)
+            .await;
+
+        let client = mock_biz_platform_client(&mock_server);
+        let destinations = client.destinations_query().await.unwrap();
+        assert!(destinations.is_empty());
+    }
+
+    #[tokio::test]
+    async fn organizations_query_returns_list() {
+        let mock_server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(wiremock::matchers::method("POST"))
+            .respond_with(
+                wiremock::ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                    "data": {
+                        "organizations": {
+                            "nodes": [
+                                { "id": "org-1", "name": "Org One", "email": "admin1@test.com" },
+                                { "id": "org-2", "name": "Org Two", "email": "admin2@test.com" },
+                            ]
+                        }
+                    },
+                    "extensions": { "cost": { "actualQueryCost": null, "throttleStatus": null } }
+                })),
+            )
+            .mount(&mock_server)
+            .await;
+
+        let client = mock_biz_platform_client(&mock_server);
+        let orgs = client.organizations_query("org-1").await.unwrap();
+        assert_eq!(orgs.len(), 2);
+        assert_eq!(orgs[1].name, "Org Two");
+    }
+
+    #[tokio::test]
+    async fn org_by_hashed_email_finds_org() {
+        let mock_server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(wiremock::matchers::method("POST"))
+            .respond_with(
+                wiremock::ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                    "data": {
+                        "organizationByHashedEmail": {
+                            "id": "org-1",
+                            "name": "Found Org",
+                            "email": "admin@test.com"
+                        }
+                    },
+                    "extensions": { "cost": { "actualQueryCost": null, "throttleStatus": null } }
+                })),
+            )
+            .mount(&mock_server)
+            .await;
+
+        let client = mock_biz_platform_client(&mock_server);
+        let org = client
+            .org_by_hashed_email("org-1", "hash123")
+            .await
+            .unwrap();
+        assert!(org.is_some());
+        assert_eq!(org.unwrap().name, "Found Org");
+    }
+
+    #[tokio::test]
+    async fn org_by_hashed_email_returns_none_when_not_found() {
+        let mock_server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(wiremock::matchers::method("POST"))
+            .respond_with(
+                wiremock::ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                    "data": { "organizationByHashedEmail": null },
+                    "extensions": { "cost": { "actualQueryCost": null, "throttleStatus": null } }
+                })),
+            )
+            .mount(&mock_server)
+            .await;
+
+        let client = mock_biz_platform_client(&mock_server);
+        let org = client
+            .org_by_hashed_email("org-1", "unknown")
+            .await
+            .unwrap();
+        assert!(org.is_none());
+    }
+
+    #[tokio::test]
+    async fn user_email_returns_email() {
+        let mock_server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(wiremock::matchers::method("POST"))
+            .respond_with(
+                wiremock::ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                    "data": {
+                        "currentAccountInfo": { "email": "user@shop.com" }
+                    },
+                    "extensions": { "cost": { "actualQueryCost": null, "throttleStatus": null } }
+                })),
+            )
+            .mount(&mock_server)
+            .await;
+
+        let client = mock_biz_platform_client(&mock_server);
+        let email = client.user_email("org-1").await.unwrap();
+        assert_eq!(email, Some("user@shop.com".into()));
+    }
+
+    fn mock_biz_platform_client(server: &wiremock::MockServer) -> BusinessPlatformClient {
+        let gql = GraphqlClient::new(server.uri(), None);
+        BusinessPlatformClient::with_graphql(gql)
     }
 }

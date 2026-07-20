@@ -82,6 +82,7 @@ pub struct FunctionsClient {
     pub app_id: String,
     pub token: String,
     pub env: Option<HashMap<String, String>>,
+    graphql: Option<GraphqlClient>,
 }
 
 impl FunctionsClient {
@@ -96,6 +97,17 @@ impl FunctionsClient {
             app_id,
             token,
             env,
+            graphql: None,
+        }
+    }
+
+    pub fn with_graphql(organization_id: String, app_id: String, graphql: GraphqlClient) -> Self {
+        Self {
+            organization_id,
+            app_id,
+            token: String::new(),
+            env: None,
+            graphql: Some(graphql),
         }
     }
 
@@ -110,6 +122,10 @@ impl FunctionsClient {
         T: DeserializeOwned + Serialize,
         V: Serialize,
     {
+        if let Some(ref gql) = self.graphql {
+            return gql.query_with_variables(query, variables).await;
+        }
+
         let url = format!(
             "https://{}/functions/unstable/organizations/{}/{}/graphql",
             app_management_fqdn(self.env.as_ref()),
@@ -247,5 +263,115 @@ mod tests {
     #[test]
     fn function_active_version_has_query() {
         assert!(FUNCTION_ACTIVE_VERSION_QUERY.contains("functionActiveVersion"));
+    }
+
+    // ===== Wiremock Tests =====
+
+    #[tokio::test]
+    async fn api_schema_definition_returns_schema() {
+        let mock_server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(wiremock::matchers::method("POST"))
+            .respond_with(
+                wiremock::ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                    "data": {
+                        "apiSchemaDefinition": {
+                            "schema": "type Query { ping: String }",
+                            "apiType": "graphql",
+                            "hash": "abc123"
+                        }
+                    },
+                    "extensions": { "cost": { "actualQueryCost": null, "throttleStatus": null } }
+                })),
+            )
+            .mount(&mock_server)
+            .await;
+
+        let client = mock_functions_client(&mock_server);
+        let result = client
+            .api_schema_definition("key-1", "2024-07")
+            .await
+            .unwrap();
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().hash, "abc123");
+    }
+
+    #[tokio::test]
+    async fn api_schema_definition_returns_none_when_not_found() {
+        let mock_server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(wiremock::matchers::method("POST"))
+            .respond_with(
+                wiremock::ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                    "data": { "apiSchemaDefinition": null },
+                    "extensions": { "cost": { "actualQueryCost": null, "throttleStatus": null } }
+                })),
+            )
+            .mount(&mock_server)
+            .await;
+
+        let client = mock_functions_client(&mock_server);
+        let result = client
+            .api_schema_definition("key-1", "2024-07")
+            .await
+            .unwrap();
+        assert!(result.is_none());
+    }
+
+    #[tokio::test]
+    async fn target_schema_definition_returns_schema() {
+        let mock_server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(wiremock::matchers::method("POST"))
+            .respond_with(
+                wiremock::ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                    "data": {
+                        "targetSchemaDefinition": {
+                            "schema": "type Query { ping: String }",
+                            "apiType": "graphql",
+                            "hash": "def456"
+                        }
+                    },
+                    "extensions": { "cost": { "actualQueryCost": null, "throttleStatus": null } }
+                })),
+            )
+            .mount(&mock_server)
+            .await;
+
+        let client = mock_functions_client(&mock_server);
+        let result = client
+            .target_schema_definition("key-1", "2024-07", "my-target")
+            .await
+            .unwrap();
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().hash, "def456");
+    }
+
+    #[tokio::test]
+    async fn function_active_version_returns_version() {
+        let mock_server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(wiremock::matchers::method("POST"))
+            .respond_with(
+                wiremock::ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                    "data": {
+                        "functionActiveVersion": {
+                            "id": "fv-1",
+                            "versionTag": "v1",
+                            "definition": {"input": "String"},
+                            "active": true
+                        }
+                    },
+                    "extensions": { "cost": { "actualQueryCost": null, "throttleStatus": null } }
+                })),
+            )
+            .mount(&mock_server)
+            .await;
+
+        let client = mock_functions_client(&mock_server);
+        let result = client.function_active_version("key-1").await.unwrap();
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().id, "fv-1");
+    }
+
+    fn mock_functions_client(server: &wiremock::MockServer) -> FunctionsClient {
+        let gql = GraphqlClient::new(server.uri(), None);
+        FunctionsClient::with_graphql("org-1".into(), "app-1".into(), gql)
     }
 }

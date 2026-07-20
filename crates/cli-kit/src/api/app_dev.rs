@@ -117,6 +117,7 @@ pub struct AppDevClient {
     pub shop_fqdn: String,
     pub token: String,
     pub env: Option<HashMap<String, String>>,
+    graphql: Option<GraphqlClient>,
 }
 
 impl AppDevClient {
@@ -125,6 +126,21 @@ impl AppDevClient {
             shop_fqdn,
             token,
             env,
+            graphql: None,
+        }
+    }
+
+    pub fn with_graphql(shop_fqdn: String, graphql: GraphqlClient) -> Self {
+        let mut extra_headers = HeaderMap::new();
+        if let Ok(value) = HeaderValue::from_str(&shop_fqdn) {
+            extra_headers.insert(HeaderName::from_static("x-forwarded-host"), value);
+        }
+        let graphql = graphql.with_extra_headers(extra_headers);
+        Self {
+            shop_fqdn,
+            token: String::new(),
+            env: None,
+            graphql: Some(graphql),
         }
     }
 
@@ -139,6 +155,10 @@ impl AppDevClient {
         T: DeserializeOwned + Serialize,
         V: Serialize,
     {
+        if let Some(ref gql) = self.graphql {
+            return gql.query_with_variables(query, variables).await;
+        }
+
         let url = format!(
             "https://{}/app_dev/unstable/graphql.json",
             app_management_fqdn(self.env.as_ref()),
@@ -299,5 +319,126 @@ mod tests {
     #[test]
     fn dev_session_delete_has_mutation() {
         assert!(DEV_SESSION_DELETE_MUTATION.contains("devSessionDelete"));
+    }
+
+    // ===== Wiremock Tests =====
+
+    #[tokio::test]
+    async fn dev_session_creates() {
+        let mock_server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(wiremock::matchers::method("POST"))
+            .respond_with(
+                wiremock::ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                    "data": {
+                        "devSessionCreate": {
+                            "devSession": {
+                                "id": "ds-1",
+                                "title": "my session",
+                                "appId": "app-1",
+                                "shopFqdn": "shop.test"
+                            },
+                            "userErrors": []
+                        }
+                    },
+                    "extensions": { "cost": { "actualQueryCost": null, "throttleStatus": null } }
+                })),
+            )
+            .mount(&mock_server)
+            .await;
+
+        let client = mock_app_dev_client(&mock_server);
+        let result = client
+            .dev_session_create("app-1", "my session", "token123", "store.test")
+            .await
+            .unwrap();
+        assert!(result.dev_session.is_some());
+        assert_eq!(result.dev_session.as_ref().unwrap().id, "ds-1");
+    }
+
+    #[tokio::test]
+    async fn dev_session_creates_with_user_errors() {
+        let mock_server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(wiremock::matchers::method("POST"))
+            .respond_with(
+                wiremock::ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                    "data": {
+                        "devSessionCreate": {
+                            "devSession": null,
+                            "userErrors": [{ "field": ["title"], "message": "Title required" }]
+                        }
+                    },
+                    "extensions": { "cost": { "actualQueryCost": null, "throttleStatus": null } }
+                })),
+            )
+            .mount(&mock_server)
+            .await;
+
+        let client = mock_app_dev_client(&mock_server);
+        let result = client
+            .dev_session_create("app-1", "", "token123", "store.test")
+            .await
+            .unwrap();
+        assert!(result.dev_session.is_none());
+        assert_eq!(result.user_errors.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn dev_session_updates() {
+        let mock_server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(wiremock::matchers::method("POST"))
+            .respond_with(
+                wiremock::ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                    "data": {
+                        "devSessionUpdate": {
+                            "devSession": {
+                                "id": "ds-1",
+                                "title": "updated",
+                                "appId": "app-1",
+                                "shopFqdn": "shop.test"
+                            },
+                            "userErrors": []
+                        }
+                    },
+                    "extensions": { "cost": { "actualQueryCost": null, "throttleStatus": null } }
+                })),
+            )
+            .mount(&mock_server)
+            .await;
+
+        let client = mock_app_dev_client(&mock_server);
+        let result = client
+            .dev_session_update("ds-1", Some("updated"), None)
+            .await
+            .unwrap();
+        assert!(result.dev_session.is_some());
+        assert_eq!(result.dev_session.unwrap().title, "updated");
+    }
+
+    #[tokio::test]
+    async fn dev_session_deletes() {
+        let mock_server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(wiremock::matchers::method("POST"))
+            .respond_with(
+                wiremock::ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                    "data": {
+                        "devSessionDelete": {
+                            "deletedId": "ds-1",
+                            "userErrors": []
+                        }
+                    },
+                    "extensions": { "cost": { "actualQueryCost": null, "throttleStatus": null } }
+                })),
+            )
+            .mount(&mock_server)
+            .await;
+
+        let client = mock_app_dev_client(&mock_server);
+        let result = client.dev_session_delete("ds-1").await.unwrap();
+        assert_eq!(result.deleted_id, Some("ds-1".into()));
+    }
+
+    fn mock_app_dev_client(server: &wiremock::MockServer) -> AppDevClient {
+        let gql = GraphqlClient::new(server.uri(), None);
+        AppDevClient::with_graphql("shop.test".into(), gql)
     }
 }
