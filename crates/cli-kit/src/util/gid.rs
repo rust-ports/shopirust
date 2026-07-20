@@ -62,6 +62,33 @@ pub fn is_gid(s: &str) -> bool {
     split_gid(s).is_some()
 }
 
+/// Extract the trailing numeric ID from a plain GID using a loose regex.
+///
+/// Unlike [`parse_gid`], this accepts any string ending with `/<digits>`
+/// without requiring the full `gid://shopify/` prefix.
+pub fn numeric_id_from_gid(gid: &str) -> Option<String> {
+    let re = regex_lite::Regex::new(r"/(\d+)$").ok()?;
+    re.captures(gid)
+        .and_then(|cap| cap.get(1))
+        .map(|m| m.as_str().to_string())
+}
+
+/// Decode a base64-encoded GraphQL global id and return the trailing numeric ID.
+pub fn numeric_id_from_encoded_gid(encoded: &str) -> Option<String> {
+    use base64::Engine;
+    let decoded = base64::engine::general_purpose::STANDARD
+        .decode(encoded)
+        .ok()?;
+    let decoded_str = String::from_utf8(decoded).ok()?;
+    numeric_id_from_gid(&decoded_str)
+}
+
+/// Encode a plain GraphQL global id as base64.
+pub fn encode_gid(gid: &str) -> String {
+    use base64::Engine;
+    base64::engine::general_purpose::STANDARD.encode(gid)
+}
+
 /// Errors produced by GID parsing and composition.
 #[derive(Debug, thiserror::Error)]
 pub enum GidError {

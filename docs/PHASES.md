@@ -1,6 +1,8 @@
 # CLI-Kit Phase Plan & Checklist
 
-**Current**: 773 tests / clippy clean / wiremock tests complete for all Phase 2 clients
+**Current**: 23,826 LOC / 108 files / 799 tests / clippy clean  
+**Phase 2**: All 10 public API clients ported, session complete, HTTP client complete. One remaining: `sanitize_url()`.  
+**Phase 8**: Theme crate API module planned — 7 source files + 13 GraphQL operations, 2 private utilities.
 **Target**: ~22,000 LOC / 100+ files / 100% of upstream cli-kit
 
 ---
@@ -31,9 +33,9 @@
 - [x] `app_versions_diff()` — diff two versions
 - [x] Wiremock tests for 3 key methods (organizations, specifications, app_versions)
 - [x] `app_version_by_id()` helper query
-- [ ] `dev_session_create()` — in `app_dev.rs`
-- [ ] `dev_session_update()` — in `app_dev.rs`
-- [ ] `dev_session_delete()` — in `app_dev.rs`
+- [x] `dev_session_create()` — in `app_dev.rs` (tracked in §2.5)
+- [x] `dev_session_update()` — in `app_dev.rs` (tracked in §2.5)
+- [x] `dev_session_delete()` — in `app_dev.rs` (tracked in §2.5)
 
 ### 2.2 `api/business_platform.rs` (128 → ~300 LOC)
 - [x] Struct `BusinessPlatformClient`
@@ -80,19 +82,20 @@
 - [x] `fetch_api_versions()` with 403/401/404 handling
 - [x] `list_themes()` — all themes for a store
 - [x] `get_theme()` — single theme by ID
-- [ ] `create_theme()` — create new theme
-- [ ] `update_theme()` — update theme metadata
-- [ ] `delete_theme()` — delete theme
-- [ ] `duplicate_theme()` — duplicate existing theme
-- [ ] `publish_theme()` — publish/unpublish theme
-- [ ] `get_theme_file_bodies()` — fetch file contents
-- [ ] `get_theme_file_checksums()` — fetch file checksums
-- [ ] `upsert_theme_files()` — create/update theme files
-- [ ] `delete_theme_files()` — delete theme files
-- [ ] `public_api_versions()` — discover available API versions (cached)
+- [x] `create_theme()` — create new theme
+- [x] `update_theme()` — update theme metadata
+- [x] `delete_theme()` — delete theme
+- [x] `duplicate_theme()` — duplicate existing theme
+- [x] `publish_theme()` — publish/unpublish theme
+- [x] `get_theme_file_bodies()` — fetch file contents
+- [x] `get_theme_file_checksums()` — fetch file checksums
+- [x] `upsert_theme_files()` — create/update theme files
+- [x] `delete_theme_files()` — delete theme files
+- [x] `public_api_versions()` — discover available API versions (cached)
 - [x] `metafield_definitions_by_owner_type()`
 - [x] `online_store_password_protection()`
 - [x] Wiremock tests for 6 methods (themes list/get, fetch_api_versions, metafield_definitions, password_protection)
+- [ ] `sanitize_url()` — URL query-param sanitizer (upstream `private/node/api/urls.ts`, ~30 LOC)
 
 ---
 
@@ -327,17 +330,17 @@ Wire everything into the public-facing API. Build test tooling.
 
 ### 6.4 `util/dot_env.rs` (new, ~200 LOC)
 - [x] `.env` file parsing, variable substitution
-- [x] Local env detection (Spin, Codespaces, Gitpod, CloudShell)
-- [x] Match upstream `dot-env.ts` (143 LOC) + `context/local.ts` (328 LOC)
+- [x] `read_and_parse_dot_env()`, `write_dot_env()`, `patch_env_file()`, `create_dot_env_file_line()`
+- [x] Match upstream `dot-env.ts` (143 LOC) — 4 functions + 1 interface
 
 ### 6.5 `util/path.rs` (new, ~250 LOC)
-- [x] Cross-platform path resolution
-- [x] Temp directory management
-- [x] Match upstream `path.ts` (236 LOC) + `temp-dir.ts` (8 LOC)
+- [-] Skipped — Rust `std::path::PathBuf` provides `join`, `resolve`, `normalize`, `dirname`, `basename`, `extname`, etc. natively
+- [-] `temp_dir()` in `util/fs.rs` covers temp directory management
+- [-] Match upstream `path.ts` (236 LOC) + `temp-dir.ts` (8 LOC) — intentionally not ported
 
 ### 6.6 `util/result.rs` (new, ~150 LOC)
-- [x] Result-like monad for nullable JS patterns
-- [x] Match upstream `result.ts` (145 LOC)
+- [-] Skipped — Rust has native `Result<T, E>` which replaces the upstream monad
+- [-] Match upstream `result.ts` (145 LOC) — intentionally not ported
 
 ### 6.7 `util/package_manager.rs` (84 → ~300 LOC)
 - [x] `detect_package_manager()` — lockfile + global detection
@@ -355,9 +358,9 @@ Wire everything into the public-facing API. Build test tooling.
 - [x] Match upstream `private/node/context/` (~150 LOC total)
 
 ### 6.9 New files
-- [x] `util/framework.rs` — framework detection (~200 LOC, upstream `framework.ts` 199 LOC)
-- [x] `util/import_extractor.rs` — import scanning (~270 LOC, upstream `import-extractor.ts` 270 LOC)
-- [x] `util/request_ids.rs` — x-request-id tracking (~50 LOC, upstream `request-ids.ts` 43 LOC)
+- [x] `util/framework.rs` — `resolve_framework()` with 8 framework detectors, 257 LOC, upstream `framework.ts` 199 LOC
+- [x] `util/import_extractor.rs` — `extract_import_paths()`, `extract_import_paths_recursively()`, `extract_js_imports()`, `clear_import_paths_cache()`, `get_import_scanning_cache_stats()`, upstream `import-extractor.ts` 270 LOC
+- [x] `util/request_ids.rs` — `add_request_id()`, `get_request_ids()`, `clear_request_ids()` + `MAX_REQUEST_IDS` constant, upstream `request-ids.ts` 43 LOC
 
 ---
 
@@ -396,6 +399,30 @@ Wire everything into the public-facing API. Build test tooling.
 
 New crate `crates/theme/`. Details in PORT.md §5.3.
 Commands: `push`, `pull`, `dev`, `delete`, `list`, `info`, `open`, `share`, `check`.
+
+### 8.1 Theme API Client Module (`crates/theme/src/api/`)
+
+Port of upstream `public/node/themes/` + `private/node/themes/`.
+
+- [ ] `types.rs` — Theme, Checksum, ThemeAsset, Result, Operation, ThemeParams, AssetParams
+- [ ] `factories.rs` — build_theme(), build_checksum(), build_theme_asset()
+- [ ] `conf.rs` — host_theme_local_storage(), get_host_theme(), set_host_theme(), remove_host_theme()
+- [ ] `urls.rs` — theme_preview_url(), theme_editor_url(), code_editor_url(), store_admin_url(), store_password_page()
+- [ ] `utils.rs` — role constants (DEVELOPMENT, LIVE, UNPUBLISHED), is_development_theme(), compose_theme_gid(), parse_gid(), prompt_theme_name()
+- [ ] `generate_name.rs` — generate_theme_name(), API_NAME_LIMIT (upstream `private/node/themes/generate-theme-name.ts`)
+- [ ] `replace_invalid_chars.rs` — replace_invalid_characters() (upstream `private/node/themes/replace-invalid-characters.ts`)
+- [ ] `api.rs` — ThemeClient struct wrapping AdminClient::query()
+  - [ ] 13 embedded GraphQL query/mutation strings matching upstream exactly
+  - [ ] fetch_theme() / fetch_themes() (paginated 50, cursor-based)
+  - [ ] find_development_theme_by_name()
+  - [ ] theme_create() / theme_update() / theme_delete() / theme_publish() / theme_duplicate()
+  - [ ] fetch_theme_assets() (paginated 250) / delete_theme_assets() (batched 50) / bulk_upload_theme_assets() (batched 50)
+  - [ ] fetch_checksums() (paginated 250)
+  - [ ] metafield_definitions_by_owner_type() / password_protected()
+  - [ ] parse_theme_file_content() — Text/Base64/Url discriminated union
+  - [ ] ACCESS_DENIED detection + user-facing remediation
+- [ ] `mod.rs` — re-exports + ThemeClient struct
+- [ ] `ThemeManager` — orchestrator (find-or-create, depends on api.rs)
 
 ---
 
