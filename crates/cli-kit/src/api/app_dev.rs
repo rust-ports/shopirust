@@ -1,11 +1,9 @@
 use crate::api::graphql::{CacheOptions, GraphqlClient, GraphqlRequestError, UnauthorizedHandler};
 use crate::api::rate_limiter::ApiRateLimiter;
-use crate::constants::{
-    app_dev_fqdn, normalize_store_fqdn, service_environment, ServiceEnvironment,
-};
-use reqwest::header::HeaderMap;
+use crate::constants::app_management_fqdn;
+use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use serde::de::DeserializeOwned;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, OnceLock};
 
@@ -14,27 +12,119 @@ fn app_dev_rate_limiter() -> ApiRateLimiter {
     LIMITER.get_or_init(ApiRateLimiter::shopify_default).clone()
 }
 
-/// Client for the Shopify App Dev GraphQL API.
-///
-/// Wraps [`GraphqlClient`] with App Dev–specific URL resolution, rate
-/// limiting, and header injection for local dev environments. The FQDN is
-/// resolved via [`app_dev_fqdn`] which maps to the store domain in
-/// production and to the App Management FQDN in local dev.
-pub struct AppDevClient {
-    /// The shop's FQDN (e.g. `test-store.myshopify.com`).
+const DEV_SESSION_CREATE_MUTATION: &str = r#"
+mutation DevSessionCreate($appId: ID!, $shopFqdn: String!, $title: String!, $token: String!, $storeFqdn: String!) {
+  devSessionCreate(input: {appId: $appId, shopFqdn: $shopFqdn, title: $title, token: $token, storeFqdn: $storeFqdn}) {
+    devSession {
+      id
+      title
+      appId
+      shopFqdn
+    }
+    userErrors {
+      field
+      message
+    }
+  }
+}
+"#;
+
+const DEV_SESSION_UPDATE_MUTATION: &str = r#"
+mutation DevSessionUpdate($id: ID!, $title: String, $token: String) {
+  devSessionUpdate(input: {id: $id, title: $title, token: $token}) {
+    devSession {
+      id
+      title
+      appId
+      shopFqdn
+    }
+    userErrors {
+      field
+      message
+    }
+  }
+}
+"#;
+
+const DEV_SESSION_DELETE_MUTATION: &str = r#"
+mutation DevSessionDelete($id: ID!) {
+  devSessionDelete(input: {id: $id}) {
+    deletedId
+    userErrors {
+      field
+      message
+    }
+  }
+}
+"#;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DevSession {
+    pub id: String,
+    pub title: String,
+    pub app_id: String,
     pub shop_fqdn: String,
-    /// Authentication token.
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DevSessionCreateResult {
+    pub dev_session: Option<DevSession>,
+    pub user_errors: Vec<DevSessionUserError>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DevSessionUpdateResult {
+    pub dev_session: Option<DevSession>,
+    pub user_errors: Vec<DevSessionUserError>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DevSessionDeleteResult {
+    pub deleted_id: Option<String>,
+    pub user_errors: Vec<DevSessionUserError>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DevSessionUserError {
+    pub field: Option<Vec<String>>,
+    pub message: Option<String>,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DevSessionCreateResponse {
+    dev_session_create: DevSessionCreateResult,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DevSessionUpdateResponse {
+    dev_session_update: DevSessionUpdateResult,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DevSessionDeleteResponse {
+    dev_session_delete: DevSessionDeleteResult,
+}
+
+pub struct AppDevClient {
+    pub shop_fqdn: String,
     pub token: String,
-    /// Optional environment overrides (used for FQDN resolution).
     pub env: Option<HashMap<String, String>>,
 }
 
 impl AppDevClient {
-    /// Create a new client with the given shop FQDN, token, and env.
-    ///
-    /// The `shop_fqdn` is normalized via [`normalize_store_fqdn`] so callers
-    /// may pass raw store names, `https://` URLs, or full FQDNs.
-    pub fn new(shop_fqdn: String, token: String, env: Option<HashMap<String, String>>) -> Self {
+    pub fn new(
+        shop_fqdn: String,
+        token: String,
+        env: Option<HashMap<String, String>>,
+    ) -> Self {
         Self {
             shop_fqdn,
             token,
@@ -42,10 +132,6 @@ impl AppDevClient {
         }
     }
 
-    /// Execute a rate-limited GraphQL query against the App Dev API.
-    ///
-    /// In local dev environments a `x-forwarded-host` header is injected
-    /// with the normalized shop domain.
     pub async fn request<T, V>(
         &self,
         query: &str,
@@ -57,21 +143,21 @@ impl AppDevClient {
         T: DeserializeOwned + Serialize,
         V: Serialize,
     {
-        let normalized = normalize_store_fqdn(&self.shop_fqdn);
-        let fqdn = app_dev_fqdn(&normalized, self.env.as_ref());
-        let url = format!("https://{fqdn}/app_dev/unstable/graphql.json");
+        let url = format!(
+            "https://{}/app_dev/unstable/graphql.json",
+            app_management_fqdn(self.env.as_ref()),
+        );
+        let mut client = GraphqlClient::new(url, Some(self.token.clone()))
+            .with_rate_limiter(app_dev_rate_limiter());
 
-        let mut headers = HeaderMap::new();
-        if service_environment(self.env.as_ref()) == ServiceEnvironment::Local {
-            headers.insert(
-                "x-forwarded-host",
-                normalized.parse().expect("valid header value"),
+        let mut extra_headers = HeaderMap::new();
+        if let Ok(value) = HeaderValue::from_str(&self.shop_fqdn) {
+            extra_headers.insert(
+                HeaderName::from_static("x-forwarded-host"),
+                value,
             );
         }
-
-        let mut client = GraphqlClient::new(url, Some(self.token.clone()))
-            .with_rate_limiter(app_dev_rate_limiter())
-            .with_extra_headers(headers);
+        client = client.with_extra_headers(extra_headers);
 
         if let Some(opts) = cache_options {
             client = client.with_cache_options(opts);
@@ -82,6 +168,56 @@ impl AppDevClient {
 
         client.query_with_variables(query, variables).await
     }
+
+    pub async fn dev_session_create(
+        &self,
+        app_id: &str,
+        title: &str,
+        token: &str,
+        store_fqdn: &str,
+    ) -> Result<DevSessionCreateResult, GraphqlRequestError> {
+        let vars = serde_json::json!({
+            "appId": app_id,
+            "shopFqdn": self.shop_fqdn,
+            "title": title,
+            "token": token,
+            "storeFqdn": store_fqdn,
+        });
+        let resp: DevSessionCreateResponse = self
+            .request(DEV_SESSION_CREATE_MUTATION, Some(vars), None, None)
+            .await?;
+        Ok(resp.dev_session_create)
+    }
+
+    pub async fn dev_session_update(
+        &self,
+        id: &str,
+        title: Option<&str>,
+        token: Option<&str>,
+    ) -> Result<DevSessionUpdateResult, GraphqlRequestError> {
+        let mut vars = serde_json::json!({ "id": id });
+        if let Some(t) = title {
+            vars["title"] = serde_json::json!(t);
+        }
+        if let Some(t) = token {
+            vars["token"] = serde_json::json!(t);
+        }
+        let resp: DevSessionUpdateResponse = self
+            .request(DEV_SESSION_UPDATE_MUTATION, Some(vars), None, None)
+            .await?;
+        Ok(resp.dev_session_update)
+    }
+
+    pub async fn dev_session_delete(
+        &self,
+        id: &str,
+    ) -> Result<DevSessionDeleteResult, GraphqlRequestError> {
+        let vars = serde_json::json!({ "id": id });
+        let resp: DevSessionDeleteResponse = self
+            .request(DEV_SESSION_DELETE_MUTATION, Some(vars), None, None)
+            .await?;
+        Ok(resp.dev_session_delete)
+    }
 }
 
 #[cfg(test)]
@@ -89,18 +225,17 @@ mod tests {
     use super::*;
 
     #[test]
-    fn request_url_uses_normalized_fqdn() {
-        let _client = AppDevClient::new("test-store".into(), "t".into(), None);
-        let normalized = normalize_store_fqdn("test-store");
-        let fqdn = app_dev_fqdn(&normalized, None);
+    fn request_url_contains_fqdn() {
+        let _client = AppDevClient::new("shop.test".into(), "t".into(), None);
+        let fqdn = app_management_fqdn(None);
         let expected = format!("https://{fqdn}/app_dev/unstable/graphql.json");
-        assert!(expected.contains(&normalized));
+        assert!(expected.contains(&fqdn));
     }
 
     #[test]
     fn client_new_sets_fields() {
-        let client = AppDevClient::new("my-shop.myshopify.com".into(), "shpat_test".into(), None);
-        assert_eq!(client.shop_fqdn, "my-shop.myshopify.com");
+        let client = AppDevClient::new("shop.test".into(), "shpat_test".into(), None);
+        assert_eq!(client.shop_fqdn, "shop.test");
         assert_eq!(client.token, "shpat_test");
     }
 
@@ -123,5 +258,53 @@ mod tests {
         let limiter = app_dev_rate_limiter();
         let permit = limiter.acquire().await;
         drop(permit);
+    }
+
+    #[test]
+    fn dev_session_deserialize() {
+        let json = serde_json::json!({
+            "id": "ds-1",
+            "title": "my session",
+            "appId": "app-1",
+            "shopFqdn": "shop.test"
+        });
+        let ds: DevSession = serde_json::from_value(json).unwrap();
+        assert_eq!(ds.id, "ds-1");
+    }
+
+    #[test]
+    fn dev_session_create_result_deserialize() {
+        let json = serde_json::json!({
+            "devSession": {"id": "ds-1", "title": "dev", "appId": "a1", "shopFqdn": "s.test"},
+            "userErrors": []
+        });
+        let r: DevSessionCreateResult = serde_json::from_value(json).unwrap();
+        assert!(r.dev_session.is_some());
+        assert!(r.user_errors.is_empty());
+    }
+
+    #[test]
+    fn dev_session_delete_result_deserialize() {
+        let json = serde_json::json!({
+            "deletedId": "ds-1",
+            "userErrors": []
+        });
+        let r: DevSessionDeleteResult = serde_json::from_value(json).unwrap();
+        assert_eq!(r.deleted_id, Some("ds-1".into()));
+    }
+
+    #[test]
+    fn dev_session_create_has_mutation() {
+        assert!(DEV_SESSION_CREATE_MUTATION.contains("devSessionCreate"));
+    }
+
+    #[test]
+    fn dev_session_update_has_mutation() {
+        assert!(DEV_SESSION_UPDATE_MUTATION.contains("devSessionUpdate"));
+    }
+
+    #[test]
+    fn dev_session_delete_has_mutation() {
+        assert!(DEV_SESSION_DELETE_MUTATION.contains("devSessionDelete"));
     }
 }

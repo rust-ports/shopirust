@@ -2,7 +2,7 @@ use crate::api::graphql::{CacheOptions, GraphqlClient, GraphqlRequestError, Unau
 use crate::api::rate_limiter::ApiRateLimiter;
 use crate::constants::app_management_fqdn;
 use serde::de::DeserializeOwned;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, OnceLock};
 
@@ -11,24 +11,80 @@ fn functions_rate_limiter() -> ApiRateLimiter {
     LIMITER.get_or_init(ApiRateLimiter::shopify_default).clone()
 }
 
-/// Client for the Shopify App Management Functions API.
-///
-/// Wraps [`GraphqlClient`] with Functions-specific URL resolution and rate
-/// limiting. The rate limiter uses the same profile as the App Management API
-/// (150 ms minimum interval, 10 max concurrent).
+const API_SCHEMA_DEFINITION_QUERY: &str = r#"
+query ApiSchemaDefinition($apiKey: String!, $version: String!) {
+  apiSchemaDefinition(apiKey: $apiKey, version: $version) {
+    schema
+    apiType
+    hash
+  }
+}
+"#;
+
+const TARGET_SCHEMA_DEFINITION_QUERY: &str = r#"
+query TargetSchemaDefinition($apiKey: String!, $version: String!, $target: String!) {
+  targetSchemaDefinition(apiKey: $apiKey, version: $version, target: $target) {
+    schema
+    apiType
+    hash
+  }
+}
+"#;
+
+const FUNCTION_ACTIVE_VERSION_QUERY: &str = r#"
+query FunctionActiveVersion($apiKey: String!) {
+  functionActiveVersion(apiKey: $apiKey) {
+    id
+    versionTag
+    definition
+    active
+  }
+}
+"#;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SchemaDefinition {
+    pub schema: String,
+    pub api_type: String,
+    pub hash: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FunctionVersion {
+    pub id: String,
+    pub version_tag: Option<String>,
+    pub definition: Option<serde_json::Value>,
+    pub active: bool,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ApiSchemaDefinitionResponse {
+    api_schema_definition: Option<SchemaDefinition>,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TargetSchemaDefinitionResponse {
+    target_schema_definition: Option<SchemaDefinition>,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct FunctionActiveVersionResponse {
+    function_active_version: Option<FunctionVersion>,
+}
+
 pub struct FunctionsClient {
-    /// Organization identifier.
     pub organization_id: String,
-    /// App identifier.
     pub app_id: String,
-    /// Authentication token.
     pub token: String,
-    /// Optional environment overrides (used for FQDN resolution).
     pub env: Option<HashMap<String, String>>,
 }
 
 impl FunctionsClient {
-    /// Create a new client with the given organization, app, token, and env.
     pub fn new(
         organization_id: String,
         app_id: String,
@@ -43,7 +99,6 @@ impl FunctionsClient {
         }
     }
 
-    /// Execute a rate-limited GraphQL query against the Functions API.
     pub async fn request<T, V>(
         &self,
         query: &str,
@@ -72,6 +127,42 @@ impl FunctionsClient {
         }
 
         client.query_with_variables(query, variables).await
+    }
+
+    pub async fn api_schema_definition(
+        &self,
+        api_key: &str,
+        version: &str,
+    ) -> Result<Option<SchemaDefinition>, GraphqlRequestError> {
+        let vars = serde_json::json!({ "apiKey": api_key, "version": version });
+        let resp: ApiSchemaDefinitionResponse = self
+            .request(API_SCHEMA_DEFINITION_QUERY, Some(vars), None, None)
+            .await?;
+        Ok(resp.api_schema_definition)
+    }
+
+    pub async fn target_schema_definition(
+        &self,
+        api_key: &str,
+        version: &str,
+        target: &str,
+    ) -> Result<Option<SchemaDefinition>, GraphqlRequestError> {
+        let vars = serde_json::json!({ "apiKey": api_key, "version": version, "target": target });
+        let resp: TargetSchemaDefinitionResponse = self
+            .request(TARGET_SCHEMA_DEFINITION_QUERY, Some(vars), None, None)
+            .await?;
+        Ok(resp.target_schema_definition)
+    }
+
+    pub async fn function_active_version(
+        &self,
+        api_key: &str,
+    ) -> Result<Option<FunctionVersion>, GraphqlRequestError> {
+        let vars = serde_json::json!({ "apiKey": api_key });
+        let resp: FunctionActiveVersionResponse = self
+            .request(FUNCTION_ACTIVE_VERSION_QUERY, Some(vars), None, None)
+            .await?;
+        Ok(resp.function_active_version)
     }
 }
 
@@ -117,5 +208,44 @@ mod tests {
         let limiter = functions_rate_limiter();
         let permit = limiter.acquire().await;
         drop(permit);
+    }
+
+    #[test]
+    fn schema_definition_deserialize() {
+        let json = serde_json::json!({
+            "schema": "type Query { ping: String }",
+            "apiType": "graphql",
+            "hash": "abc123"
+        });
+        let sd: SchemaDefinition = serde_json::from_value(json).unwrap();
+        assert_eq!(sd.hash, "abc123");
+    }
+
+    #[test]
+    fn function_version_deserialize() {
+        let json = serde_json::json!({
+            "id": "fv-1",
+            "versionTag": "v1",
+            "definition": {"input": "String"},
+            "active": true
+        });
+        let fv: FunctionVersion = serde_json::from_value(json).unwrap();
+        assert!(fv.active);
+        assert_eq!(fv.version_tag, Some("v1".into()));
+    }
+
+    #[test]
+    fn api_schema_definition_has_query() {
+        assert!(API_SCHEMA_DEFINITION_QUERY.contains("apiSchemaDefinition"));
+    }
+
+    #[test]
+    fn target_schema_definition_has_query() {
+        assert!(TARGET_SCHEMA_DEFINITION_QUERY.contains("targetSchemaDefinition"));
+    }
+
+    #[test]
+    fn function_active_version_has_query() {
+        assert!(FUNCTION_ACTIVE_VERSION_QUERY.contains("functionActiveVersion"));
     }
 }

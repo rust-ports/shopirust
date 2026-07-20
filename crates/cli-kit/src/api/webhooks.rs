@@ -2,7 +2,7 @@ use crate::api::graphql::{CacheOptions, GraphqlClient, GraphqlRequestError, Unau
 use crate::api::rate_limiter::ApiRateLimiter;
 use crate::constants::app_management_fqdn;
 use serde::de::DeserializeOwned;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, OnceLock};
 
@@ -11,22 +11,89 @@ fn webhooks_rate_limiter() -> ApiRateLimiter {
     LIMITER.get_or_init(ApiRateLimiter::shopify_default).clone()
 }
 
-/// Client for the Shopify App Management Webhooks API.
-///
-/// Wraps [`GraphqlClient`] with Webhooks-specific URL resolution and rate
-/// limiting (150 ms minimum interval, 10 max concurrent). Every request is
-/// scoped to an organization.
+const API_VERSIONS_QUERY: &str = r#"
+query WebhookApiVersions {
+  webhookApiVersions {
+    id
+    handle
+  }
+}
+"#;
+
+const TOPICS_QUERY: &str = r#"
+query WebhookTopics($apiVersion: String!) {
+  webhookTopics(apiVersion: $apiVersion) {
+    topic
+    description
+  }
+}
+"#;
+
+const SEND_SAMPLE_WEBHOOK_MUTATION: &str = r#"
+mutation SendSampleWebhook($topic: String!, $apiVersion: String!, $address: String!, $sharedSecret: String!) {
+  sendSampleWebhook(input: {topic: $topic, apiVersion: $apiVersion, address: $address, sharedSecret: $sharedSecret}) {
+    sampleWebhookId
+    userErrors {
+      field
+      message
+    }
+  }
+}
+"#;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WebhookApiVersion {
+    pub id: String,
+    pub handle: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WebhookTopic {
+    pub topic: String,
+    pub description: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SampleWebhookResult {
+    pub sample_webhook_id: Option<String>,
+    pub user_errors: Vec<SampleWebhookUserError>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SampleWebhookUserError {
+    pub field: Option<Vec<String>>,
+    pub message: Option<String>,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ApiVersionsResponse {
+    webhook_api_versions: Vec<WebhookApiVersion>,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TopicsResponse {
+    webhook_topics: Vec<WebhookTopic>,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SendSampleWebhookResponse {
+    send_sample_webhook: SampleWebhookResult,
+}
+
 pub struct WebhooksClient {
-    /// Organization identifier.
     pub organization_id: String,
-    /// Authentication token.
     pub token: String,
-    /// Optional environment overrides (used for FQDN resolution).
     pub env: Option<HashMap<String, String>>,
 }
 
 impl WebhooksClient {
-    /// Create a new client with the given organization, token, and env.
     pub fn new(
         organization_id: String,
         token: String,
@@ -39,7 +106,6 @@ impl WebhooksClient {
         }
     }
 
-    /// Execute a rate-limited GraphQL query against the Webhooks API.
     pub async fn request<T, V>(
         &self,
         query: &str,
@@ -67,6 +133,45 @@ impl WebhooksClient {
         }
 
         client.query_with_variables(query, variables).await
+    }
+
+    pub async fn api_versions(
+        &self,
+    ) -> Result<Vec<WebhookApiVersion>, GraphqlRequestError> {
+        let resp: ApiVersionsResponse = self
+            .request(API_VERSIONS_QUERY, None::<serde_json::Value>, None, None)
+            .await?;
+        Ok(resp.webhook_api_versions)
+    }
+
+    pub async fn topics(
+        &self,
+        api_version: &str,
+    ) -> Result<Vec<WebhookTopic>, GraphqlRequestError> {
+        let vars = serde_json::json!({ "apiVersion": api_version });
+        let resp: TopicsResponse = self
+            .request(TOPICS_QUERY, Some(vars), None, None)
+            .await?;
+        Ok(resp.webhook_topics)
+    }
+
+    pub async fn send_sample_webhook(
+        &self,
+        topic: &str,
+        api_version: &str,
+        address: &str,
+        shared_secret: &str,
+    ) -> Result<SampleWebhookResult, GraphqlRequestError> {
+        let vars = serde_json::json!({
+            "topic": topic,
+            "apiVersion": api_version,
+            "address": address,
+            "sharedSecret": shared_secret,
+        });
+        let resp: SendSampleWebhookResponse = self
+            .request(SEND_SAMPLE_WEBHOOK_MUTATION, Some(vars), None, None)
+            .await?;
+        Ok(resp.send_sample_webhook)
     }
 }
 
@@ -109,5 +214,45 @@ mod tests {
         let limiter = webhooks_rate_limiter();
         let permit = limiter.acquire().await;
         drop(permit);
+    }
+
+    #[test]
+    fn webhook_api_version_deserialize() {
+        let json = serde_json::json!({"id": "1", "handle": "2024-07"});
+        let version: WebhookApiVersion = serde_json::from_value(json).unwrap();
+        assert_eq!(version.handle, "2024-07");
+    }
+
+    #[test]
+    fn webhook_topic_deserialize() {
+        let json = serde_json::json!({"topic": "orders/create", "description": "Order created"});
+        let topic: WebhookTopic = serde_json::from_value(json).unwrap();
+        assert_eq!(topic.topic, "orders/create");
+    }
+
+    #[test]
+    fn sample_webhook_result_deserialize() {
+        let json = serde_json::json!({
+            "sampleWebhookId": "wh-123",
+            "userErrors": [{"field": ["topic"], "message": "invalid"}]
+        });
+        let result: SampleWebhookResult = serde_json::from_value(json).unwrap();
+        assert_eq!(result.sample_webhook_id, Some("wh-123".into()));
+        assert_eq!(result.user_errors.len(), 1);
+    }
+
+    #[test]
+    fn api_versions_has_query() {
+        assert!(API_VERSIONS_QUERY.contains("webhookApiVersions"));
+    }
+
+    #[test]
+    fn topics_has_query() {
+        assert!(TOPICS_QUERY.contains("webhookTopics"));
+    }
+
+    #[test]
+    fn send_sample_webhook_has_mutation() {
+        assert!(SEND_SAMPLE_WEBHOOK_MUTATION.contains("sendSampleWebhook"));
     }
 }
