@@ -62,10 +62,7 @@ pub fn get_env_opt(
 }
 
 /// Check whether an env var is set to a truthy value (1/true/TRUE/yes/YES).
-pub fn is_env_truthy(
-    env: Option<&std::collections::HashMap<String, String>>,
-    key: &str,
-) -> bool {
+pub fn is_env_truthy(env: Option<&std::collections::HashMap<String, String>>, key: &str) -> bool {
     let val = get_env(env, key);
     matches!(val.as_str(), "1" | "true" | "TRUE" | "yes" | "YES")
 }
@@ -93,9 +90,7 @@ pub fn service_environment(
 }
 
 /// Shortcut — is the service running in local dev mode?
-pub fn is_local_environment(
-    env: Option<&std::collections::HashMap<String, String>>,
-) -> bool {
+pub fn is_local_environment(env: Option<&std::collections::HashMap<String, String>>) -> bool {
     matches!(service_environment(env), ServiceEnvironment::Local)
 }
 
@@ -157,7 +152,10 @@ pub fn identity_application_id(api: &str) -> &'static str {
 ///
 /// Currently always returns `production_fqdn` regardless of environment;
 /// local-dev overrides will be wired once the dev server integration exists.
-fn resolve_fqdn(production_fqdn: &str, env: Option<&std::collections::HashMap<String, String>>) -> String {
+fn resolve_fqdn(
+    production_fqdn: &str,
+    env: Option<&std::collections::HashMap<String, String>>,
+) -> String {
     match service_environment(env) {
         ServiceEnvironment::Local => production_fqdn.to_string(),
         ServiceEnvironment::Production => production_fqdn.to_string(),
@@ -196,7 +194,10 @@ pub fn developer_dashboard_fqdn(env: Option<&std::collections::HashMap<String, S
 
 /// Resolve the App Dev FQDN, which maps to the store's own domain in production
 /// and to the App Management FQDN in local dev.
-pub fn app_dev_fqdn(store_fqdn: &str, env: Option<&std::collections::HashMap<String, String>>) -> String {
+pub fn app_dev_fqdn(
+    store_fqdn: &str,
+    env: Option<&std::collections::HashMap<String, String>>,
+) -> String {
     match service_environment(env) {
         ServiceEnvironment::Local => app_management_fqdn(env),
         ServiceEnvironment::Production => store_fqdn.to_string(),
@@ -204,9 +205,7 @@ pub fn app_dev_fqdn(store_fqdn: &str, env: Option<&std::collections::HashMap<Str
 }
 
 /// Resolve the theme kit access domain, optionally overridden via env var.
-pub fn theme_kit_access_domain(
-    env: Option<&std::collections::HashMap<String, String>>,
-) -> String {
+pub fn theme_kit_access_domain(env: Option<&std::collections::HashMap<String, String>>) -> String {
     get_env_opt(env, EnvVars::THEME_KIT_ACCESS_DOMAIN)
         .unwrap_or_else(|| DEFAULT_THEME_KIT_ACCESS_DOMAIN.to_string())
 }
@@ -262,10 +261,7 @@ pub fn logs_path() -> String {
         return format!("{}/shopify-cli/logs", xdg.trim_end_matches('/'));
     }
     if let Some(home) = dirs::home_dir() {
-        format!(
-            "{}/.local/share/shopify-cli/logs",
-            home.to_string_lossy()
-        )
+        format!("{}/.local/share/shopify-cli/logs", home.to_string_lossy())
     } else {
         "/tmp/shopify-cli/logs".to_string()
     }
@@ -277,7 +273,10 @@ mod tests {
 
     #[test]
     fn test_service_environment_default_production() {
-        assert!(matches!(service_environment(None), ServiceEnvironment::Production));
+        assert!(matches!(
+            service_environment(None),
+            ServiceEnvironment::Production
+        ));
     }
 
     #[test]
@@ -363,10 +362,7 @@ mod tests {
             EnvVars::THEME_KIT_ACCESS_DOMAIN.to_string(),
             "custom.example.com".to_string(),
         );
-        assert_eq!(
-            theme_kit_access_domain(Some(&env)),
-            "custom.example.com"
-        );
+        assert_eq!(theme_kit_access_domain(Some(&env)), "custom.example.com");
     }
 
     #[test]
@@ -398,10 +394,7 @@ mod tests {
     fn test_get_env_opt() {
         let mut env = std::collections::HashMap::new();
         env.insert("TEST_KEY".to_string(), "val".to_string());
-        assert_eq!(
-            get_env_opt(Some(&env), "TEST_KEY"),
-            Some("val".to_string())
-        );
+        assert_eq!(get_env_opt(Some(&env), "TEST_KEY"), Some("val".to_string()));
         assert_eq!(get_env_opt(None, "TEST_KEY"), None);
     }
 

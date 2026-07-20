@@ -29,13 +29,7 @@ impl LinksContext {
         }
         self.counter += 1;
         let id = self.counter.to_string();
-        self.links.insert(
-            id.clone(),
-            LinkInfo {
-                label,
-                url,
-            },
-        );
+        self.links.insert(id.clone(), LinkInfo { label, url });
         id
     }
 

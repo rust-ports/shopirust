@@ -187,12 +187,10 @@ mod tests {
 
     #[test]
     fn test_event_from_crossterm_key() {
-        let crossterm_event = crossterm::event::Event::Key(
-            crossterm::event::KeyEvent::new(
-                crossterm::event::KeyCode::Enter,
-                crossterm::event::KeyModifiers::NONE,
-            ),
-        );
+        let crossterm_event = crossterm::event::Event::Key(crossterm::event::KeyEvent::new(
+            crossterm::event::KeyCode::Enter,
+            crossterm::event::KeyModifiers::NONE,
+        ));
         let event: Event = crossterm_event.into();
         assert!(matches!(event, Event::Key(_)));
     }

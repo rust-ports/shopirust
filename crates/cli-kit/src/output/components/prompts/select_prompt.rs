@@ -63,11 +63,7 @@ impl<T: Clone + 'static + std::fmt::Debug> Prompt for SelectPrompt<T> {
                 } else {
                     answer.to_string()
                 };
-                let _ = write!(
-                    output,
-                    "{prefix} {} {answer_display}",
-                    self.layout.message
-                );
+                let _ = write!(output, "{prefix} {} {answer_display}", self.layout.message);
             }
             PromptState::Cancelled => {
                 let prefix = if colors {
@@ -113,13 +109,11 @@ impl<T: Clone + 'static + std::fmt::Debug> Prompt for SelectPrompt<T> {
 
         match event {
             Event::Key(key) => match key.code {
-                crossterm::event::KeyCode::Up
-                | crossterm::event::KeyCode::Char('k') => {
+                crossterm::event::KeyCode::Up | crossterm::event::KeyCode::Char('k') => {
                     self.inner.cursor_up();
                     EventResult::Continue
                 }
-                crossterm::event::KeyCode::Down
-                | crossterm::event::KeyCode::Char('j') => {
+                crossterm::event::KeyCode::Down | crossterm::event::KeyCode::Char('j') => {
                     self.inner.cursor_down();
                     EventResult::Continue
                 }
@@ -142,7 +136,8 @@ impl<T: Clone + 'static + std::fmt::Debug> Prompt for SelectPrompt<T> {
                 crossterm::event::KeyCode::Enter => {
                     if let Some(value) = self.inner.selected_value() {
                         // Store the label for display in submitted state
-                        self.selected_label = self.inner
+                        self.selected_label = self
+                            .inner
                             .items()
                             .get(self.inner.cursor_index())
                             .map(|i| i.label.clone());
@@ -184,7 +179,7 @@ mod tests {
     #[test]
     fn test_select_prompt_initial_value() {
         let items = vec![Item::new("a", 1), Item::new("b", 2)];
-        let mut prompt = SelectPrompt::new("choose", items).with_initial_value(2);
+        let prompt = SelectPrompt::new("choose", items).with_initial_value(2);
         assert_eq!(prompt.inner.cursor_index(), 1);
     }
 

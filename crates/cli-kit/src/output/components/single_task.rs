@@ -50,7 +50,10 @@ impl SingleTask {
 
     pub fn set_state(&mut self, state: TaskState) {
         self.state = state;
-        self.done = matches!(state, TaskState::Success | TaskState::Failed | TaskState::Cancelled);
+        self.done = matches!(
+            state,
+            TaskState::Success | TaskState::Failed | TaskState::Cancelled
+        );
     }
 
     pub fn set_status(&mut self, message: impl Into<String>) {
@@ -79,8 +82,8 @@ impl StreamWidget for SingleTask {
         match self.state {
             TaskState::Running => {
                 let spinner = self.loading_bar.render();
-                    if colors {
-                        let line = format!("{} {}", colored::Colorize::magenta(&*spinner), self.title);
+                if colors {
+                    let line = format!("{} {}", colored::Colorize::magenta(&*spinner), self.title);
                     ui_lines.push(line);
                 } else {
                     ui_lines.push(format!("{spinner} {}", self.title));
@@ -88,11 +91,7 @@ impl StreamWidget for SingleTask {
             }
             TaskState::Success => {
                 let line = if colors {
-                    format!(
-                        "{} {}",
-                        colored::Colorize::green(figures::TICK),
-                        self.title
-                    )
+                    format!("{} {}", colored::Colorize::green(figures::TICK), self.title)
                 } else {
                     format!("✔ {}", self.title)
                 };
@@ -100,11 +99,7 @@ impl StreamWidget for SingleTask {
             }
             TaskState::Failed => {
                 let line = if colors {
-                    format!(
-                        "{} {}",
-                        colored::Colorize::red(figures::CROSS),
-                        self.title
-                    )
+                    format!("{} {}", colored::Colorize::red(figures::CROSS), self.title)
                 } else {
                     format!("✖ {}", self.title)
                 };
@@ -255,7 +250,7 @@ mod tests {
     fn test_single_task_render_does_not_panic() {
         let mut task = SingleTask::new("build");
         // TUI render requires a real terminal; just verify no panic
-        let ctx = RenderContext::default();
+        let _ctx = RenderContext::default();
         // We can't test TUI rendering without a backend, but we can check the state is correct
         task.set_state(TaskState::Success);
         assert!(task.is_done());

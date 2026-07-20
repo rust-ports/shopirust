@@ -9,9 +9,7 @@ pub struct TokenizedText {
 
 impl TokenizedText {
     pub fn new() -> Self {
-        Self {
-            tokens: Vec::new(),
-        }
+        Self { tokens: Vec::new() }
     }
 
     pub fn from_items(items: Vec<TokenItem>) -> Self {
@@ -87,7 +85,9 @@ impl TokenizedText {
                     let label_start = i + 1;
                     let label_end = i + 1 + close_bracket;
                     if label_end + 1 < len && chars[label_end + 1] == '(' {
-                        if let Some(close_paren) = chars[label_end + 2..].iter().position(|&c| c == ')') {
+                        if let Some(close_paren) =
+                            chars[label_end + 2..].iter().position(|&c| c == ')')
+                        {
                             let url_start = label_end + 2;
                             let url_end = label_end + 2 + close_paren;
                             // Push text before this link
@@ -201,13 +201,21 @@ mod tests {
 
     #[test]
     fn test_parse_markdown_link_multiple() {
-        let mut tt =
-            TokenizedText::from("[a](https://a.com) and [b](https://b.com)");
+        let mut tt = TokenizedText::from("[a](https://a.com) and [b](https://b.com)");
         tt.parse_markdown_links();
         assert_eq!(tt.tokens.len(), 3);
-        assert!(matches!(tt.tokens[0].style, crate::output::tokens::TokenStyle::Link { .. }));
-        assert!(matches!(tt.tokens[1].style, crate::output::tokens::TokenStyle::Raw));
-        assert!(matches!(tt.tokens[2].style, crate::output::tokens::TokenStyle::Link { .. }));
+        assert!(matches!(
+            tt.tokens[0].style,
+            crate::output::tokens::TokenStyle::Link { .. }
+        ));
+        assert!(matches!(
+            tt.tokens[1].style,
+            crate::output::tokens::TokenStyle::Raw
+        ));
+        assert!(matches!(
+            tt.tokens[2].style,
+            crate::output::tokens::TokenStyle::Link { .. }
+        ));
     }
 
     #[test]

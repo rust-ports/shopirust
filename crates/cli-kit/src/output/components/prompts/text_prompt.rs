@@ -82,11 +82,7 @@ impl Prompt for TextPrompt {
 
         match self.prompt.state {
             PromptState::Submitted => {
-                let answer = self
-                    .prompt
-                    .answer
-                    .as_deref()
-                    .unwrap_or("");
+                let answer = self.prompt.answer.as_deref().unwrap_or("");
                 let display_answer = if answer.is_empty() {
                     self.empty_display.clone()
                 } else if self.password {
@@ -120,12 +116,14 @@ impl Prompt for TextPrompt {
                     output,
                     "{prefix} {} {}",
                     self.message,
-                    self.prompt
-                        .error
-                        .as_deref()
-                        .unwrap_or("invalid input")
+                    self.prompt.error.as_deref().unwrap_or("invalid input")
                 );
-                let _ = write!(output, "{} {}", colors::cyan(figures::ARROW), self.input.render_ansi());
+                let _ = write!(
+                    output,
+                    "{} {}",
+                    colors::cyan(figures::ARROW),
+                    self.input.render_ansi()
+                );
             }
             _ => {
                 // Idle / Loading
@@ -140,10 +138,19 @@ impl Prompt for TextPrompt {
                 let line_len = (ctx.terminal_width.saturating_sub(4)).min(60);
                 let preview_text = self.preview.as_ref().and_then(|f| {
                     let val = self.input.value();
-                    if val.is_empty() { None } else { Some(f(val)) }
+                    if val.is_empty() {
+                        None
+                    } else {
+                        Some(f(val))
+                    }
                 });
 
-                let _ = write!(output, "{} {}", colors::cyan(figures::ARROW), self.input.render_line());
+                let _ = write!(
+                    output,
+                    "{} {}",
+                    colors::cyan(figures::ARROW),
+                    self.input.render_line()
+                );
 
                 if let Some(ref preview) = preview_text {
                     let _ = write!(output, " {}", colors::dim(preview));
@@ -262,7 +269,7 @@ mod tests {
 
     #[test]
     fn test_text_prompt_default_value() {
-        let mut prompt = TextPrompt::new("Name").with_default_value("Alice");
+        let prompt = TextPrompt::new("Name").with_default_value("Alice");
         assert_eq!(prompt.input.value(), "Alice");
     }
 
@@ -329,14 +336,13 @@ mod tests {
 
     #[test]
     fn test_text_prompt_validation() {
-        let mut prompt =
-            TextPrompt::new("Age").with_validate(Box::new(|s| {
-                if s.parse::<i32>().is_ok() {
-                    None
-                } else {
-                    Some("not a number".into())
-                }
-            }));
+        let mut prompt = TextPrompt::new("Age").with_validate(Box::new(|s| {
+            if s.parse::<i32>().is_ok() {
+                None
+            } else {
+                Some("not a number".into())
+            }
+        }));
         prompt.handle_event(&Event::Key(crossterm::event::KeyEvent::new(
             crossterm::event::KeyCode::Char('a'),
             crossterm::event::KeyModifiers::NONE,

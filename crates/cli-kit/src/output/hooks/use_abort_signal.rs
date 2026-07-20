@@ -1,5 +1,5 @@
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 /// Abort signal hook — notifies components when an abort has been requested.
 /// Mirrors upstream `useAbortSignal` hook.
@@ -90,10 +90,9 @@ mod tests {
     fn test_abort_signal_callback_invoked() {
         let flag = Arc::new(AtomicBool::new(false));
         let flag_clone = flag.clone();
-        let signal = UseAbortSignal::new()
-            .with_callback(move || {
-                flag_clone.store(true, Ordering::SeqCst);
-            });
+        let signal = UseAbortSignal::new().with_callback(move || {
+            flag_clone.store(true, Ordering::SeqCst);
+        });
         signal.abort();
         assert!(flag.load(Ordering::SeqCst));
     }

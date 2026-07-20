@@ -54,7 +54,11 @@ mod tests {
     fn test_info_message_render() {
         let msg = InfoMessage::new("Note", "Some details");
         let items = msg.render(false);
-        let text: String = items.iter().map(|t| t.render_plain()).collect::<Vec<_>>().join("\n");
+        let text: String = items
+            .iter()
+            .map(|t| t.render_plain())
+            .collect::<Vec<_>>()
+            .join("\n");
         assert!(text.contains("Note"));
         assert!(text.contains("Some details"));
     }
@@ -64,7 +68,11 @@ mod tests {
         let msg = InfoMessage::new("Config", "line1\nline2");
         let items = msg.render(false);
         assert_eq!(items.len(), 3);
-        let text: String = items.iter().map(|t| t.render_plain()).collect::<Vec<_>>().join("\n");
+        let text: String = items
+            .iter()
+            .map(|t| t.render_plain())
+            .collect::<Vec<_>>()
+            .join("\n");
         assert!(text.contains("line1"));
         assert!(text.contains("line2"));
     }

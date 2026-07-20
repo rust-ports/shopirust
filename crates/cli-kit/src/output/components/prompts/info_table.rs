@@ -52,10 +52,7 @@ pub fn render_info_table(sections: &[InfoTableSection], colors_enabled: bool) ->
         });
 
         for entry in &section.items {
-            let bullet = entry
-                .bullet
-                .clone()
-                .unwrap_or_else(|| "•".to_string());
+            let bullet = entry.bullet.clone().unwrap_or_else(|| "•".to_string());
             let bullet_colored = if colors_enabled {
                 colored::Colorize::cyan(&*bullet).to_string()
             } else {
@@ -68,7 +65,10 @@ pub fn render_info_table(sections: &[InfoTableSection], colors_enabled: bool) ->
                 entry.label.clone()
             };
 
-            let mut line = format!("  {bullet_colored} {label_colored}: {}", entry.value.render_ansi(colors_enabled));
+            let mut line = format!(
+                "  {bullet_colored} {label_colored}: {}",
+                entry.value.render_ansi(colors_enabled)
+            );
 
             if let Some(help) = &entry.helper_text {
                 let help_colored = if colors_enabled {
@@ -99,15 +99,13 @@ mod tests {
 
     #[test]
     fn test_info_table_item_bullet() {
-        let item = InfoTableItem::new("k", TokenItem::raw("v"))
-            .with_bullet("→");
+        let item = InfoTableItem::new("k", TokenItem::raw("v")).with_bullet("→");
         assert_eq!(item.bullet, Some("→".into()));
     }
 
     #[test]
     fn test_info_table_item_help() {
-        let item = InfoTableItem::new("k", TokenItem::raw("v"))
-            .with_help("tooltip");
+        let item = InfoTableItem::new("k", TokenItem::raw("v")).with_help("tooltip");
         assert_eq!(item.helper_text, Some("tooltip".into()));
     }
 
@@ -121,12 +119,14 @@ mod tests {
     fn test_render_info_table_section() {
         let sections = vec![InfoTableSection {
             header: "Options".into(),
-            items: vec![
-                InfoTableItem::new("a", TokenItem::raw("1")),
-            ],
+            items: vec![InfoTableItem::new("a", TokenItem::raw("1"))],
         }];
         let result = render_info_table(&sections, false);
-        let text: String = result.iter().map(|t| t.render_plain()).collect::<Vec<_>>().join("\n");
+        let text: String = result
+            .iter()
+            .map(|t| t.render_plain())
+            .collect::<Vec<_>>()
+            .join("\n");
         assert!(text.contains("Options"));
         assert!(text.contains("a"));
         assert!(text.contains("1"));
@@ -136,13 +136,14 @@ mod tests {
     fn test_render_info_table_with_help() {
         let sections = vec![InfoTableSection {
             header: "Settings".into(),
-            items: vec![
-                InfoTableItem::new("key", TokenItem::raw("val"))
-                    .with_help("description"),
-            ],
+            items: vec![InfoTableItem::new("key", TokenItem::raw("val")).with_help("description")],
         }];
         let result = render_info_table(&sections, false);
-        let text: String = result.iter().map(|t| t.render_plain()).collect::<Vec<_>>().join("\n");
+        let text: String = result
+            .iter()
+            .map(|t| t.render_plain())
+            .collect::<Vec<_>>()
+            .join("\n");
         assert!(text.contains("description"));
     }
 }

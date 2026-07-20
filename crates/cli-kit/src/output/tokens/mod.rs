@@ -6,6 +6,28 @@ pub use lines_diff::{render_lines_diff, simple_diff, Change, LinesDiffContentTok
 pub use token_item::{TokenItem, TokenStyle};
 pub use tokenized_text::TokenizedText;
 
+/// Strip ANSI escape sequences from a string.
+pub fn strip_ansi(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\x1b' {
+            if chars.next() == Some('[') {
+                while let Some(&n) = chars.peek() {
+                    if n == 'm' {
+                        chars.next();
+                        break;
+                    }
+                    chars.next();
+                }
+            }
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
 /// Trait for content tokens (port of upstream `ContentToken<T>`).
 /// Each implementor knows how to convert itself to `TokenItem`s.
 pub trait ContentToken<T> {

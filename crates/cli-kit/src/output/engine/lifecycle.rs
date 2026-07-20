@@ -3,10 +3,7 @@ use super::{EventResult, Prompt, RenderContext, RenderMode};
 
 /// Render a static component to an ANSI string (non-TTY path).
 /// Calls `render()` once with `RenderMode::Ansi` and captures the output.
-pub fn render_static(
-    component: &mut dyn Prompt<Value = String>,
-    ctx: &RenderContext,
-) -> String {
+pub fn render_static(component: &mut dyn Prompt<Value = String>, ctx: &RenderContext) -> String {
     let mut buf = String::new();
     let mode = &mut RenderMode::Ansi(&mut buf);
     component.render(mode, ctx);

@@ -67,7 +67,10 @@ pub fn render_box_with_border(
 
     // Type label line
     items.push(TokenItem {
-        value: format!("│  {} ", colorize(&format!(" {}", t.label()), t.color_name())),
+        value: format!(
+            "│  {} ",
+            colorize(&format!(" {}", t.label()), t.color_name())
+        ),
         style: crate::output::tokens::TokenStyle::Raw,
     });
 
@@ -226,7 +229,11 @@ mod tests {
     #[test]
     fn test_render_banner_info() {
         let items = render_banner(BannerType::Info, Some("Headline"), "Body", &[], false);
-        let text: String = items.iter().map(|t| t.render_plain()).collect::<Vec<_>>().join("\n");
+        let text: String = items
+            .iter()
+            .map(|t| t.render_plain())
+            .collect::<Vec<_>>()
+            .join("\n");
         assert!(text.contains("info"));
         assert!(text.contains("Headline"));
         assert!(text.contains("Body"));
@@ -236,13 +243,22 @@ mod tests {
     fn test_render_banner_with_footnotes() {
         let footnotes = vec![("label".into(), "url".into())];
         let items = render_banner(BannerType::Info, None, "body", &footnotes, false);
-        let text: String = items.iter().map(|t| t.render_plain()).collect::<Vec<_>>().join("\n");
+        let text: String = items
+            .iter()
+            .map(|t| t.render_plain())
+            .collect::<Vec<_>>()
+            .join("\n");
         assert!(text.contains("[0]"));
     }
 
     #[test]
     fn test_render_external_error_uses_top_bottom_lines() {
-        let items = render_box_with_top_bottom_lines(BannerType::ExternalError, Some("Ext"), "ext body", false);
+        let items = render_box_with_top_bottom_lines(
+            BannerType::ExternalError,
+            Some("Ext"),
+            "ext body",
+            false,
+        );
         assert!(!items.is_empty());
     }
 

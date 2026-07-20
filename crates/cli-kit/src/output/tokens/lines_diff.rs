@@ -180,7 +180,8 @@ mod tests {
 
     #[test]
     fn test_lines_diff_token_render() {
-        let token = LinesDiffContentToken::new("changes:".into(), vec![Change::Addition("add".into())]);
+        let token =
+            LinesDiffContentToken::new("changes:".into(), vec![Change::Addition("add".into())]);
         let items = token.render(true);
         assert_eq!(items.len(), 2);
         assert_eq!(items[0].render_plain(), "changes:");

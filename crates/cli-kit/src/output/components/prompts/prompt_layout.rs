@@ -134,15 +134,13 @@ mod tests {
 
     #[test]
     fn test_prompt_layout_states() {
-        let pl = PromptLayout::new("test")
-            .with_state(PromptState::Submitted);
+        let pl = PromptLayout::new("test").with_state(PromptState::Submitted);
         assert_eq!(pl.state, PromptState::Submitted);
     }
 
     #[test]
     fn test_prompt_layout_with_error() {
-        let pl = PromptLayout::new("test")
-            .with_error("invalid");
+        let pl = PromptLayout::new("test").with_error("invalid");
         assert_eq!(pl.state, PromptState::Error);
         assert_eq!(pl.error_message, Some("invalid".into()));
     }
@@ -156,8 +154,7 @@ mod tests {
 
     #[test]
     fn test_render_prefix_submitted() {
-        let pl = PromptLayout::new("test")
-            .with_state(PromptState::Submitted);
+        let pl = PromptLayout::new("test").with_state(PromptState::Submitted);
         assert_eq!(pl.render_prefix(false), "✔");
     }
 

@@ -236,10 +236,7 @@ impl GraphqlClient {
     }
 
     /// Attach an [`UnauthorizedHandler`] for automatic token refresh on 401.
-    pub fn with_token_refresh_handler(
-        mut self,
-        handler: Arc<dyn UnauthorizedHandler>,
-    ) -> Self {
+    pub fn with_token_refresh_handler(mut self, handler: Arc<dyn UnauthorizedHandler>) -> Self {
         self.token_refresh_handler = Some(handler);
         self
     }
@@ -372,8 +369,12 @@ impl GraphqlClient {
                         );
                     }
 
-                    let response_result =
-                        client.post(&url).headers(headers.clone()).json(&body).send().await;
+                    let response_result = client
+                        .post(&url)
+                        .headers(headers.clone())
+                        .json(&body)
+                        .send()
+                        .await;
 
                     let response = match response_result {
                         Ok(r) => r,
@@ -635,10 +636,7 @@ mod tests {
                 extensions: None,
             },
         ];
-        assert_eq!(
-            extract_error_messages(&errors),
-            "first error\nsecond error"
-        );
+        assert_eq!(extract_error_messages(&errors), "first error\nsecond error");
     }
 
     #[test]
@@ -792,8 +790,7 @@ mod tests {
     #[tokio::test]
     async fn client_with_custom_reqwest_client() {
         let custom_client = build_client(Some(5000)).unwrap();
-        let _client =
-            GraphqlClient::with_client("http://example.com/graphql", None, custom_client);
+        let _client = GraphqlClient::with_client("http://example.com/graphql", None, custom_client);
     }
 
     #[tokio::test]
@@ -831,8 +828,7 @@ mod tests {
             .mount(&mock_server)
             .await;
 
-        let client =
-            GraphqlClient::new(mock_server.uri(), None).with_retry(RetryConfig::new());
+        let client = GraphqlClient::new(mock_server.uri(), None).with_retry(RetryConfig::new());
         let result: serde_json::Value = client.query("{ ok }").await.unwrap();
         assert_eq!(result, json!({ "ok": true }));
     }

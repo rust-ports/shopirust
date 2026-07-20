@@ -91,12 +91,8 @@ mod tests {
 
     #[test]
     fn client_new_sets_fields() {
-        let client = FunctionsClient::new(
-            "org-42".into(),
-            "app-7".into(),
-            "shpat_test".into(),
-            None,
-        );
+        let client =
+            FunctionsClient::new("org-42".into(), "app-7".into(), "shpat_test".into(), None);
         assert_eq!(client.organization_id, "org-42");
         assert_eq!(client.app_id, "app-7");
         assert_eq!(client.token, "shpat_test");
@@ -106,8 +102,7 @@ mod tests {
     fn client_new_sets_env() {
         let mut env = HashMap::new();
         env.insert("SHOPIFY_SERVICE_ENV".to_string(), "production".to_string());
-        let client =
-            FunctionsClient::new("o".into(), "a".into(), "t".into(), Some(env.clone()));
+        let client = FunctionsClient::new("o".into(), "a".into(), "t".into(), Some(env.clone()));
         assert_eq!(client.env, Some(env));
     }
 

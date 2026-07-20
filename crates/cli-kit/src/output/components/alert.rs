@@ -105,7 +105,11 @@ mod tests {
             ..Default::default()
         };
         let items = render_alert(&config, false);
-        let text: String = items.iter().map(|t| t.render_plain()).collect::<Vec<_>>().join("\n");
+        let text: String = items
+            .iter()
+            .map(|t| t.render_plain())
+            .collect::<Vec<_>>()
+            .join("\n");
         assert!(text.contains("Done!"));
         assert!(text.contains("Operation completed"));
     }
@@ -119,7 +123,11 @@ mod tests {
             ..Default::default()
         };
         let items = render_alert(&config, false);
-        let text: String = items.iter().map(|t| t.render_plain()).collect::<Vec<_>>().join("\n");
+        let text: String = items
+            .iter()
+            .map(|t| t.render_plain())
+            .collect::<Vec<_>>()
+            .join("\n");
         assert!(text.contains("Next steps"));
         assert!(text.contains("Step one"));
     }
@@ -132,7 +140,11 @@ mod tests {
             ..Default::default()
         };
         let items = render_alert(&config, false);
-        let text: String = items.iter().map(|t| t.render_plain()).collect::<Vec<_>>().join("\n");
+        let text: String = items
+            .iter()
+            .map(|t| t.render_plain())
+            .collect::<Vec<_>>()
+            .join("\n");
         assert!(text.contains("Reference"));
     }
 
@@ -147,7 +159,11 @@ mod tests {
             ..Default::default()
         };
         let items = render_alert(&config, false);
-        let text: String = items.iter().map(|t| t.render_plain()).collect::<Vec<_>>().join("\n");
+        let text: String = items
+            .iter()
+            .map(|t| t.render_plain())
+            .collect::<Vec<_>>()
+            .join("\n");
         assert!(text.contains("Details"));
         assert!(text.contains("Extra info"));
     }

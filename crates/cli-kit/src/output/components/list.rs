@@ -157,7 +157,12 @@ mod tests {
 
     #[test]
     fn test_list_item_colors_variants() {
-        for color in &[ListItemColor::Green, ListItemColor::Yellow, ListItemColor::Red, ListItemColor::Dim] {
+        for color in &[
+            ListItemColor::Green,
+            ListItemColor::Yellow,
+            ListItemColor::Red,
+            ListItemColor::Dim,
+        ] {
             let applied = apply_list_color("test", *color, true);
             assert!(!applied.is_empty());
         }

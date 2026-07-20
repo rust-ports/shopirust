@@ -1,11 +1,9 @@
-use crate::util::environment::{
-    max_request_time_for_network_calls_ms, skip_network_level_retry,
-};
+use crate::util::environment::{max_request_time_for_network_calls_ms, skip_network_level_retry};
 use crate::util::retry::is_transient_network_error;
-use std::fmt;
 use reqwest::header::{self, HeaderMap, HeaderValue};
 use reqwest::{Client, Response};
 use std::collections::HashMap;
+use std::fmt;
 use std::time::Duration;
 use tracing::debug;
 
@@ -276,7 +274,9 @@ fn shopify_client() -> Client {
 /// When `timeout_ms` is `None` the default 30-second timeout is used.
 pub fn build_client(timeout_ms: Option<u64>) -> reqwest::Result<Client> {
     Client::builder()
-        .timeout(Duration::from_millis(timeout_ms.unwrap_or(DEFAULT_TIMEOUT_MS)))
+        .timeout(Duration::from_millis(
+            timeout_ms.unwrap_or(DEFAULT_TIMEOUT_MS),
+        ))
         .pool_idle_timeout(Duration::from_secs(30))
         .user_agent(USER_AGENT_STRING)
         .build()
@@ -285,7 +285,9 @@ pub fn build_client(timeout_ms: Option<u64>) -> reqwest::Result<Client> {
 /// Build a Shopify [`reqwest::Client`] that enforces HTTPS-only connections.
 pub fn build_shopify_client(timeout_ms: Option<u64>) -> reqwest::Result<Client> {
     Client::builder()
-        .timeout(Duration::from_millis(timeout_ms.unwrap_or(DEFAULT_TIMEOUT_MS)))
+        .timeout(Duration::from_millis(
+            timeout_ms.unwrap_or(DEFAULT_TIMEOUT_MS),
+        ))
         .pool_idle_timeout(Duration::from_secs(30))
         .user_agent(USER_AGENT_STRING)
         .https_only(true)
@@ -298,7 +300,12 @@ pub fn build_shopify_client(timeout_ms: Option<u64>) -> reqwest::Result<Client> 
 fn is_interesting_header(name: &str) -> bool {
     matches!(
         name,
-        "cache-control" | "content-type" | "etag" | "x-request-id" | "server-timing" | "retry-after"
+        "cache-control"
+            | "content-type"
+            | "etag"
+            | "x-request-id"
+            | "server-timing"
+            | "retry-after"
     )
 }
 
@@ -368,7 +375,10 @@ async fn execute_request(
     if !behaviour.use_network_retry.enabled {
         let response = send_once(client, method, url, headers, body).await?;
         if log_request {
-            debug!("Request to {url} completed with status {}", response.status());
+            debug!(
+                "Request to {url} completed with status {}",
+                response.status()
+            );
         }
         return Ok(response);
     }
@@ -428,7 +438,11 @@ async fn execute_request(
         tokio::time::sleep(delay).await;
     }
 
-    if error_occurred { Err(last_error) } else { Err(HttpError::Timeout) }
+    if error_occurred {
+        Err(last_error)
+    } else {
+        Err(HttpError::Timeout)
+    }
 }
 
 // ── Public API ───────────────────────────────────────────────────────

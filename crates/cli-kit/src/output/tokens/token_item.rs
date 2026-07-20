@@ -129,7 +129,11 @@ impl TokenItem {
         Self::new("✖", TokenStyle::FailIcon)
     }
 
-    pub fn link(value: impl Into<String>, url: impl Into<String>, fallback: Option<String>) -> Self {
+    pub fn link(
+        value: impl Into<String>,
+        url: impl Into<String>,
+        fallback: Option<String>,
+    ) -> Self {
         Self {
             value: value.into(),
             style: TokenStyle::Link {
@@ -170,7 +174,9 @@ impl TokenItem {
             TokenStyle::PackageJsonScript => format!("`{}`", self.value).magenta().to_string(),
             TokenStyle::SuccessIcon => self.value.green().to_string(),
             TokenStyle::FailIcon => self.value.red().to_string(),
-            TokenStyle::Link { url, fallback } => self.render_link_ansi(url, fallback, colors_enabled),
+            TokenStyle::Link { url, fallback } => {
+                self.render_link_ansi(url, fallback, colors_enabled)
+            }
             TokenStyle::Color(code) => format!("\x1b[{}m{}\x1b[0m", code, self.value),
         }
     }
@@ -178,10 +184,7 @@ impl TokenItem {
     /// Render plain text without ANSI.
     pub fn render_plain(&self) -> String {
         match &self.style {
-            TokenStyle::Link {
-                url,
-                fallback,
-            } => {
+            TokenStyle::Link { url, fallback } => {
                 let has_url = url != &self.value;
                 fallback
                     .clone()
@@ -197,7 +200,12 @@ impl TokenItem {
         }
     }
 
-    fn render_link_ansi(&self, url: &str, fallback: &Option<String>, colors_enabled: bool) -> String {
+    fn render_link_ansi(
+        &self,
+        url: &str,
+        fallback: &Option<String>,
+        colors_enabled: bool,
+    ) -> String {
         let text = self.value.green().to_string();
         let default_fallback = if self.value == *url {
             text.clone()
@@ -222,10 +230,14 @@ impl TokenItem {
             TokenStyle::Subdued => Style::default().fg(Color::DarkGray),
             TokenStyle::FilePath => Style::default().add_modifier(Modifier::ITALIC),
             TokenStyle::Bold => Style::default().add_modifier(Modifier::BOLD),
-            TokenStyle::Info => Style::default().fg(Color::Blue).add_modifier(Modifier::BOLD),
+            TokenStyle::Info => Style::default()
+                .fg(Color::Blue)
+                .add_modifier(Modifier::BOLD),
             TokenStyle::Warn => Style::default().fg(Color::Yellow),
             TokenStyle::Error => Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
-            TokenStyle::Heading => Style::default().add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
+            TokenStyle::Heading => {
+                Style::default().add_modifier(Modifier::BOLD | Modifier::UNDERLINED)
+            }
             TokenStyle::Subheading => Style::default().add_modifier(Modifier::UNDERLINED),
             TokenStyle::Italic => Style::default().add_modifier(Modifier::ITALIC),
             TokenStyle::Cyan => Style::default().fg(Color::Cyan),
@@ -236,7 +248,9 @@ impl TokenItem {
             TokenStyle::SuccessIcon => Style::default().fg(Color::Green),
             TokenStyle::FailIcon => Style::default().fg(Color::Red),
             TokenStyle::PackageJsonScript => Style::default().fg(Color::Magenta),
-            TokenStyle::Link { .. } => Style::default().fg(Color::Green).add_modifier(Modifier::UNDERLINED),
+            TokenStyle::Link { .. } => Style::default()
+                .fg(Color::Green)
+                .add_modifier(Modifier::UNDERLINED),
             _ => Style::default(),
         };
 
@@ -257,7 +271,9 @@ impl TokenItem {
 }
 
 fn supports_hyperlinks() -> bool {
-    std::env::var("TERM").ok().is_some_and(|term| term != "dumb" && term != "linux")
+    std::env::var("TERM")
+        .ok()
+        .is_some_and(|term| term != "dumb" && term != "linux")
         && std::env::var("FORCE_HYPERLINK").is_ok_and(|v| !v.is_empty())
 }
 
@@ -293,7 +309,11 @@ impl From<crate::output::Token> for TokenItem {
                     };
                     let _ = write!(text, "{bullet}");
                     for t in item.iter() {
-                        let _ = write!(text, "{}", crate::output::render_tokens_styled(std::slice::from_ref(t)));
+                        let _ = write!(
+                            text,
+                            "{}",
+                            crate::output::render_tokens_styled(std::slice::from_ref(t))
+                        );
                     }
                     let _ = writeln!(text);
                 }

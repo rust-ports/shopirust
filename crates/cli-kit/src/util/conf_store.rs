@@ -663,19 +663,11 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let store = LocalStorage::with_path(dir.path().join("config.json"));
 
-        let _: String = cache_retrieve_or_repopulate(
-            "exp-key",
-            0,
-            || "old".to_string(),
-            Some(&store),
-        );
+        let _: String =
+            cache_retrieve_or_repopulate("exp-key", 0, || "old".to_string(), Some(&store));
 
-        let val: String = cache_retrieve_or_repopulate(
-            "exp-key",
-            0,
-            || "new".to_string(),
-            Some(&store),
-        );
+        let val: String =
+            cache_retrieve_or_repopulate("exp-key", 0, || "new".to_string(), Some(&store));
         assert_eq!(val, "new");
     }
 

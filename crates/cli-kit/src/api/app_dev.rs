@@ -1,6 +1,8 @@
 use crate::api::graphql::{CacheOptions, GraphqlClient, GraphqlRequestError, UnauthorizedHandler};
 use crate::api::rate_limiter::ApiRateLimiter;
-use crate::constants::{app_dev_fqdn, normalize_store_fqdn, service_environment, ServiceEnvironment};
+use crate::constants::{
+    app_dev_fqdn, normalize_store_fqdn, service_environment, ServiceEnvironment,
+};
 use reqwest::header::HeaderMap;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
@@ -32,11 +34,7 @@ impl AppDevClient {
     ///
     /// The `shop_fqdn` is normalized via [`normalize_store_fqdn`] so callers
     /// may pass raw store names, `https://` URLs, or full FQDNs.
-    pub fn new(
-        shop_fqdn: String,
-        token: String,
-        env: Option<HashMap<String, String>>,
-    ) -> Self {
+    pub fn new(shop_fqdn: String, token: String, env: Option<HashMap<String, String>>) -> Self {
         Self {
             shop_fqdn,
             token,
@@ -101,8 +99,7 @@ mod tests {
 
     #[test]
     fn client_new_sets_fields() {
-        let client =
-            AppDevClient::new("my-shop.myshopify.com".into(), "shpat_test".into(), None);
+        let client = AppDevClient::new("my-shop.myshopify.com".into(), "shpat_test".into(), None);
         assert_eq!(client.shop_fqdn, "my-shop.myshopify.com");
         assert_eq!(client.token, "shpat_test");
     }
@@ -111,8 +108,7 @@ mod tests {
     fn client_new_sets_env() {
         let mut env = HashMap::new();
         env.insert("SHOPIFY_SERVICE_ENV".to_string(), "production".to_string());
-        let client =
-            AppDevClient::new("s".into(), "t".into(), Some(env.clone()));
+        let client = AppDevClient::new("s".into(), "t".into(), Some(env.clone()));
         assert_eq!(client.env, Some(env));
     }
 

@@ -34,9 +34,9 @@ impl<T> OptionMap<T> {
     }
 
     pub fn next(&self, current: &str) -> Option<&str> {
-        self.indices.get(current).and_then(|&i| {
-            self.items.get(i + 1).map(|(k, _)| k.as_str())
-        })
+        self.indices
+            .get(current)
+            .and_then(|&i| self.items.get(i + 1).map(|(k, _)| k.as_str()))
     }
 
     pub fn prev(&self, current: &str) -> Option<&str> {
@@ -50,7 +50,9 @@ impl<T> OptionMap<T> {
     }
 
     pub fn get(&self, key: &str) -> Option<&T> {
-        self.indices.get(key).and_then(|&i| self.items.get(i).map(|(_, v)| v))
+        self.indices
+            .get(key)
+            .and_then(|&i| self.items.get(i).map(|(_, v)| v))
     }
 
     pub fn contains(&self, key: &str) -> bool {
@@ -116,7 +118,8 @@ impl UseSelectState {
     }
 
     pub fn page_down(&mut self, total: usize) {
-        self.visible_from = (self.visible_from + self.page_size).min(total.saturating_sub(self.page_size));
+        self.visible_from =
+            (self.visible_from + self.page_size).min(total.saturating_sub(self.page_size));
         self.visible_to = (self.visible_from + self.page_size).min(total);
     }
 

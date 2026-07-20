@@ -1,7 +1,7 @@
+use crate::error::FatalError;
 use crate::output::colors;
 use crate::output::components::banner::{render_box_with_top_bottom_lines, BannerType};
 use crate::output::tokens::TokenItem;
-use crate::error::FatalError;
 
 /// Render a fatal error as rendered TokenItems.
 pub fn render_fatal_error(err: &FatalError, colors_enabled: bool) -> Vec<TokenItem> {
@@ -44,7 +44,11 @@ mod tests {
     fn test_render_fatal_error() {
         let err = abort_error("Broke", None::<String>, vec![]);
         let items = render_fatal_error(&err, false);
-        let text: String = items.iter().map(|t| t.render_plain()).collect::<Vec<_>>().join("\n");
+        let text: String = items
+            .iter()
+            .map(|t| t.render_plain())
+            .collect::<Vec<_>>()
+            .join("\n");
         assert!(text.contains("Error"));
         assert!(text.contains("Broke"));
     }
@@ -53,7 +57,11 @@ mod tests {
     fn test_fatal_error_with_next_steps() {
         let err = abort_error("Deploy failed", Some("Check config"), vec!["Retry".into()]);
         let items = render_fatal_error(&err, false);
-        let text: String = items.iter().map(|t| t.render_plain()).collect::<Vec<_>>().join("\n");
+        let text: String = items
+            .iter()
+            .map(|t| t.render_plain())
+            .collect::<Vec<_>>()
+            .join("\n");
         assert!(text.contains("Next steps"));
     }
 
@@ -75,7 +83,11 @@ mod tests {
             skip_oclif_error_handling: false,
         };
         let items = render_fatal_error(&err, false);
-        let text: String = items.iter().map(|t| t.render_plain()).collect::<Vec<_>>().join("\n");
+        let text: String = items
+            .iter()
+            .map(|t| t.render_plain())
+            .collect::<Vec<_>>()
+            .join("\n");
         assert!(text.contains("Bug"));
     }
 }

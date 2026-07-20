@@ -206,7 +206,10 @@ impl TextInput {
             }
         }
         if pos == display.len() {
-            spans.push(Span::styled(" ", Style::default().add_modifier(Modifier::REVERSED)));
+            spans.push(Span::styled(
+                " ",
+                Style::default().add_modifier(Modifier::REVERSED),
+            ));
         }
 
         ratatui::text::Line::from(spans)

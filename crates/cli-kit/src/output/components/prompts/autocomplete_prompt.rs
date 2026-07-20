@@ -99,7 +99,12 @@ impl Prompt for AutocompletePrompt {
 
                 // Search input line
                 let search_input_render = self.search_input.render_ansi();
-                let _ = writeln!(output, "{} {}", colors::cyan(figures::ARROW), search_input_render);
+                let _ = writeln!(
+                    output,
+                    "{} {}",
+                    colors::cyan(figures::ARROW),
+                    search_input_render
+                );
 
                 // Results
                 if self.select.total_items() == 0 {
@@ -111,8 +116,8 @@ impl Prompt for AutocompletePrompt {
                         let _ = writeln!(output, "  {}", colors::dim("No items available"));
                     }
                 } else {
-                    let available = PromptLayout::available_lines(ctx.terminal_height)
-                        .saturating_sub(3);
+                    let available =
+                        PromptLayout::available_lines(ctx.terminal_height).saturating_sub(3);
                     let rendered = self.select.render_items(colors);
                     let (start, end) = self.select.visible_range(available);
                     for line in &rendered[start..end] {
@@ -260,10 +265,7 @@ mod tests {
 
         // After filtering, only "apple" should remain
         assert_eq!(prompt.select.total_items(), 1);
-        assert_eq!(
-            prompt.select.items()[0].label,
-            "apple"
-        );
+        assert_eq!(prompt.select.items()[0].label, "apple");
     }
 
     #[test]

@@ -101,9 +101,8 @@ mod tests {
     fn organizations_request_url_contains_org_id() {
         let _client = BusinessPlatformClient::new("t".into(), None);
         let fqdn = business_platform_fqdn(None);
-        let expected = format!(
-            "https://{fqdn}/organizations/api/unstable/organization/org-123/graphql"
-        );
+        let expected =
+            format!("https://{fqdn}/organizations/api/unstable/organization/org-123/graphql");
         assert!(expected.contains("org-123"));
     }
 

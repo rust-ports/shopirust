@@ -12,7 +12,11 @@ pub fn render_info(message: &str) -> String {
         ..Default::default()
     };
     let items = components::alert::render_alert(&config, true);
-    items.iter().map(|t| t.render_plain()).collect::<Vec<_>>().join("\n")
+    items
+        .iter()
+        .map(|t| t.render_plain())
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 /// Render a success banner.
@@ -23,7 +27,11 @@ pub fn render_success(message: &str) -> String {
         ..Default::default()
     };
     let items = components::alert::render_alert(&config, true);
-    items.iter().map(|t| t.render_plain()).collect::<Vec<_>>().join("\n")
+    items
+        .iter()
+        .map(|t| t.render_plain())
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 /// Render a warning banner.
@@ -34,7 +42,11 @@ pub fn render_warning(message: &str) -> String {
         ..Default::default()
     };
     let items = components::alert::render_alert(&config, true);
-    items.iter().map(|t| t.render_plain()).collect::<Vec<_>>().join("\n")
+    items
+        .iter()
+        .map(|t| t.render_plain())
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 /// Render an error banner.
@@ -45,7 +57,11 @@ pub fn render_error(message: &str) -> String {
         ..Default::default()
     };
     let items = components::alert::render_alert(&config, true);
-    items.iter().map(|t| t.render_plain()).collect::<Vec<_>>().join("\n")
+    items
+        .iter()
+        .map(|t| t.render_plain())
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 /// Render a fatal error with optional details.
@@ -53,7 +69,11 @@ pub fn render_fatal_error(error: &str, detail: Option<&str>) -> String {
     use crate::error::abort_error;
     let err = abort_error(error, detail, vec![]);
     let items = components::fatal_error::render_fatal_error(&err, true);
-    items.iter().map(|t| t.render_plain()).collect::<Vec<_>>().join("\n")
+    items
+        .iter()
+        .map(|t| t.render_plain())
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 /// Interactive select prompt.
@@ -130,14 +150,15 @@ pub fn render_table(headers: Vec<String>, rows: Vec<Vec<String>>) -> String {
 
     let mut table = Table::new(headers);
     for row_data in rows {
-        let row_cells: Vec<Cell<String>> = row_data
-            .into_iter()
-            .map(Cell::new)
-            .collect();
+        let row_cells: Vec<Cell<String>> = row_data.into_iter().map(Cell::new).collect();
         table = table.add_row(Row::new(row_cells));
     }
     let items = table.render(false);
-    items.iter().map(|t| t.render_plain()).collect::<Vec<_>>().join("\n")
+    items
+        .iter()
+        .map(|t| t.render_plain())
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 /// Render rich formatted output section (title + body).

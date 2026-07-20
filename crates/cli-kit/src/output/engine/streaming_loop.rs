@@ -8,10 +8,7 @@ use std::time::Duration;
 /// Ctrl+C to cancel. Returns when the component signals `is_done()`.
 ///
 /// This is a synchronous version. An async variant can be added in Phase 3G.
-pub fn run_streaming(
-    component: &mut impl StreamWidget,
-    ctx: &RenderContext,
-) -> Result<(), String> {
+pub fn run_streaming(component: &mut impl StreamWidget, ctx: &RenderContext) -> Result<(), String> {
     if component.is_done() {
         return Ok(());
     }
@@ -137,7 +134,8 @@ mod tests {
     fn test_run_streaming_requires_tty() {
         // Without a real TTY, this will just test that the error handling works
         // or that it returns gracefully. We can't test TUI rendering in unit tests.
-        let mut component = crate::output::components::static_component::StaticComponent::new("test");
+        let mut component =
+            crate::output::components::static_component::StaticComponent::new("test");
         component.mark_done();
         // Since it's already done, run_streaming should return Ok(())
         let ctx = RenderContext::default();

@@ -79,7 +79,10 @@ mod tests {
 
     #[test]
     fn test_parse_gid_theme() {
-        assert_eq!(parse_gid("gid://shopify/OnlineStoreTheme/123456").unwrap(), 123456);
+        assert_eq!(
+            parse_gid("gid://shopify/OnlineStoreTheme/123456").unwrap(),
+            123456
+        );
     }
 
     #[test]
@@ -112,10 +115,7 @@ mod tests {
 
     #[test]
     fn test_gid_to_type_shop() {
-        assert_eq!(
-            gid_to_type("gid://shopify/Shop/456").unwrap(),
-            "Shop"
-        );
+        assert_eq!(gid_to_type("gid://shopify/Shop/456").unwrap(), "Shop");
     }
 
     #[test]
@@ -128,18 +128,12 @@ mod tests {
 
     #[test]
     fn test_compose_theme_gid() {
-        assert_eq!(
-            compose_theme_gid(123),
-            "gid://shopify/OnlineStoreTheme/123"
-        );
+        assert_eq!(compose_theme_gid(123), "gid://shopify/OnlineStoreTheme/123");
     }
 
     #[test]
     fn test_compose_shop_gid() {
-        assert_eq!(
-            compose_shop_gid(456),
-            "gid://shopify/Shop/456"
-        );
+        assert_eq!(compose_shop_gid(456), "gid://shopify/Shop/456");
     }
 
     #[test]

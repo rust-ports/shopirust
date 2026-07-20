@@ -118,47 +118,9 @@ pub fn render_tokens_plain(tokens: &[Token]) -> String {
     out
 }
 
-pub fn strip_ansi(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    let mut chars = s.chars().peekable();
-    while let Some(c) = chars.next() {
-        if c == '\x1b' {
-            if chars.next() == Some('[') {
-                while let Some(&n) = chars.peek() {
-                    if n == 'm' {
-                        chars.next();
-                        break;
-                    }
-                    chars.next();
-                }
-            }
-        } else {
-            out.push(c);
-        }
-    }
-    out
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_strip_ansi_simple() {
-        let input = "\x1b[31mhello\x1b[0m";
-        assert_eq!(strip_ansi(input), "hello");
-    }
-
-    #[test]
-    fn test_strip_ansi_no_ansi() {
-        assert_eq!(strip_ansi("hello"), "hello");
-    }
-
-    #[test]
-    fn test_strip_ansi_mixed() {
-        let input = "\x1b[1mbold\x1b[0m and \x1b[33myellow\x1b[0m";
-        assert_eq!(strip_ansi(input), "bold and yellow");
-    }
 
     #[test]
     fn test_render_plain_raw() {

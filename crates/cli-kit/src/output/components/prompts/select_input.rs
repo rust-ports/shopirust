@@ -1,5 +1,5 @@
-use crate::output::figures;
 use crate::output::colors;
+use crate::output::figures;
 
 /// A single selectable option.
 #[derive(Debug, Clone)]
@@ -78,7 +78,10 @@ impl<T> SelectInput<T> {
     }
 
     fn last_selectable_index(items: &[Item<T>]) -> usize {
-        items.iter().rposition(|i| i.disabled.is_none()).unwrap_or(0)
+        items
+            .iter()
+            .rposition(|i| i.disabled.is_none())
+            .unwrap_or(0)
     }
 
     fn next_selectable(&self, from: usize) -> Option<usize> {
@@ -168,7 +171,12 @@ impl<T> SelectInput<T> {
 
     /// Build a group header line for a transition between items.
     fn group_header(group: &str, colors: bool) -> String {
-        let sep = format!("{} {} {}", figures::HORIZONTAL_LINE.repeat(6), group, figures::HORIZONTAL_LINE.repeat(6));
+        let sep = format!(
+            "{} {} {}",
+            figures::HORIZONTAL_LINE.repeat(6),
+            group,
+            figures::HORIZONTAL_LINE.repeat(6)
+        );
         if colors {
             colors::dim(&sep)
         } else {
@@ -355,10 +363,7 @@ mod tests {
 
     #[test]
     fn test_select_input_select_index() {
-        let mut input = SelectInput::new(vec![
-            Item::new("a", 1),
-            Item::new("b", 2),
-        ]);
+        let mut input = SelectInput::new(vec![Item::new("a", 1), Item::new("b", 2)]);
         assert!(input.select_index(1));
         assert_eq!(input.cursor_index(), 1);
         // can't select out of bounds
@@ -367,9 +372,7 @@ mod tests {
 
     #[test]
     fn test_select_input_selected_value() {
-        let input = SelectInput::new(vec![
-            Item::new("hello", "world"),
-        ]);
+        let input = SelectInput::new(vec![Item::new("hello", "world")]);
         assert_eq!(input.selected_value(), Some("world"));
     }
 

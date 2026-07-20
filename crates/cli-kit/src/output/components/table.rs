@@ -172,12 +172,7 @@ impl Table {
         TokenItem::raw(line)
     }
 
-    fn render_separator(
-        &self,
-        widths: &[usize],
-        colors_enabled: bool,
-        items: &mut Vec<TokenItem>,
-    ) {
+    fn render_separator(&self, widths: &[usize], colors_enabled: bool, items: &mut Vec<TokenItem>) {
         let parts: Vec<String> = widths
             .iter()
             .map(|w| figures::HORIZONTAL_LINE.repeat(*w))
@@ -199,9 +194,7 @@ impl Table {
     ) -> TokenItem {
         let mut line = String::new();
         for (i, cell) in row.cells.iter().enumerate() {
-            let color = cell
-                .color
-                .or(self.column_colors.get(i).copied().flatten());
+            let color = cell.color.or(self.column_colors.get(i).copied().flatten());
             let text = match color {
                 Some(c) => c.apply(&cell.value, colors_enabled),
                 None => cell.value.clone(),
@@ -243,11 +236,10 @@ mod tests {
 
     #[test]
     fn test_table_basic() {
-        let table = Table::new(vec!["Name".into(), "Role".into()])
-            .with_rows(vec![
-                Row::new(vec!["Alice".into(), "Admin".into()]),
-                Row::new(vec!["Bob".into(), "Editor".into()]),
-            ]);
+        let table = Table::new(vec!["Name".into(), "Role".into()]).with_rows(vec![
+            Row::new(vec!["Alice".into(), "Admin".into()]),
+            Row::new(vec!["Bob".into(), "Editor".into()]),
+        ]);
         let items = table.render(false);
         let text: Vec<String> = items.iter().map(|t| t.render_plain()).collect();
         assert!(text.iter().any(|l| l.contains("Name")));
@@ -292,8 +284,7 @@ mod tests {
 
     #[test]
     fn test_table_add_row() {
-        let table = Table::new(vec!["A".into()])
-            .add_row(Row::new(vec!["1".into()]));
+        let table = Table::new(vec!["A".into()]).add_row(Row::new(vec!["1".into()]));
         assert_eq!(table.rows.len(), 1);
     }
 }

@@ -159,7 +159,9 @@ mod tests {
 
     #[test]
     fn test_loading_bar_settings() {
-        let lb = LoadingBar::new("x").with_no_color(true).with_no_progress(false);
+        let lb = LoadingBar::new("x")
+            .with_no_color(true)
+            .with_no_progress(false);
         assert!(!lb.no_progress);
         assert!(lb.no_color);
     }

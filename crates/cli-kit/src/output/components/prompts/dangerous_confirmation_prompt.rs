@@ -15,10 +15,7 @@ pub struct DangerousConfirmationPrompt {
 }
 
 impl DangerousConfirmationPrompt {
-    pub fn new(
-        message: impl Into<String>,
-        confirmation_word: impl Into<String>,
-    ) -> Self {
+    pub fn new(message: impl Into<String>, confirmation_word: impl Into<String>) -> Self {
         Self {
             input: TextInput::new(""),
             message: message.into(),

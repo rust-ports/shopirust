@@ -29,18 +29,19 @@ struct ProcessInfo {
 }
 
 impl ConcurrentOutputStream {
-    pub fn new(
-        prefixes: Vec<String>,
-        show_timestamps: bool,
-        use_alternative_colors: bool,
-    ) -> Self {
+    pub fn new(prefixes: Vec<String>, show_timestamps: bool, use_alternative_colors: bool) -> Self {
         let colors: &[&str] = if use_alternative_colors {
             ALT_COLORS
         } else {
             CONCURRENT_COLORS
         };
 
-        let prefix_col_size = prefixes.iter().map(|p| p.len()).max().unwrap_or(0).min(MAX_PREFIX);
+        let prefix_col_size = prefixes
+            .iter()
+            .map(|p| p.len())
+            .max()
+            .unwrap_or(0)
+            .min(MAX_PREFIX);
 
         let processes: Vec<ProcessInfo> = prefixes
             .iter()
@@ -150,9 +151,7 @@ impl StreamWidget for ConcurrentOutputStream {
             let span = if ctx.colors_enabled {
                 ratatui::text::Span::styled(
                     full,
-                    ratatui::style::Style::default().fg(
-                        Self::parse_color(&line.color),
-                    ),
+                    ratatui::style::Style::default().fg(Self::parse_color(&line.color)),
                 )
             } else {
                 ratatui::text::Span::raw(full)
@@ -216,8 +215,7 @@ mod tests {
 
     #[test]
     fn test_concurrent_stream_new() {
-        let stream =
-            ConcurrentOutputStream::new(vec!["build".into(), "test".into()], false, false);
+        let stream = ConcurrentOutputStream::new(vec!["build".into(), "test".into()], false, false);
         assert_eq!(stream.processes.len(), 2);
         assert!(stream.lines.is_empty());
     }
@@ -301,7 +299,7 @@ mod tests {
     fn test_concurrent_stream_render_does_not_panic() {
         let mut stream = ConcurrentOutputStream::new(vec!["app".into()], false, false);
         stream.add_line("app", "hello");
-        let ctx = RenderContext::default();
+        let _ctx = RenderContext::default();
         // TUI render requires a terminal; just verify no panic via state
         assert_eq!(stream.lines.len(), 1);
     }

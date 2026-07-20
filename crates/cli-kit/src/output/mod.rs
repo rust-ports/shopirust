@@ -1,25 +1,17 @@
 mod token;
-pub use token::{render_tokens_plain, render_tokens_styled, strip_ansi, Token};
+// strip_ansi lives in tokens module; re-exported here for backward compat
+pub use token::{render_tokens_plain, render_tokens_styled, Token};
+pub use tokens::strip_ansi;
 
-pub mod alert;
-pub mod banner;
-pub mod concurrent_output;
 pub mod colors;
 pub mod components;
 pub mod engine;
 pub mod figures;
 pub mod hooks;
-pub mod inflector;
+pub mod progress;
 pub mod public_api;
 pub mod tokens;
 pub mod utilities;
-pub mod link;
-pub mod list;
-pub mod progress;
-pub mod prompt;
-pub mod table;
-pub mod tasks;
-pub mod text_input;
 
 use colored::Colorize;
 

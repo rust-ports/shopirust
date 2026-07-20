@@ -468,12 +468,9 @@ impl PartnersClient {
         token: String,
         env: Option<std::collections::HashMap<String, String>>,
     ) -> Self {
-        let url = format!(
-            "https://{}/api/cli/graphql",
-            partners_fqdn(env.as_ref()),
-        );
-        let graphql = GraphqlClient::new(url, Some(token))
-            .with_rate_limiter(partners_rate_limiter());
+        let url = format!("https://{}/api/cli/graphql", partners_fqdn(env.as_ref()),);
+        let graphql =
+            GraphqlClient::new(url, Some(token)).with_rate_limiter(partners_rate_limiter());
         Self { graphql }
     }
 
@@ -483,9 +480,7 @@ impl PartnersClient {
     }
 
     /// Fetch all organizations accessible with the current token.
-    pub async fn organizations(
-        &self,
-    ) -> Result<Vec<Organization>, GraphqlRequestError> {
+    pub async fn organizations(&self) -> Result<Vec<Organization>, GraphqlRequestError> {
         let resp: OrgsResponse = self.graphql.query(ALL_ORGS_QUERY).await?;
         Ok(resp.organizations.nodes)
     }
@@ -646,9 +641,7 @@ impl PartnersClient {
     }
 
     /// Fetch the current account info (user email or service account name).
-    pub async fn current_account_info(
-        &self,
-    ) -> Result<AccountInfo, GraphqlRequestError> {
+    pub async fn current_account_info(&self) -> Result<AccountInfo, GraphqlRequestError> {
         let resp: CurrentAccountInfoResponse =
             self.graphql.query(CURRENT_ACCOUNT_INFO_QUERY).await?;
         Ok(resp.current_account_info)

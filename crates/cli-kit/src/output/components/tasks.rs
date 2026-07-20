@@ -250,10 +250,7 @@ mod tests {
         let mut runner = TaskRunner::new(items);
         runner.fail_current("compiler error");
         assert_eq!(runner.items()[0].status, TaskItemStatus::Failed);
-        assert_eq!(
-            runner.items()[0].error.as_deref(),
-            Some("compiler error")
-        );
+        assert_eq!(runner.items()[0].error.as_deref(), Some("compiler error"));
         assert!(runner.is_done());
     }
 

@@ -10,9 +10,9 @@ pub struct StaticComponent {
 impl StaticComponent {
     pub fn new(content: impl Into<String>) -> Self {
         Self {
-            content: vec![ratatui::text::Line::from(
-                ratatui::text::Span::raw(content.into()),
-            )],
+            content: vec![ratatui::text::Line::from(ratatui::text::Span::raw(
+                content.into(),
+            ))],
             done: false,
         }
     }
