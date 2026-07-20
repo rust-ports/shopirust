@@ -1,16 +1,17 @@
 # CLI-Kit Phase Plan & Checklist
 
-**Current**: ~19,500 LOC / 105 files / ~40% of upstream cli-kit
+**Current**: ~19,574 LOC / 104 files / ~40% of upstream cli-kit
 **Target**: ~22,000 LOC / 100+ files / 100% of upstream cli-kit
 
 ---
 
 ## Phase 2 — API Client Methods (+3,000 LOC)
 
-### 2.1 `api/app_management.rs` (58 → ~400 LOC)
-- [ ] Struct `AppManagementClient` with `GraphqlClient` + token
-- [ ] `new(token)` — base URL from `constants::app_management_fqdn()`
-- [ ] `organizations()` — list orgs the user has access to
+### 2.1 `api/app_management.rs` (282 → ~500 LOC)
+- [x] Struct `AppManagementClient` with `GraphqlClient` + token
+- [x] `new(token)` — base URL from `constants::app_management_fqdn()`
+- [x] Generic `request()` method + rate limiter + deprecation handling
+- [ ] `organizations()` — list orgs user has access to
 - [ ] `org_from_id()` — single org by ID
 - [ ] `create_app()` — create a new app
 - [ ] `update_urls()` — update app URLs
@@ -31,42 +32,49 @@
 - [ ] `app_versions_diff()` — diff two versions
 - [ ] Wiremock tests for 3 key methods
 
-### 2.2 `api/business_platform.rs` (49 → ~300 LOC)
-- [ ] Struct `BusinessPlatformClient`
-- [ ] `new()` — two base URLs (Destinations + Organizations)
+### 2.2 `api/business_platform.rs` (128 → ~300 LOC)
+- [x] Struct `BusinessPlatformClient`
+- [x] `new()` — two base URLs (Destinations + Organizations)
+- [x] Generic `request()` + `organizations_request()`
 - [ ] `destinations_query()` — destinations API query
 - [ ] `organizations_query()` — organizations API query
 - [ ] `org_by_hashed_email()` — find org by email hash
 - [ ] `user_email()` — get user email
 - [ ] Wiremock tests
 
-### 2.3 `api/functions.rs` (41 → ~200 LOC)
-- [ ] Struct `FunctionsClient`
+### 2.3 `api/functions.rs` (121 → ~200 LOC)
+- [x] Struct `FunctionsClient`
+- [x] `new()` + generic `request()` + rate limiter
 - [ ] `api_schema_definition()` — schema for a given API
 - [ ] `target_schema_definition()` — schema for function target
 - [ ] `function_active_version()` — active function version
 - [ ] Wiremock tests
 
-### 2.4 `api/webhooks.rs` (38 → ~200 LOC)
-- [ ] Struct `WebhooksClient`
+### 2.4 `api/webhooks.rs` (113 → ~200 LOC)
+- [x] Struct `WebhooksClient`
+- [x] `new()` + generic `request()` + rate limiter
 - [ ] `api_versions()` — available API versions
 - [ ] `topics()` — available webhook topics
 - [ ] `send_sample_webhook()` — send test webhook
 - [ ] Wiremock tests
 
-### 2.5 `api/app_dev.rs` (24 → ~200 LOC)
-- [ ] Struct `AppDevClient`
+### 2.5 `api/app_dev.rs` (127 → ~200 LOC)
+- [x] Struct `AppDevClient` with `x-forwarded-host` injection
+- [x] `new()` + generic `request()` + rate limiter
 - [ ] `dev_session_create()`
 - [ ] `dev_session_update()`
 - [ ] `dev_session_delete()`
 - [ ] Wiremock tests
 
-### 2.6 `api/partners.rs` (988 → ~1,500 LOC)
-- [ ] Audit against upstream `partners.ts` — add missing methods
-- [ ] Verify all upstream query/mutation wrappers exist
-- [ ] Full test coverage for all methods
+### 2.6 `api/partners.rs` (1,045 → ~1,500 LOC)
+- [x] All 11 domain methods implemented (organizations, apps, extensions, deploy, stores, account)
+- [x] 5 GraphQL query constants + response types
+- [x] 12 wiremock tests
 
-### 2.7 `api/admin.rs` (386 → ~800 LOC)
+### 2.7 `api/admin.rs` (410 → ~800 LOC)
+- [x] Struct `AdminClient` + `AdminError` + query/rest_request infrastructure
+- [x] `fetch_latest_api_version()` with caching per store
+- [x] `fetch_api_versions()` with 403/401/404 handling
 - [ ] `list_themes()` — all themes for a store
 - [ ] `get_theme()` — single theme by ID
 - [ ] `create_theme()` — create new theme
