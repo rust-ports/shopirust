@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "crates/cli-kit",
     "crates/cli-core",
+    "crates/graphql-codegen",
 ]
 
 [workspace.package]

@@ -1,0 +1,5 @@
+[package]
+name = "graphql-codegen"
+version = "0.1.0"
+edition = "2021"
+description = "Generate Rust structs + query strings from Shopify CLI Kit .graphql and generated .ts files"
