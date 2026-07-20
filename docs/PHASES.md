@@ -7,30 +7,33 @@
 
 ## Phase 2 — API Client Methods (+3,000 LOC)
 
-### 2.1 `api/app_management.rs` (282 → ~500 LOC)
+### 2.1 `api/app_management.rs` (282 → ~700 LOC)
 - [x] Struct `AppManagementClient` with `GraphqlClient` + token
 - [x] `new(token)` — base URL from `constants::app_management_fqdn()`
 - [x] Generic `request()` method + rate limiter + deprecation handling
-- [ ] `organizations()` — list orgs user has access to
-- [ ] `org_from_id()` — single org by ID
-- [ ] `create_app()` — create a new app
-- [ ] `update_urls()` — update app URLs
-- [ ] `app_from_id()` — get app by ID
-- [ ] `app_from_id_basic()` — basic app info
-- [ ] `app_from_name()` — find app by name
-- [ ] `app_extension_registrations()` — all extension registrations
-- [ ] `specifications()` — extension specification types
-- [ ] `template_specifications()` — template specifications
-- [ ] `deploy()` — deploy app version
-- [ ] `release()` — release app version
-- [ ] `dev_session_create()` — create dev session
-- [ ] `dev_session_update()` — update dev session
-- [ ] `dev_session_delete()` — delete dev session
-- [ ] `generate_signed_upload_url()` — get upload URL
-- [ ] `active_app_version()` — current version
-- [ ] `app_versions()` — version history
-- [ ] `app_versions_diff()` — diff two versions
-- [ ] Wiremock tests for 3 key methods
+- [x] `with_graphql()` — inject pre-configured `GraphqlClient` (test mode)
+- [x] `organizations()` — list orgs user has access to
+- [x] `org_from_id()` — single org by ID
+- [x] `create_app()` — create a new app
+- [x] `update_urls()` — update app URLs
+- [x] `app_from_id()` — get app by API key
+- [x] `app_from_id_basic()` — basic app info
+- [x] `app_from_name()` — find app by name
+- [x] `app_extension_registrations()` — extensions from active release
+- [x] `specifications()` — extension specification types
+- [x] `template_specifications()` — template specifications
+- [x] `deploy()` — deploy app version
+- [x] `release()` — release app version
+- [x] `generate_signed_upload_url()` — get upload URL
+- [x] `active_app_version()` — current version
+- [x] `app_versions()` — version history
+- [x] `app_version_by_id()` — single version by ID
+- [x] `app_versions_diff()` — diff two versions
+- [x] Wiremock tests for 3 key methods (organizations, specifications, app_versions)
+- [x] `app_version_by_id()` helper query
+- [ ] `dev_session_create()` — in `app_dev.rs`
+- [ ] `dev_session_update()` — in `app_dev.rs`
+- [ ] `dev_session_delete()` — in `app_dev.rs`
 
 ### 2.2 `api/business_platform.rs` (128 → ~300 LOC)
 - [x] Struct `BusinessPlatformClient`
