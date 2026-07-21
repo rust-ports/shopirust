@@ -3,6 +3,7 @@ pub mod app_dev;
 pub mod app_management;
 pub mod business_platform;
 pub mod functions;
+pub mod generated;
 pub mod graphql;
 pub mod partners;
 pub mod rate_limiter;

@@ -45,7 +45,6 @@ pub fn parse_graphql(content: &str) -> Option<GraphqlOperation> {
     }
 
     // Find the matching closing brace
-    let query_start = pos;
     let mut depth = 0;
     let mut query_end = pos;
     while query_end < bytes.len() {
@@ -54,7 +53,6 @@ pub fn parse_graphql(content: &str) -> Option<GraphqlOperation> {
         } else if bytes[query_end] == b'}' {
             depth -= 1;
             if depth == 0 {
-                query_end += 1;
                 break;
             }
         }
@@ -64,9 +62,7 @@ pub fn parse_graphql(content: &str) -> Option<GraphqlOperation> {
         return None;
     }
 
-    let raw_query = String::from_utf8_lossy(&bytes[query_start..query_end])
-        .trim()
-        .to_string();
+    let raw_query = content.trim().to_string();
 
     Some(GraphqlOperation {
         operation_type,
@@ -174,6 +170,7 @@ mod tests {
         assert_eq!(op.operation_name, "getTheme");
         assert!(matches!(op.operation_type, GraphqlOperationType::Query));
         assert!(!op.raw_query.is_empty());
+        assert!(op.raw_query.starts_with("query getTheme($id: ID!)"));
         assert!(op.raw_query.contains("theme(id: $id)"));
     }
 

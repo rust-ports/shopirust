@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::generator::{generate_rust, GenOptions};
+use crate::generator::{generate_rust, generate_shared_types, GenOptions};
 use crate::gql_parser::parse_graphql;
 use crate::ts_parser::{parse_ts_file, parse_types_dts};
 use crate::types::*;
@@ -34,10 +34,17 @@ pub fn run_codegen(config: &CodegenConfig) -> Result<(), String> {
     // 3. Create output directory
     fs::create_dir_all(&config.out_dir).map_err(|e| format!("Failed to create output dir: {e}"))?;
 
-    // 4. Generate mod.rs
-    let mut mod_lines = Vec::new();
+    // 4. Generate shared types module
+    let shared_code = generate_shared_types(&shared_types);
+    let shared_path = config.out_dir.join("types.rs");
+    fs::write(&shared_path, shared_code)
+        .map_err(|e| format!("Failed to write {}: {e}", shared_path.display()))?;
+    println!("Generated: {}", shared_path.display());
 
-    // 5. Process each .graphql file
+    // 5. Generate mod.rs entries
+    let mut mod_lines = vec!["pub mod types;".to_string()];
+
+    // 6. Process each .graphql file
     for gql_path in &gql_files {
         let content = fs::read_to_string(gql_path)
             .map_err(|e| format!("Failed to read {}: {e}", gql_path.display()))?;
@@ -49,17 +56,28 @@ pub fn run_codegen(config: &CodegenConfig) -> Result<(), String> {
         let gql_stem = gql_path.file_stem().unwrap().to_str().unwrap();
         let ts_path = base.join("generated").join(format!("{gql_stem}.ts"));
 
-        let (variables_type, response_type) = if ts_path.exists() {
-            let ts_content = fs::read_to_string(&ts_path)
-                .map_err(|e| format!("Failed to read {}: {e}", ts_path.display()))?;
-            extract_types(&ts_content, &operation)?
-        } else {
-            (None, TsType::Primitive(TsPrimitive::Any))
-        };
+        if !ts_path.exists() {
+            return Err(format!(
+                "Generated TypeScript file not found for {}: {}",
+                gql_path.display(),
+                ts_path.display()
+            ));
+        }
+        let ts_content = fs::read_to_string(&ts_path)
+            .map_err(|e| format!("Failed to read {}: {e}", ts_path.display()))?;
+        let (variables_type, response_type) = extract_types(&ts_content, &operation)?;
 
         // Build the output model
-        let module_name = gql_stem.replace('.', "_");
-        let query_constant = format!("{}_MUTATION", to_screaming_snake(&operation.operation_name));
+        let module_name = to_module_name(gql_stem);
+        let suffix = match operation.operation_type {
+            GraphqlOperationType::Query => "QUERY",
+            GraphqlOperationType::Mutation => "MUTATION",
+        };
+        let query_constant = format!(
+            "{}_{}",
+            to_screaming_snake(&operation.operation_name),
+            suffix
+        );
 
         let output = RustOutput {
             module_name: module_name.clone(),
@@ -79,16 +97,16 @@ pub fn run_codegen(config: &CodegenConfig) -> Result<(), String> {
         );
 
         // Write .rs file
-        let rs_path = config.out_dir.join(format!("{}.rs", gql_stem));
+        let rs_path = config.out_dir.join(format!("{}.rs", module_name));
         fs::write(&rs_path, &rust_code)
             .map_err(|e| format!("Failed to write {}: {e}", rs_path.display()))?;
 
         println!("Generated: {}", rs_path.display());
-        mod_lines.push(format!("mod {};", module_name));
+        mod_lines.push(format!("pub mod {};", module_name));
     }
 
     // Write mod.rs
-    let mod_content = mod_lines.join("\n");
+    let mod_content = format!("{}\n", mod_lines.join("\n"));
     fs::write(config.out_dir.join("mod.rs"), mod_content)
         .map_err(|e| format!("Failed to write mod.rs: {e}"))?;
 
@@ -195,10 +213,27 @@ fn to_screaming_snake(s: &str) -> String {
     result
 }
 
+fn to_module_name(s: &str) -> String {
+    let mut out = String::new();
+    for c in s.chars() {
+        if c.is_ascii_alphanumeric() {
+            out.push(c.to_ascii_lowercase());
+        } else if !out.ends_with('_') {
+            out.push('_');
+        }
+    }
+    let out = out.trim_matches('_').to_string();
+    if out.chars().next().is_some_and(|c| c.is_ascii_digit()) {
+        format!("operation_{out}")
+    } else {
+        out
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::generator::{generate_rust, GenOptions};
+    use crate::generator::{generate_rust, generate_shared_types, GenOptions};
     use crate::gql_parser::parse_graphql;
     use crate::ts_parser::{parse_ts_file, parse_types_dts};
 
@@ -286,20 +321,29 @@ mod tests {
         };
 
         let rust_code = generate_rust(&rust_output, &GenOptions::default());
+        let shared_code = generate_shared_types(&shared);
         assert!(
             rust_code.contains("THEME_CREATE"),
             "should contain query constant"
         );
         assert!(
-            rust_code.contains("ThemeRole"),
-            "should contain shared enum ThemeRole"
+            shared_code.contains("pub enum ThemeRole"),
+            "shared module should contain shared enum ThemeRole"
         );
         assert!(
-            rust_code.contains("#[derive(Serialize)]"),
+            !rust_code.contains("pub enum ThemeRole"),
+            "operation module should import shared enum ThemeRole, not redefine it"
+        );
+        assert!(
+            rust_code.contains("use super::types::*;"),
+            "operation module should import shared types"
+        );
+        assert!(
+            rust_code.contains("#[derive(Debug, Clone, Serialize)]"),
             "should have Serialize for variables"
         );
         assert!(
-            rust_code.contains("#[derive(Deserialize)]"),
+            rust_code.contains("#[derive(Debug, Clone, Deserialize)]"),
             "should have Deserialize for response"
         );
         assert!(
@@ -309,6 +353,22 @@ mod tests {
         assert!(
             rust_code.contains("pub struct ThemeCreateResponse"),
             "should generate response struct"
+        );
+        assert!(
+            rust_code.contains("pub struct ThemeCreateThemeCreateTheme"),
+            "should generate nested theme struct with path-aware name"
+        );
+        assert!(
+            rust_code.contains("pub struct ThemeCreateThemeCreateUserErrors"),
+            "should generate nested userErrors struct with path-aware name"
+        );
+        assert!(
+            rust_code.contains("pub struct ThemeCreateThemeCreate"),
+            "should generate nested themeCreate struct"
+        );
+        assert!(
+            !rust_code.contains("serde_json::Value"),
+            "should not have opaque Value types"
         );
     }
 
@@ -343,19 +403,63 @@ mod tests {
         };
 
         let rust_code = generate_rust(&output, &GenOptions::default());
+        let shared_code = generate_shared_types(&output.shared_types);
         assert!(
             rust_code.contains("THEME_FILES_UPSERT"),
             "should contain query constant"
         );
         assert!(
-            rust_code.contains("#[derive(Deserialize)]"),
+            rust_code.contains("#[derive(Debug, Clone, Deserialize)]"),
             "should have Deserialize for response"
         );
-        // All shared types from types.d.ts are included (correct for now — each .rs
-        // carries its own copy). ThemeRole is present because it's in types.d.ts.
         assert!(
-            rust_code.contains("ThemeRole"),
-            "shared types from types.d.ts are included"
+            shared_code.contains("pub enum ThemeRole"),
+            "shared types from types.d.ts are emitted in shared module"
         );
+        assert!(
+            !rust_code.contains("pub enum ThemeRole"),
+            "operation module should not duplicate shared types"
+        );
+        assert!(
+            !rust_code.contains("serde_json::Value"),
+            "should not have opaque Value types for ThemeFilesUpsert"
+        );
+        assert!(
+            rust_code.contains("pub struct ThemeFilesUpsertThemeFilesUpsert"),
+            "should generate themeFilesUpsert nested struct"
+        );
+    }
+
+    #[test]
+    fn test_run_codegen_writes_shared_module_once() {
+        let unique = format!(
+            "graphql-codegen-test-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        );
+        let out_dir = std::env::temp_dir().join(unique);
+        let config = CodegenConfig {
+            base_dir: PathBuf::from(UPSTREAM_BASE),
+            out_dir: out_dir.clone(),
+            module_name: "cli_kit".to_string(),
+        };
+
+        run_codegen(&config).expect("codegen should run against upstream admin fixtures");
+
+        let mod_rs = std::fs::read_to_string(out_dir.join("mod.rs")).unwrap();
+        assert!(mod_rs.starts_with("pub mod types;\n"));
+        assert!(mod_rs.contains("pub mod theme_create;"));
+
+        let shared = std::fs::read_to_string(out_dir.join("types.rs")).unwrap();
+        assert!(shared.contains("pub enum ThemeRole"));
+
+        let operation = std::fs::read_to_string(out_dir.join("theme_create.rs")).unwrap();
+        assert!(operation.contains("use super::types::*;"));
+        assert!(!operation.contains("pub enum ThemeRole"));
+
+        std::fs::remove_dir_all(&out_dir).unwrap();
     }
 }

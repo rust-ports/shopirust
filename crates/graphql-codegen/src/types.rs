@@ -9,6 +9,8 @@ pub enum TsType {
     Array(Box<TsType>),
     /// `Type | null`
     Nullable(Box<TsType>),
+    /// `A | B` when the union is not a nullable, string, or discriminated union.
+    Union(Vec<TsType>),
     /// `'LITERAL_A' | 'LITERAL_B'` — string literal union → Rust enum
     StringUnion(Vec<String>),
     /// `{ field: Type; field2?: Type }`

@@ -180,13 +180,7 @@ fn parse_type(bytes: &[u8], pos: &mut usize) -> Option<TsType> {
         }
     }
 
-    // Fallback: first alternative
-    Some(
-        alternatives
-            .into_iter()
-            .next()
-            .unwrap_or(TsType::Primitive(TsPrimitive::Any)),
-    )
+    Some(TsType::Union(alternatives))
 }
 
 /// Parse a single type (no `|`, no `[]` suffix).
@@ -214,10 +208,10 @@ fn parse_single_type(bytes: &[u8], pos: &mut usize) -> Option<TsType> {
     if let Some(typ) = try_parse_wrapped(bytes, pos) {
         return Some(typ);
     }
-    if let Some(typ) = try_parse_reference(bytes, pos) {
+    if let Some(typ) = try_parse_primitive(bytes, pos) {
         return Some(typ);
     }
-    if let Some(typ) = try_parse_primitive(bytes, pos) {
+    if let Some(typ) = try_parse_reference(bytes, pos) {
         return Some(typ);
     }
 
@@ -236,7 +230,7 @@ fn try_parse_object(bytes: &[u8], pos: &mut usize) -> Option<TsType> {
 
     let mut fields = Vec::new();
     loop {
-        *pos = skip_ws(bytes, *pos);
+        *pos = skip_ws_and_comments(bytes, *pos);
         if *pos >= bytes.len() {
             break;
         }
@@ -257,7 +251,7 @@ fn try_parse_object(bytes: &[u8], pos: &mut usize) -> Option<TsType> {
             false
         };
         // Skip `:`
-        *pos = skip_ws(bytes, *pos);
+        *pos = skip_ws_and_comments(bytes, *pos);
         if *pos >= bytes.len() || bytes[*pos] != b':' {
             break;
         }
@@ -270,7 +264,7 @@ fn try_parse_object(bytes: &[u8], pos: &mut usize) -> Option<TsType> {
             field_type: Box::new(field_type),
         });
         // Skip `;` or `,`
-        *pos = skip_ws(bytes, *pos);
+        *pos = skip_ws_and_comments(bytes, *pos);
         if *pos < bytes.len() && (bytes[*pos] == b';' || bytes[*pos] == b',') {
             *pos += 1;
         }
@@ -378,6 +372,9 @@ fn try_parse_reference(bytes: &[u8], pos: &mut usize) -> Option<TsType> {
 
     let mut keys = Vec::new();
     while *pos < bytes.len() && bytes[*pos] == b'[' {
+        if *pos + 1 < bytes.len() && bytes[*pos + 1] == b']' {
+            break;
+        }
         *pos += 1;
         *pos = skip_ws(bytes, *pos);
         if *pos < bytes.len() && (bytes[*pos] == b'\'' || bytes[*pos] == b'"') {
@@ -429,6 +426,7 @@ fn try_parse_primitive(bytes: &[u8], pos: &mut usize) -> Option<TsType> {
         ("number", TsPrimitive::Number),
         ("boolean", TsPrimitive::Boolean),
         ("any", TsPrimitive::Any),
+        ("unknown", TsPrimitive::Any),
     ];
 
     for (name, prim) in &primitives {
@@ -735,6 +733,32 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_one_or_many_union() {
+        let input = "export type Foo = Types.Scalars['String']['input'][] | Types.Scalars['String']['input']";
+        let defs = parse_ts_file(input);
+        assert_eq!(defs.len(), 1);
+        match &defs[0].type_expr {
+            TsType::Union(alts) => assert_eq!(alts.len(), 2),
+            other => panic!("expected Union, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_parse_unknown() {
+        let input = "export type Foo = { size: unknown }";
+        let defs = parse_ts_file(input);
+        match &defs[0].type_expr {
+            TsType::Object(fields) => {
+                assert!(matches!(
+                    &*fields[0].field_type,
+                    TsType::Primitive(TsPrimitive::Any)
+                ));
+            }
+            other => panic!("expected Object, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn test_parse_array_with_nullable_field() {
         let input =
             "export type Foo = {\n  items: { field?: string[] | null; message: string }[]\n}";
@@ -793,6 +817,28 @@ export type OnlineStoreThemeFileBodyInput = {
         let types = parse_types_dts(input);
         assert_eq!(types.len(), 1);
         assert_eq!(types[0].name, "OnlineStoreThemeFileBodyInput");
+        match &types[0].kind {
+            SharedTypeKind::InputStruct { fields } => {
+                assert_eq!(fields.len(), 2);
+                assert_eq!(fields[0].name, "type");
+                assert_eq!(fields[1].name, "value");
+            }
+            _ => panic!("expected InputStruct"),
+        }
+    }
+
+    #[test]
+    fn test_parse_types_dts_input_struct_with_field_comments() {
+        let input = "\
+export type OnlineStoreThemeFileBodyInput = {
+  /** The input type of the theme file body. */
+  type: OnlineStoreThemeFileBodyInputType;
+  /** The body of the theme file. */
+  value: Scalars['String']['input'];
+};
+";
+        let types = parse_types_dts(input);
+        assert_eq!(types.len(), 1);
         match &types[0].kind {
             SharedTypeKind::InputStruct { fields } => {
                 assert_eq!(fields.len(), 2);
