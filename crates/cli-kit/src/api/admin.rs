@@ -1,6 +1,10 @@
+use crate::api::generated::graphql::admin::public_api_versions::{
+    PublicApiVersionsResponse, PUBLIC_API_VERSIONS_QUERY,
+};
 use crate::api::graphql::{GraphqlClient, GraphqlRequestError};
 use crate::api::rest_api_throttler::{RestClient, RestError, RestResponse};
 use crate::error::{abort_error, bug_error, FatalError};
+pub use crate::session::AdminSession;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
@@ -8,9 +12,6 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 
 const THEME_KIT_ACCESS_DOMAIN: &str = "theme-kit-access.shopifyapps.com";
-
-const PUBLIC_API_VERSIONS_QUERY: &str =
-    "query publicApiVersions { publicApiVersions { handle supported } }";
 
 const METAFIELD_DEFINITIONS_QUERY: &str = r#"
 query MetafieldDefinitions($ownerType: String!) {
@@ -128,21 +129,10 @@ struct PasswordProtectionResponse {
     online_store_password_protection: Option<PasswordProtection>,
 }
 
-#[derive(Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct ApiVersionsResponse {
-    public_api_versions: Vec<ApiVersion>,
-}
-
 #[derive(Debug, Deserialize, Serialize)]
 pub struct ApiVersion {
     pub handle: String,
     pub supported: bool,
-}
-
-pub struct AdminSession {
-    pub store_fqdn: String,
-    pub token: String,
 }
 
 #[derive(Debug)]
@@ -169,6 +159,61 @@ impl From<AdminError> for FatalError {
             AdminError::Bug(msg) => bug_error(msg, None::<String>),
         }
     }
+}
+
+/// Execute an Admin GraphQL operation with the same session-per-call shape as
+/// the original TypeScript `adminRequest`.
+pub async fn admin_request<T, V>(
+    query: &str,
+    session: &AdminSession,
+    variables: Option<V>,
+) -> Result<T, GraphqlRequestError>
+where
+    T: DeserializeOwned,
+    V: Serialize,
+{
+    AdminClient::new(session.clone())
+        .query(query, variables)
+        .await
+}
+
+/// Execute a generated Admin GraphQL operation.
+///
+/// In the TypeScript CLI this accepts a `TypedDocumentNode`. The Rust codegen
+/// currently emits string constants plus typed variables/response structs, so
+/// this delegates to [`admin_request`] while preserving the generated-document
+/// call site shape.
+pub async fn admin_request_doc<T, V>(
+    query: &str,
+    session: &AdminSession,
+    variables: Option<V>,
+) -> Result<T, GraphqlRequestError>
+where
+    T: DeserializeOwned,
+    V: Serialize,
+{
+    admin_request(query, session, variables).await
+}
+
+/// Execute an Admin REST request with the same session-per-call shape as the
+/// original TypeScript `restRequest`.
+pub async fn rest_request<T: DeserializeOwned>(
+    method: reqwest::Method,
+    path: &str,
+    session: &AdminSession,
+    body: Option<serde_json::Value>,
+    search_params: Option<HashMap<String, String>>,
+    api_version: Option<&str>,
+) -> Result<RestResponse<T>, RestError> {
+    AdminClient::new(session.clone())
+        .rest_request(method, path, body, search_params, api_version)
+        .await
+}
+
+/// Fetch all Admin API versions using the generated `publicApiVersions`
+/// operation, matching the original TypeScript `fetchApiVersions` helper.
+pub async fn fetch_api_versions(session: &AdminSession) -> Result<Vec<ApiVersion>, AdminError> {
+    AdminClient::new(session.clone()).fetch_api_versions().await
 }
 
 pub struct AdminClient {
@@ -309,11 +354,18 @@ impl AdminClient {
 
     pub async fn fetch_api_versions(&self) -> Result<Vec<ApiVersion>, AdminError> {
         let client = self.graphql_client_for_version("unstable");
-        let result: Result<ApiVersionsResponse, GraphqlRequestError> =
+        let result: Result<PublicApiVersionsResponse, GraphqlRequestError> =
             client.query(PUBLIC_API_VERSIONS_QUERY).await;
 
         match result {
-            Ok(response) => Ok(response.public_api_versions),
+            Ok(response) => Ok(response
+                .public_api_versions
+                .into_iter()
+                .map(|version| ApiVersion {
+                    handle: version.handle,
+                    supported: version.supported,
+                })
+                .collect()),
             Err(err) => match &err {
                 GraphqlRequestError::ApiError(_, 403) => {
                     let store_name = self.session.store_fqdn.replace(".myshopify.com", "");
@@ -344,10 +396,10 @@ impl AdminClient {
         }
     }
 
-    pub async fn query<T: DeserializeOwned + serde::Serialize>(
+    pub async fn query<T: DeserializeOwned, V: serde::Serialize>(
         &self,
         query: &str,
-        variables: Option<serde_json::Value>,
+        variables: Option<V>,
     ) -> Result<T, GraphqlRequestError> {
         let version = self
             .fetch_latest_api_version()
@@ -625,7 +677,10 @@ impl AdminClient {
         &self,
     ) -> Result<Option<PasswordProtection>, GraphqlRequestError> {
         let resp: PasswordProtectionResponse = self
-            .query(ONLINE_STORE_PASSWORD_PROTECTION_QUERY, None)
+            .query(
+                ONLINE_STORE_PASSWORD_PROTECTION_QUERY,
+                None::<serde_json::Value>,
+            )
             .await?;
         Ok(resp.online_store_password_protection)
     }

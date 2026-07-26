@@ -256,10 +256,7 @@ impl GraphqlClient {
 
     /// Execute a query without variables (delegates to
     /// [`query_with_variables`](Self::query_with_variables)).
-    pub async fn query<T: DeserializeOwned + serde::Serialize>(
-        &self,
-        query: &str,
-    ) -> Result<T, GraphqlRequestError> {
+    pub async fn query<T: DeserializeOwned>(&self, query: &str) -> Result<T, GraphqlRequestError> {
         self.query_with_variables::<T, Value>(query, None).await
     }
 
@@ -279,10 +276,7 @@ impl GraphqlClient {
     ///    - 4xx → fail immediately
     ///    - 2xx → parse, apply rate-limit back-off, return
     /// 5. On success, write the result to both cache backends.
-    pub async fn query_with_variables<
-        T: DeserializeOwned + serde::Serialize,
-        V: serde::Serialize,
-    >(
+    pub async fn query_with_variables<T: DeserializeOwned, V: serde::Serialize>(
         &self,
         query: &str,
         variables: Option<V>,
@@ -326,6 +320,8 @@ impl GraphqlClient {
         let url = self.url.clone();
         let client = self.client.clone();
         let cache = self.cache.clone();
+        let cache_options = self.cache_options.clone();
+        let composite_key_for_write = composite_key.clone();
         let rate_limiter = self.rate_limiter.clone();
         let token_refresh = self.token_refresh_handler.clone();
         let token_mutex = Arc::new(Mutex::new(self.token.clone()));
@@ -340,6 +336,9 @@ impl GraphqlClient {
                 let rate_limiter = rate_limiter.clone();
                 let token_refresh = token_refresh.clone();
                 let token_mutex = token_mutex.clone();
+                let cache = cache.clone();
+                let cache_options = cache_options.clone();
+                let composite_key = composite_key_for_write.clone();
 
                 async move {
                     if let Some(ref limiter) = rate_limiter {
@@ -466,6 +465,7 @@ impl GraphqlClient {
                             if let Some(cost) = full_response.extensions.and_then(|e| e.cost) {
                                 wait_for_rate_limit_restore(&cost).await;
                             }
+                            let raw_data = serde_json::to_string(&data).ok();
                             let result: T = match serde_json::from_value(data) {
                                 Ok(val) => val,
                                 Err(e) => {
@@ -475,6 +475,16 @@ impl GraphqlClient {
                                     ));
                                 }
                             };
+                            if let Some(json_str) = raw_data {
+                                if let Some(ref cache) = cache {
+                                    let _ = cache.store(&composite_key, &json_str);
+                                }
+                                if let Some(ref opts) = cache_options {
+                                    if let Some(ref ls) = opts.cache_store {
+                                        ls.set(&composite_key, &json_str);
+                                    }
+                                }
+                            }
                             return RetryAction::Ok(result);
                         }
                     }
@@ -495,19 +505,6 @@ impl GraphqlClient {
                 }
             })
             .await;
-
-        if let (Ok(ref val), Some(ref cache)) = (&result, &cache) {
-            if let Ok(json_str) = serde_json::to_string(val) {
-                let _ = cache.store(&composite_key, &json_str);
-            }
-        }
-        if let (Ok(ref val), Some(ref opts)) = (&result, &self.cache_options) {
-            if let Some(ref ls) = opts.cache_store {
-                if let Ok(json_str) = serde_json::to_string(val) {
-                    ls.set(&composite_key, &json_str);
-                }
-            }
-        }
 
         result
     }
@@ -569,6 +566,7 @@ fn extract_error_messages(errors: &[GraphqlError]) -> String {
 mod tests {
     use super::*;
     use crate::error::FatalErrorType;
+    use serde::Deserialize;
     use serde_json::json;
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -764,6 +762,41 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(result, json!({ "name": "hello" }));
+    }
+
+    #[tokio::test]
+    async fn query_deserialize_only_response_type() {
+        #[derive(Debug, Deserialize, PartialEq)]
+        struct GeneratedLikeResponse {
+            name: String,
+        }
+
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path("/"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "data": { "name": "hello" },
+                "extensions": { "cost": { "actualQueryCost": null, "throttleStatus": null } }
+            })))
+            .mount(&mock_server)
+            .await;
+
+        let client = GraphqlClient::new(mock_server.uri(), None);
+        let result: GeneratedLikeResponse = client
+            .query_with_variables(
+                "query ($id: ID!) { name(id: $id) }",
+                Some(json!({ "id": "123" })),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(
+            result,
+            GeneratedLikeResponse {
+                name: "hello".into()
+            }
+        );
     }
 
     #[tokio::test]
