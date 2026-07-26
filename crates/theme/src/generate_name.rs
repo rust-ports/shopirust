@@ -1,5 +1,5 @@
 use crate::replace_invalid_chars::replace_invalid_characters;
-use cli_kit::util::crypto::random_hex;
+use rand::Rng;
 
 pub const API_NAME_LIMIT: usize = 50;
 
@@ -17,6 +17,13 @@ pub fn generate_theme_name(context: &str) -> String {
     let truncated = &hostname_no_domain[..hostname_no_domain.len().min(hostname_char_limit)];
     let identifier = replace_invalid_characters(&format!("{hash}-{truncated}"));
     format!("{context} ({identifier})")
+}
+
+fn random_hex(bytes: usize) -> String {
+    let mut rng = rand::thread_rng();
+    (0..bytes)
+        .map(|_| format!("{:02x}", rng.gen::<u8>()))
+        .collect()
 }
 
 #[cfg(test)]

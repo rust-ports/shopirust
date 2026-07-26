@@ -159,6 +159,42 @@ pub async fn ensure_authenticated(
         .await
 }
 
+pub async fn ensure_authenticated_themes(
+    store_fqdn: &str,
+    password: Option<&str>,
+) -> Result<AdminSession, AuthError> {
+    let store_fqdn = normalize_store_fqdn(store_fqdn, None);
+    if let Some(password) = password.filter(|password| !password.is_empty()) {
+        set_last_seen_auth_method(if is_theme_access_token(password) {
+            AuthMethod::ThemeAccessToken
+        } else {
+            AuthMethod::CustomAppToken
+        });
+        set_last_seen_user_id(&non_random_uuid(password));
+        return Ok(AdminSession {
+            token: password.to_string(),
+            store_fqdn,
+        });
+    }
+
+    let store = SessionStore::new();
+    let applications = OAuthApplications {
+        admin_api: Some(validate::AdminApiOptions {
+            store_fqdn,
+            scopes: vec![],
+        }),
+        partners_api: None,
+        storefront_renderer_api: None,
+        business_platform_api: None,
+        app_management_api: None,
+    };
+
+    ensure_authenticated(&applications, &store)
+        .await?
+        .admin
+        .ok_or(AuthError::MissingToken("admin"))
+}
+
 pub async fn ensure_authenticated_with_options(
     applications: &OAuthApplications,
     store: &SessionStore,

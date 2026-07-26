@@ -1,8 +1,10 @@
 mod auth;
 mod organization;
+mod theme;
 
 use auth::{AuthSubcommand, AuthTopic, AuthTopicArgs};
 use organization::{OrganizationSubcommand, OrganizationTopic, OrganizationTopicArgs};
+use theme::{ThemeSubcommand, ThemeTopic, ThemeTopicArgs};
 
 use clap::Subcommand;
 use cli_core::command::TopicCommand;
@@ -16,6 +18,8 @@ pub enum CliSubcommand {
     Auth(AuthSubcommand),
     #[command(subcommand)]
     Organization(OrganizationSubcommand),
+    #[command(subcommand)]
+    Theme(ThemeSubcommand),
     Help,
     Version,
 }
@@ -29,6 +33,7 @@ pub struct CliTopicArgs {
 pub enum CliTopic {
     Auth(AuthTopic),
     Organization(OrganizationTopic),
+    Theme(ThemeTopic),
     Help,
     Version,
 }
@@ -47,6 +52,9 @@ impl TopicCommand for CliTopic {
                     command: cmd,
                 }))
             }
+            CliSubcommand::Theme(cmd) => {
+                Self::Theme(ThemeTopic::from_args(ThemeTopicArgs { command: cmd }))
+            }
             CliSubcommand::Help => Self::Help,
             CliSubcommand::Version => Self::Version,
         }
@@ -56,8 +64,9 @@ impl TopicCommand for CliTopic {
         match self {
             Self::Auth(topic) => topic.execute().await,
             Self::Organization(topic) => topic.execute().await,
+            Self::Theme(topic) => topic.execute().await,
             Self::Help => {
-                println!("A CLI tool to build for the Shopify platform\n\nUSAGE\n  $ shopify [COMMAND]\n\nTOPICS\n  auth          Auth operations.\n  organization  List organizations you have access to.\n\nCOMMANDS\n  help          Display help for Shopify CLI\n  version       Shopify CLI version currently installed.");
+                println!("A CLI tool to build for the Shopify platform\n\nUSAGE\n  $ shopify [COMMAND]\n\nTOPICS\n  auth          Auth operations.\n  organization  List organizations you have access to.\n  theme         Manage Shopify themes.\n\nCOMMANDS\n  help          Display help for Shopify CLI\n  version       Shopify CLI version currently installed.");
                 Ok(())
             }
             Self::Version => {
@@ -99,6 +108,12 @@ mod tests {
     fn test_cli_topic_from_args_organization() {
         let topic = parse_topic(&["shopify", "organization", "list"]);
         assert!(matches!(topic, CliTopic::Organization(_)));
+    }
+
+    #[test]
+    fn test_cli_topic_from_args_theme() {
+        let topic = parse_topic(&["shopify", "theme", "list", "--store", "test"]);
+        assert!(matches!(topic, CliTopic::Theme(_)));
     }
 
     #[test]
