@@ -4,6 +4,7 @@ members = [
     "crates/cli-kit",
     "crates/cli-core",
     "crates/graphql-codegen",
+    "crates/theme",
 ]
 
 [workspace.package]

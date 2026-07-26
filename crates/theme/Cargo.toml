@@ -1,0 +1,9 @@
+[package]
+name = "theme"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+cli-kit = { path = "../cli-kit" }
+rand.workspace = true

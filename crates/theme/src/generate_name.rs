@@ -1,5 +1,5 @@
-use crate::util::crypto::random_hex;
-use crate::util::replace_invalid_chars::replace_invalid_characters;
+use crate::replace_invalid_chars::replace_invalid_characters;
+use cli_kit::util::crypto::random_hex;
 
 pub const API_NAME_LIMIT: usize = 50;
 
