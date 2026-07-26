@@ -56,10 +56,10 @@ pub fn patch_env_file(
                     )),
                     Some(quote),
                 );
-                    if let Some(Some(nv)) = updated_values.get(key) {
-                        already_present_keys.push(key.clone());
-                        line_to_write = create_dot_env_file_line(key, Some(nv), None);
-                    }
+                if let Some(Some(nv)) = updated_values.get(key) {
+                    already_present_keys.push(key.clone());
+                    line_to_write = create_dot_env_file_line(key, Some(nv), None);
+                }
                 output_lines.push(line_to_write);
                 multiline_var = None;
             } else {
