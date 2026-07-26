@@ -7,6 +7,7 @@ pub mod context;
 pub mod crypto;
 pub mod dot_env;
 pub mod environment;
+pub mod fqdn;
 pub mod framework;
 pub mod fs;
 pub mod generate_name;

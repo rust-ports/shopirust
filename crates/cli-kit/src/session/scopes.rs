@@ -69,3 +69,65 @@ pub fn token_exchange_scopes(api: &str) -> Vec<String> {
         _ => panic!("API not supported for token exchange: {api}"),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn scope_transform_maps_known_short_names() {
+        assert_eq!(
+            scope_transform("graphql"),
+            "https://api.shopify.com/auth/shop.admin.graphql"
+        );
+        assert_eq!(
+            scope_transform("cli"),
+            "https://api.shopify.com/auth/partners.app.cli.access"
+        );
+        assert_eq!(
+            scope_transform("app-management"),
+            "https://api.shopify.com/auth/organization.apps.manage"
+        );
+    }
+
+    #[test]
+    fn scope_transform_preserves_unknown_scope() {
+        assert_eq!(scope_transform("custom.scope"), "custom.scope");
+    }
+
+    #[test]
+    fn api_scopes_adds_defaults_and_extra_scopes_once() {
+        let scopes = api_scopes("partners", &["cli".to_string(), "custom.scope".to_string()]);
+
+        assert_eq!(
+            scopes
+                .iter()
+                .filter(|scope| scope.as_str()
+                    == "https://api.shopify.com/auth/partners.app.cli.access")
+                .count(),
+            1
+        );
+        assert!(scopes.iter().any(|scope| scope == "custom.scope"));
+    }
+
+    #[test]
+    fn all_default_scopes_includes_openid_and_all_api_defaults() {
+        let scopes = all_default_scopes(&[]);
+
+        assert!(scopes.iter().any(|scope| scope == "openid"));
+        assert!(scopes
+            .iter()
+            .any(|scope| scope == "https://api.shopify.com/auth/shop.admin.graphql"));
+        assert!(scopes
+            .iter()
+            .any(|scope| scope == "https://api.shopify.com/auth/organization.apps.manage"));
+    }
+
+    #[test]
+    fn token_exchange_scopes_match_supported_api_subset() {
+        assert_eq!(
+            token_exchange_scopes("business-platform"),
+            vec!["https://api.shopify.com/auth/destinations.readonly".to_string()]
+        );
+    }
+}

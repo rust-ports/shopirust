@@ -1,6 +1,8 @@
 use crate::http::build_client;
-use crate::session::identity::{application_id, client_id, IDENTITY_FQDN};
+use crate::session::identity::{application_id, client_id};
 use crate::session::schema::{ApplicationToken, IdentityToken};
+use crate::util::crypto::non_random_uuid;
+use crate::util::fqdn::identity_fqdn;
 use chrono::Utc;
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -28,6 +30,12 @@ pub enum ExchangeError {
     InvalidRequest,
     InvalidTarget(String),
     Other(String),
+}
+
+#[derive(Debug, Clone)]
+pub struct AutomationToken {
+    pub access_token: String,
+    pub user_id: String,
 }
 
 fn extract_user_id_from_id_token(id_token: &str) -> Option<String> {
@@ -64,17 +72,18 @@ fn build_identity_token(
     }
 }
 
-fn build_application_token(result: &TokenResponse) -> ApplicationToken {
+fn build_application_token(result: &TokenResponse, store_fqdn: Option<&str>) -> ApplicationToken {
     ApplicationToken {
         access_token: result.access_token.clone(),
         expires_at: Utc::now() + chrono::Duration::seconds(result.expires_in as i64),
         scopes: result.scope.split(' ').map(|s| s.to_string()).collect(),
+        store_fqdn: store_fqdn.map(String::from),
     }
 }
 
 async fn token_request(params: HashMap<&str, String>) -> Result<TokenResponse, ExchangeError> {
     let client = build_client(None).expect("failed to build HTTP client");
-    let url = format!("https://{IDENTITY_FQDN}/oauth/token");
+    let url = format!("https://{}/oauth/token", identity_fqdn(None));
 
     let store_param = params.get("store").cloned();
 
@@ -166,7 +175,7 @@ pub async fn request_app_token(
     }
 
     let result = token_request(params).await?;
-    let app_token = build_application_token(&result);
+    let app_token = build_application_token(&result, if api == "admin" { store } else { None });
 
     let identifier = if api == "admin" {
         store.map_or_else(|| app_id.to_string(), |s| format!("{}-{}", s, app_id))
@@ -250,15 +259,55 @@ pub async fn refresh_access_token(
     ))
 }
 
-pub async fn exchange_custom_partner_token(token: &str) -> Result<String, ExchangeError> {
-    let scopes = vec![crate::session::scopes::scope_transform("cli").to_string()];
-    let result = request_app_token("partners", token, &scopes, None).await?;
-    let _app_id = application_id("partners");
-    Ok(result
-        .into_values()
-        .next()
-        .map(|t| t.access_token)
-        .unwrap_or_default())
+async fn exchange_app_automation_token_for_access_token(
+    api: &'static str,
+    token: &str,
+    scopes: Vec<String>,
+) -> Result<AutomationToken, ExchangeError> {
+    let result = request_app_token(api, token, &scopes, None).await?;
+    Ok(AutomationToken {
+        access_token: result
+            .into_values()
+            .next()
+            .map(|t| t.access_token)
+            .unwrap_or_default(),
+        user_id: non_random_uuid(token),
+    })
+}
+
+pub async fn exchange_custom_partner_token(token: &str) -> Result<AutomationToken, ExchangeError> {
+    exchange_app_automation_token_for_access_token(
+        "partners",
+        token,
+        crate::session::scopes::token_exchange_scopes("partners"),
+    )
+    .await
+}
+
+pub async fn exchange_app_automation_token_for_app_management_access_token(
+    token: &str,
+) -> Result<AutomationToken, ExchangeError> {
+    exchange_app_automation_token_for_access_token(
+        "app-management",
+        token,
+        crate::session::scopes::token_exchange_scopes("app-management"),
+    )
+    .await
+}
+
+pub async fn exchange_app_automation_token_for_business_platform_access_token(
+    token: &str,
+) -> Result<AutomationToken, ExchangeError> {
+    exchange_app_automation_token_for_access_token(
+        "business-platform",
+        token,
+        crate::session::scopes::token_exchange_scopes("business-platform"),
+    )
+    .await
+}
+
+pub async fn exchange_custom_partner_token_value(token: &str) -> Result<String, ExchangeError> {
+    Ok(exchange_custom_partner_token(token).await?.access_token)
 }
 
 #[cfg(test)]
@@ -288,7 +337,7 @@ mod tests {
             scope: "admin".into(),
             id_token: None,
         };
-        let token = build_application_token(&result);
+        let token = build_application_token(&result, None);
         assert_eq!(token.access_token, "at");
     }
 }

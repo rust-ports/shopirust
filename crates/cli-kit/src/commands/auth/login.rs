@@ -41,7 +41,7 @@ impl BaseCommand for Login {
                 );
                 Ok(())
             }
-            Err(e) => Err(CliError::abort(e)),
+            Err(e) => Err(CliError::abort(e.to_string())),
         }
     }
 }

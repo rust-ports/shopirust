@@ -1,14 +1,15 @@
 use crate::session::schema::Sessions;
 use crate::util::cache::CacheStore;
+use crate::util::fqdn::identity_fqdn;
 use std::path::PathBuf;
-use std::sync::Mutex;
 
 const SESSION_STORE_KEY: &str = "sessionStore";
 const CURRENT_SESSION_ID_KEY: &str = "currentSessionId";
+const DEV_SESSION_STORE_KEY: &str = "devSessionStore";
+const CURRENT_DEV_SESSION_ID_KEY: &str = "currentDevSessionId";
 
 pub struct SessionStore {
     cache: CacheStore,
-    current_id: Mutex<Option<String>>,
 }
 
 impl Default for SessionStore {
@@ -28,57 +29,106 @@ impl SessionStore {
     pub fn new() -> Self {
         Self {
             cache: CacheStore::with_path(Self::default_path()),
-            current_id: Mutex::new(None),
         }
     }
 
     pub fn with_path(path: PathBuf) -> Self {
         Self {
             cache: CacheStore::with_path(path),
-            current_id: Mutex::new(None),
+        }
+    }
+
+    fn session_store_key() -> &'static str {
+        if crate::constants::is_local_environment(None) {
+            DEV_SESSION_STORE_KEY
+        } else {
+            SESSION_STORE_KEY
+        }
+    }
+
+    fn current_session_id_key() -> &'static str {
+        if crate::constants::is_local_environment(None) {
+            CURRENT_DEV_SESSION_ID_KEY
+        } else {
+            CURRENT_SESSION_ID_KEY
         }
     }
 
     pub fn store(&self, sessions: &Sessions) {
         let json = serde_json::to_string(sessions).expect("failed to serialize sessions");
-        let _ = self.cache.store(SESSION_STORE_KEY, &json);
+        let _ = self.cache.store(Self::session_store_key(), &json);
     }
 
     pub fn fetch(&self) -> Option<Sessions> {
         let val = self
             .cache
-            .retrieve::<String>(SESSION_STORE_KEY)
+            .retrieve::<String>(Self::session_store_key())
             .ok()
             .flatten()?;
-        serde_json::from_str(&val).ok()
+        match serde_json::from_str(&val) {
+            Ok(sessions) => Some(sessions),
+            Err(_) => {
+                self.remove();
+                None
+            }
+        }
     }
 
     pub fn remove(&self) {
-        let _ = self.cache.remove(SESSION_STORE_KEY);
-        let _ = self.cache.remove(CURRENT_SESSION_ID_KEY);
-        *self.current_id.lock().unwrap() = None;
+        let _ = self.cache.remove(Self::session_store_key());
+        let _ = self.cache.remove(Self::current_session_id_key());
     }
 
     pub fn get_current_session_id(&self) -> Option<String> {
-        let cached = self.current_id.lock().unwrap().clone();
-        if cached.is_some() {
-            return cached;
-        }
-        let val: Option<String> = self.cache.retrieve(CURRENT_SESSION_ID_KEY).ok().flatten();
-        if let Some(ref id) = val {
-            *self.current_id.lock().unwrap() = Some(id.clone());
-        }
-        val
+        self.cache
+            .retrieve(Self::current_session_id_key())
+            .ok()
+            .flatten()
     }
 
     pub fn set_current_session_id(&self, id: &str) {
-        let _ = self.cache.store(CURRENT_SESSION_ID_KEY, &id.to_string());
-        *self.current_id.lock().unwrap() = Some(id.to_string());
+        let _ = self
+            .cache
+            .store(Self::current_session_id_key(), &id.to_string());
     }
 
     pub fn remove_current_session_id(&self) {
-        let _ = self.cache.remove(CURRENT_SESSION_ID_KEY);
-        *self.current_id.lock().unwrap() = None;
+        let _ = self.cache.remove(Self::current_session_id_key());
+    }
+
+    pub fn get_session_alias(&self, user_id: &str) -> Option<String> {
+        let sessions = self.fetch()?;
+        let fqdn = identity_fqdn(None);
+        sessions.get(&fqdn)?.get(user_id)?.identity.alias.clone()
+    }
+
+    pub fn set_session_alias(&self, user_id: &str, alias: &str) {
+        let Some(mut sessions) = self.fetch() else {
+            return;
+        };
+        let fqdn = identity_fqdn(None);
+        let Some(session) = sessions
+            .get_mut(&fqdn)
+            .and_then(|items| items.get_mut(user_id))
+        else {
+            return;
+        };
+        session.identity.alias = Some(alias.to_string());
+        self.store(&sessions);
+    }
+
+    pub fn find_session_by_alias(&self, alias: &str) -> Option<String> {
+        let sessions = self.fetch()?;
+        let fqdn = identity_fqdn(None);
+        let fqdn_sessions = sessions.get(&fqdn)?;
+
+        for (user_id, session) in fqdn_sessions {
+            if session.identity.alias.as_deref() == Some(alias) || user_id == alias {
+                return Some(user_id.clone());
+            }
+        }
+
+        None
     }
 }
 
@@ -131,5 +181,31 @@ mod tests {
         assert_eq!(store.get_current_session_id().unwrap(), "user-1");
         store.remove_current_session_id();
         assert!(store.get_current_session_id().is_none());
+    }
+
+    #[test]
+    fn session_alias_roundtrip() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = SessionStore::with_path(dir.path().join("config.json"));
+        let mut sessions = Sessions::new();
+        let mut inner = HashMap::new();
+        inner.insert("user-1".into(), test_session());
+        sessions.insert("accounts.shopify.com".into(), inner);
+
+        store.store(&sessions);
+        store.set_session_alias("user-1", "me@example.com");
+
+        assert_eq!(
+            store.get_session_alias("user-1"),
+            Some("me@example.com".to_string())
+        );
+        assert_eq!(
+            store.find_session_by_alias("me@example.com"),
+            Some("user-1".to_string())
+        );
+        assert_eq!(
+            store.find_session_by_alias("user-1"),
+            Some("user-1".to_string())
+        );
     }
 }

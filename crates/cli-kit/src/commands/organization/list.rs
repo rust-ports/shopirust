@@ -92,7 +92,7 @@ impl BaseCommand for List {
 
         let session = match ensure_authenticated(&applications, &store).await {
             Ok(s) => s,
-            Err(e) => return Err(CliError::abort(e)),
+            Err(e) => return Err(CliError::abort(e.to_string())),
         };
 
         let token = session

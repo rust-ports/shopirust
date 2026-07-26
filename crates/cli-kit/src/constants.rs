@@ -157,7 +157,15 @@ fn resolve_fqdn(
     env: Option<&std::collections::HashMap<String, String>>,
 ) -> String {
     match service_environment(env) {
-        ServiceEnvironment::Local => production_fqdn.to_string(),
+        ServiceEnvironment::Local => match production_fqdn {
+            PARTNERS_FQDN => crate::util::fqdn::partners_fqdn(env),
+            ADMIN_FQDN => crate::util::fqdn::admin_fqdn(env),
+            APP_MANAGEMENT_FQDN => crate::util::fqdn::app_management_fqdn(env),
+            BUSINESS_PLATFORM_FQDN => crate::util::fqdn::business_platform_fqdn(env),
+            IDENTITY_FQDN => crate::util::fqdn::identity_fqdn(env),
+            DEVELOPER_DASHBOARD_FQDN => crate::util::fqdn::developer_dashboard_fqdn(env),
+            _ => production_fqdn.to_string(),
+        },
         ServiceEnvironment::Production => production_fqdn.to_string(),
     }
 }
@@ -198,10 +206,7 @@ pub fn app_dev_fqdn(
     store_fqdn: &str,
     env: Option<&std::collections::HashMap<String, String>>,
 ) -> String {
-    match service_environment(env) {
-        ServiceEnvironment::Local => app_management_fqdn(env),
-        ServiceEnvironment::Production => store_fqdn.to_string(),
-    }
+    crate::util::fqdn::app_dev_fqdn(store_fqdn, env)
 }
 
 /// Resolve the theme kit access domain, optionally overridden via env var.
@@ -216,20 +221,7 @@ pub fn theme_kit_access_domain(env: Option<&std::collections::HashMap<String, St
 /// If the cleaned string doesn't end with a recognised Shopify domain it
 /// appends `.myshopify.com`.
 pub fn normalize_store_fqdn(store: &str) -> String {
-    let cleaned = store
-        .trim_start_matches("https://")
-        .trim_start_matches("http://")
-        .trim_end_matches('/')
-        .trim_end_matches("/admin");
-
-    if cleaned.ends_with(".myshopify.com")
-        || cleaned.ends_with(".shopify.io")
-        || cleaned.ends_with(".shop.dev")
-    {
-        cleaned.to_string()
-    } else {
-        format!("{cleaned}.myshopify.com")
-    }
+    crate::util::fqdn::normalize_store_fqdn(store, None)
 }
 
 /// Platform-appropriate directory for persistent cache data.
