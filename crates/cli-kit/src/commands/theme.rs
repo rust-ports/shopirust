@@ -1,11 +1,23 @@
+use crate::api;
+use crate::output::public_api::render_confirmation_prompt;
+use crate::output::{
+    output_info, output_result, output_success, output_warn, OutputContent, Token,
+};
 use crate::session::{ensure_authenticated_themes, AdminSession};
 use crate::util::fqdn::normalize_store_fqdn;
 use async_trait::async_trait;
 use clap::{Args, Subcommand, ValueEnum};
 use cli_core::command::TopicCommand;
 use cli_core::error::CliError;
+use serde_json::json;
 use std::path::PathBuf;
-use theme::config::{load_environment, value_as_string};
+use theme::config::{load_environment, value_as_bool, value_as_string, value_as_strings};
+use theme::models::{theme_editor_url, theme_preview_url, Theme};
+use theme::selector::ThemeFilter;
+use theme::services::{
+    duplicate_json, theme_info_json, to_pretty_json, DuplicateResult, ListOptions, ThemeAdmin,
+    ThemeServiceError,
+};
 
 #[derive(Debug, Subcommand)]
 #[command(disable_help_subcommand = true)]
@@ -90,24 +102,24 @@ impl TopicCommand for ThemeTopic {
 
     async fn execute(self) -> Result<(), CliError> {
         match self {
+            Self::List(command) => command.run().await,
+            Self::Info(command) => command.run().await,
+            Self::Open(command) => command.run().await,
+            Self::Delete(command) => command.run().await,
+            Self::Duplicate(command) => command.run().await,
+            Self::Rename(command) => command.run().await,
+            Self::Publish(command) => command.run().await,
             Self::Check(_) => not_implemented("theme check"),
             Self::Console(_) => not_implemented("theme console"),
-            Self::Delete(_) => not_implemented("theme delete"),
             Self::Dev(_) => not_implemented("theme dev"),
-            Self::Duplicate(_) => not_implemented("theme duplicate"),
-            Self::Info(_) => not_implemented("theme info"),
             Self::Init(_) => not_implemented("theme init"),
             Self::LanguageServer(_) => not_implemented("theme language-server"),
-            Self::List(_) => not_implemented("theme list"),
             Self::Metafields(_) => not_implemented("theme metafields"),
-            Self::Open(_) => not_implemented("theme open"),
             Self::Package(_) => not_implemented("theme package"),
             Self::Preview(_) => not_implemented("theme preview"),
             Self::Profile(_) => not_implemented("theme profile"),
-            Self::Publish(_) => not_implemented("theme publish"),
             Self::Pull(_) => not_implemented("theme pull"),
             Self::Push(_) => not_implemented("theme push"),
-            Self::Rename(_) => not_implemented("theme rename"),
             Self::Share(_) => not_implemented("theme share"),
         }
     }
@@ -259,6 +271,110 @@ async fn session_for(flags: &ThemeFlags) -> Result<AdminSession, CliError> {
         .map_err(|error| CliError::abort(error.to_string()))
 }
 
+struct AdminApi<'a> {
+    session: &'a AdminSession,
+}
+
+#[async_trait]
+impl ThemeAdmin for AdminApi<'_> {
+    async fn fetch_themes(&self) -> Result<Vec<Theme>, ThemeServiceError> {
+        api::themes::fetch_themes(self.session)
+            .await
+            .map(|themes| themes.into_iter().map(from_api_theme).collect())
+            .map_err(|error| ThemeServiceError::Api(error.to_string()))
+    }
+
+    async fn delete_theme(&self, id: i64) -> Result<(), ThemeServiceError> {
+        api::themes::theme_delete(id, self.session)
+            .await
+            .map(|_| ())
+            .map_err(|error| ThemeServiceError::Api(error.to_string()))
+    }
+
+    async fn duplicate_theme(
+        &self,
+        id: i64,
+        name: Option<String>,
+    ) -> Result<DuplicateResult, ThemeServiceError> {
+        api::themes::theme_duplicate(id, name, self.session)
+            .await
+            .map(|result| DuplicateResult {
+                theme: result.theme.map(from_api_theme),
+                user_errors: result
+                    .user_errors
+                    .into_iter()
+                    .map(|error| error.message)
+                    .collect(),
+                request_id: result.request_id,
+            })
+            .map_err(|error| ThemeServiceError::Api(error.to_string()))
+    }
+
+    async fn publish_theme(&self, id: i64) -> Result<Option<Theme>, ThemeServiceError> {
+        api::themes::theme_publish(id, self.session)
+            .await
+            .map(|theme| theme.map(from_api_theme))
+            .map_err(|error| ThemeServiceError::Api(error.to_string()))
+    }
+
+    async fn update_theme_name(
+        &self,
+        id: i64,
+        name: String,
+    ) -> Result<Option<Theme>, ThemeServiceError> {
+        api::themes::theme_update(
+            id,
+            api::themes::ThemeParams {
+                name: Some(name),
+                ..Default::default()
+            },
+            self.session,
+        )
+        .await
+        .map(|theme| theme.map(from_api_theme))
+        .map_err(|error| ThemeServiceError::Api(error.to_string()))
+    }
+}
+
+fn from_api_theme(theme: api::themes::Theme) -> Theme {
+    Theme {
+        id: theme.id,
+        name: theme.name,
+        created_at_runtime: theme.created_at_runtime,
+        processing: theme.processing,
+        role: theme.role,
+        src: theme.src,
+    }
+}
+
+fn service_error(error: ThemeServiceError) -> CliError {
+    CliError::abort(error.to_string())
+}
+
+fn confirm(message: &str) -> Result<bool, CliError> {
+    render_confirmation_prompt(message)
+        .map_err(|error| CliError::abort(format!("Confirmation failed: {error}")))
+}
+
+fn print_theme_table(themes: &[Theme]) {
+    output_info(OutputContent::new().add(Token::Raw(format!(
+        "{:<31}  {:<22}  {}",
+        "name", "role", "id"
+    ))));
+    output_info(OutputContent::new().add(Token::Raw(format!(
+        "{:<31}  {:<22}  {}",
+        "───────────────────────────────", "──────────────────────", "──────────────"
+    ))));
+    for theme in themes {
+        output_info(OutputContent::new().add(Token::Raw(format!(
+            "{:<31}  {:<22}  #{}",
+            theme.name,
+            format!("[{}]", theme.role),
+            theme.id
+        ))));
+    }
+}
+
 #[derive(Debug, Clone, Args)]
 pub struct List {
     #[command(flatten)]
@@ -273,6 +389,43 @@ pub struct List {
     id: Option<i64>,
 }
 
+impl List {
+    async fn run(mut self) -> Result<(), CliError> {
+        if let Some(environments) = multi_environment_names(&self.common) {
+            reject_global_path_for_multi(&self.common)?;
+            for environment in environments {
+                let mut command = self.clone();
+                command.common.environment = vec![environment];
+                Box::pin(command.run()).await?;
+            }
+            return Ok(());
+        }
+        if self.common.environment.len() == 1 {
+            let env_name = self.common.environment[0].clone();
+            apply_common_environment(&mut self.common, &env_name)?;
+        }
+        let session = session_for(&self.common).await?;
+        let themes = theme::services::list_themes(
+            &AdminApi { session: &session },
+            &session.store_fqdn,
+            &ListOptions {
+                role: self.role.map(|role| role.as_str().to_string()),
+                name: self.name,
+                id: self.id,
+            },
+        )
+        .await
+        .map_err(service_error)?;
+
+        if self.json {
+            output_result(to_pretty_json(&themes));
+        } else {
+            print_theme_table(&themes);
+        }
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone, Args)]
 pub struct Info {
     #[command(flatten)]
@@ -283,6 +436,64 @@ pub struct Info {
     development: bool,
     #[arg(short = 't', long, env = "SHOPIFY_FLAG_THEME_ID")]
     theme: Option<String>,
+}
+
+impl Info {
+    async fn run(mut self) -> Result<(), CliError> {
+        if let Some(environments) = multi_environment_names(&self.common) {
+            reject_global_path_for_multi(&self.common)?;
+            for environment in environments {
+                let mut command = self.clone();
+                command.common.environment = vec![environment];
+                Box::pin(command.run()).await?;
+            }
+            return Ok(());
+        }
+        if self.common.environment.len() == 1 {
+            let env_name = self.common.environment[0].clone();
+            apply_common_environment(&mut self.common, &env_name)?;
+            if self.theme.is_none() {
+                if let Ok(env) = load_environment(&env_name, env_base_path(&self.common)) {
+                    self.theme = env.get("theme").and_then(value_as_string);
+                    self.development |= env
+                        .get("development")
+                        .and_then(value_as_bool)
+                        .unwrap_or(false);
+                }
+            }
+        }
+        let session = session_for(&self.common).await?;
+        let filter = ThemeFilter {
+            theme: self.theme,
+            development: self.development,
+            ..Default::default()
+        };
+        let theme = theme::services::select_theme(
+            &AdminApi { session: &session },
+            &session.store_fqdn,
+            &filter,
+        )
+        .await
+        .map_err(service_error)?;
+        let json_value = theme_info_json(&theme, &session.store_fqdn);
+        if self.json {
+            output_result(to_pretty_json(&json_value));
+        } else {
+            let info = json_value.theme;
+            output_info(OutputContent::new().add(Token::Raw("Theme Details".into())));
+            output_info(OutputContent::new().add(Token::Raw(format!("ID: #{}", info.id))));
+            output_info(OutputContent::new().add(Token::Raw(format!("Name: {}", info.name))));
+            output_info(OutputContent::new().add(Token::Raw(format!("Role: {}", info.role))));
+            output_info(OutputContent::new().add(Token::Raw(format!("Shop: {}", info.shop))));
+            output_info(
+                OutputContent::new().add(Token::Raw(format!("Preview URL: {}", info.preview_url))),
+            );
+            output_info(
+                OutputContent::new().add(Token::Raw(format!("Editor URL: {}", info.editor_url))),
+            );
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, Args)]
@@ -299,6 +510,48 @@ pub struct Open {
     theme: Option<String>,
 }
 
+impl Open {
+    async fn run(mut self) -> Result<(), CliError> {
+        if self.common.environment.len() > 1 {
+            output_warn("This command does not support multiple environments.");
+            return Ok(());
+        }
+        if self.common.environment.len() == 1 {
+            let env_name = self.common.environment[0].clone();
+            apply_common_environment(&mut self.common, &env_name)?;
+        }
+        let session = session_for(&self.common).await?;
+        let theme = theme::services::select_theme(
+            &AdminApi { session: &session },
+            &session.store_fqdn,
+            &ThemeFilter {
+                live: self.live,
+                development: self.development,
+                theme: self.theme,
+                ..Default::default()
+            },
+        )
+        .await
+        .map_err(service_error)?;
+
+        let preview_url = theme_preview_url(&theme, &session.store_fqdn);
+        let editor_url = theme_editor_url(&theme, &session.store_fqdn);
+        output_info(OutputContent::new().add(Token::Raw(format!(
+            "Preview information for theme {} (#{})",
+            theme.name, theme.id
+        ))));
+        output_result(format!("Preview your theme: {preview_url}"));
+        output_result(format!(
+            "Customize your theme at the theme editor: {editor_url}"
+        ));
+
+        let target = if self.editor { editor_url } else { preview_url };
+        open::that(&target)
+            .map_err(|error| CliError::abort(format!("Could not open browser: {error}")))?;
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone, Args)]
 pub struct Delete {
     #[command(flatten)]
@@ -311,6 +564,67 @@ pub struct Delete {
     force: bool,
     #[arg(short = 't', long, env = "SHOPIFY_FLAG_THEME_ID", action = clap::ArgAction::Append)]
     theme: Vec<String>,
+}
+
+impl Delete {
+    async fn run(mut self) -> Result<(), CliError> {
+        if let Some(environments) = multi_environment_names(&self.common) {
+            reject_global_path_for_multi(&self.common)?;
+            for environment in environments {
+                let mut command = self.clone();
+                command.common.environment = vec![environment];
+                command.force = true;
+                Box::pin(command.run()).await?;
+            }
+            return Ok(());
+        }
+        if self.common.environment.len() == 1 {
+            let env_name = self.common.environment[0].clone();
+            apply_common_environment(&mut self.common, &env_name)?;
+            if let Ok(env) = load_environment(&env_name, env_base_path(&self.common)) {
+                if self.theme.is_empty() {
+                    self.theme = env
+                        .get("theme")
+                        .and_then(value_as_strings)
+                        .unwrap_or_default();
+                }
+                self.development |= env
+                    .get("development")
+                    .and_then(value_as_bool)
+                    .unwrap_or(false);
+            }
+        }
+        let session = session_for(&self.common).await?;
+        if !self.force
+            && !confirm(&format!(
+                "Delete the selected theme from {}?",
+                session.store_fqdn
+            ))?
+        {
+            return Ok(());
+        }
+        let themes = theme::services::delete_themes(
+            &AdminApi { session: &session },
+            &session.store_fqdn,
+            &ThemeFilter {
+                themes: self.theme,
+                development: self.development,
+                ..Default::default()
+            },
+        )
+        .await
+        .map_err(service_error)?;
+        output_success(format!(
+            "Deleted {} from {}.",
+            if themes.len() == 1 {
+                "1 theme".to_string()
+            } else {
+                format!("{} themes", themes.len())
+            },
+            session.store_fqdn
+        ));
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, Args)]
@@ -327,6 +641,69 @@ pub struct Duplicate {
     force: bool,
 }
 
+impl Duplicate {
+    async fn run(mut self) -> Result<(), CliError> {
+        if self.common.environment.len() == 1 {
+            let env_name = self.common.environment[0].clone();
+            apply_common_environment(&mut self.common, &env_name)?;
+            if let Ok(env) = load_environment(&env_name, env_base_path(&self.common)) {
+                self.theme = self
+                    .theme
+                    .or_else(|| env.get("theme").and_then(value_as_string));
+                self.name = self
+                    .name
+                    .or_else(|| env.get("name").and_then(value_as_string));
+            }
+        }
+        let session = session_for(&self.common).await?;
+        if !self.force
+            && !confirm(&format!(
+                "Do you want to duplicate the selected theme on {}?",
+                session.store_fqdn
+            ))?
+        {
+            return Ok(());
+        }
+        let (original, result) = theme::services::duplicate_theme(
+            &AdminApi { session: &session },
+            &session.store_fqdn,
+            self.theme,
+            self.name,
+        )
+        .await
+        .map_err(service_error)?;
+
+        if !result.user_errors.is_empty() {
+            let output = json!({
+                "message": format!("The theme '{}' could not be duplicated due to errors", original.name),
+                "errors": result.user_errors,
+                "requestId": result.request_id,
+            });
+            if self.json {
+                output_result(output.to_string());
+            } else {
+                return Err(CliError::abort(
+                    output["message"]
+                        .as_str()
+                        .unwrap_or("Theme could not be duplicated"),
+                ));
+            }
+        } else if let Some(theme) = result.theme {
+            if self.json {
+                output_result(
+                    serde_json::to_string(&duplicate_json(&theme, &session.store_fqdn)).unwrap(),
+                );
+            } else {
+                output_success(format!(
+                    "The theme {} (#{}) has been duplicated.",
+                    original.name, original.id
+                ));
+            }
+        }
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone, Args)]
 pub struct Rename {
     #[command(flatten)]
@@ -341,6 +718,59 @@ pub struct Rename {
     live: bool,
 }
 
+impl Rename {
+    async fn run(mut self) -> Result<(), CliError> {
+        if let Some(environments) = multi_environment_names(&self.common) {
+            reject_global_path_for_multi(&self.common)?;
+            for environment in environments {
+                let mut command = self.clone();
+                command.common.environment = vec![environment];
+                Box::pin(command.run()).await?;
+            }
+            return Ok(());
+        }
+        if self.common.environment.len() == 1 {
+            let env_name = self.common.environment[0].clone();
+            apply_common_environment(&mut self.common, &env_name)?;
+            if let Ok(env) = load_environment(&env_name, env_base_path(&self.common)) {
+                self.theme = self
+                    .theme
+                    .or_else(|| env.get("theme").and_then(value_as_string));
+                self.name = self
+                    .name
+                    .or_else(|| env.get("name").and_then(value_as_string));
+                self.development |= env
+                    .get("development")
+                    .and_then(value_as_bool)
+                    .unwrap_or(false);
+                self.live |= env.get("live").and_then(value_as_bool).unwrap_or(false);
+            }
+        }
+        let new_name = self
+            .name
+            .ok_or_else(|| CliError::abort("A new name is required. Specify one with `--name`."))?;
+        let session = session_for(&self.common).await?;
+        let theme = theme::services::rename_theme(
+            &AdminApi { session: &session },
+            &session.store_fqdn,
+            &ThemeFilter {
+                theme: self.theme,
+                development: self.development,
+                live: self.live,
+                ..Default::default()
+            },
+            new_name.clone(),
+        )
+        .await
+        .map_err(service_error)?;
+        output_success(format!(
+            "The theme {} (#{}) was renamed to '{}'.",
+            theme.name, theme.id, new_name
+        ));
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone, Args)]
 pub struct Publish {
     #[command(flatten)]
@@ -349,6 +779,57 @@ pub struct Publish {
     force: bool,
     #[arg(short = 't', long, env = "SHOPIFY_FLAG_THEME_ID")]
     theme: Option<String>,
+}
+
+impl Publish {
+    async fn run(mut self) -> Result<(), CliError> {
+        if let Some(environments) = multi_environment_names(&self.common) {
+            reject_global_path_for_multi(&self.common)?;
+            for environment in environments {
+                let mut command = self.clone();
+                command.common.environment = vec![environment];
+                command.force = true;
+                Box::pin(command.run()).await?;
+            }
+            return Ok(());
+        }
+        if self.common.environment.len() == 1 {
+            let env_name = self.common.environment[0].clone();
+            apply_common_environment(&mut self.common, &env_name)?;
+            if let Ok(env) = load_environment(&env_name, env_base_path(&self.common)) {
+                self.theme = self
+                    .theme
+                    .or_else(|| env.get("theme").and_then(value_as_string));
+            }
+        }
+        let session = session_for(&self.common).await?;
+        if !self.force
+            && !confirm(&format!(
+                "Do you want to make the selected theme the new live theme on {}?",
+                session.store_fqdn
+            ))?
+        {
+            return Ok(());
+        }
+        let theme = theme::services::publish_theme(
+            &AdminApi { session: &session },
+            &session.store_fqdn,
+            self.theme,
+        )
+        .await
+        .map_err(service_error)?;
+        let live_theme = Theme {
+            role: "live".into(),
+            ..theme.clone()
+        };
+        output_success(format!(
+            "The theme {} (#{}) is now live at {}.",
+            theme.name,
+            theme.id,
+            theme_preview_url(&live_theme, &session.store_fqdn)
+        ));
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, Args)]
@@ -582,7 +1063,7 @@ mod tests {
     }
 
     #[test]
-    fn parses_shared_theme_flags() {
+    fn parses_phase_two_flags() {
         let cli = TestCli::parse_from([
             "theme",
             "delete",
@@ -640,5 +1121,13 @@ mod tests {
         ] {
             TestCli::try_parse_from(args).unwrap();
         }
+    }
+
+    #[test]
+    fn role_values_match_upstream_order() {
+        assert_eq!(
+            theme::models::ALLOWED_ROLES,
+            ["live", "unpublished", "development"]
+        );
     }
 }
