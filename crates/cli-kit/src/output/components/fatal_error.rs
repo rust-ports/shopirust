@@ -31,6 +31,16 @@ pub fn render_fatal_error(err: &FatalError, colors_enabled: bool) -> Vec<TokenIt
             body.push_str(&format!("\n  • {step}"));
         }
     }
+    if !err.custom_sections.is_empty() {
+        for section in &err.custom_sections {
+            body.push_str("\n\n");
+            if let Some(title) = &section.title {
+                body.push_str(title);
+                body.push('\n');
+            }
+            body.push_str(&section.body);
+        }
+    }
 
     render_box_with_top_bottom_lines(BannerType::Error, Some(label), &body, colors_enabled)
 }
@@ -79,6 +89,7 @@ mod tests {
             formatted_message: None,
             try_message: None,
             next_steps: vec![],
+            custom_sections: vec![],
             r#type: crate::error::FatalErrorType::Bug,
             skip_oclif_error_handling: false,
         };
@@ -89,5 +100,26 @@ mod tests {
             .collect::<Vec<_>>()
             .join("\n");
         assert!(text.contains("Bug"));
+    }
+
+    #[test]
+    fn test_fatal_error_with_custom_sections() {
+        let err = crate::error::abort_error_with_custom_sections(
+            "Deploy failed",
+            None::<String>,
+            vec![],
+            vec![crate::output::components::alert::CustomSection {
+                title: Some("Details".into()),
+                body: "Theme asset upload failed".into(),
+            }],
+        );
+        let items = render_fatal_error(&err, false);
+        let text: String = items
+            .iter()
+            .map(|t| t.render_plain())
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(text.contains("Details"));
+        assert!(text.contains("Theme asset upload failed"));
     }
 }

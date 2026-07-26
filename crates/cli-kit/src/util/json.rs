@@ -11,6 +11,7 @@ pub fn parse_json<T: serde::de::DeserializeOwned>(
             r#type: FatalErrorType::Abort,
             try_message: Some("Check the file format and try again".into()),
             next_steps: vec![],
+            custom_sections: vec![],
             formatted_message: None,
             skip_oclif_error_handling: true,
         }
