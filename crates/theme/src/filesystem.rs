@@ -23,7 +23,7 @@ pub const THEME_DIRECTORIES: [&str; 9] = [
     "templates/customers",
 ];
 
-pub const DEFAULT_IGNORE_PATTERNS: [&str; 14] = [
+pub const DEFAULT_IGNORE_PATTERNS: [&str; 15] = [
     "**/.git",
     "**/.vscode",
     "**/.hg",
@@ -38,6 +38,7 @@ pub const DEFAULT_IGNORE_PATTERNS: [&str; 14] = [
     "**/desktop.ini",
     "**/config.yml",
     "**/node_modules/",
+    ".prettierrc.json",
 ];
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -419,6 +420,7 @@ mod tests {
         write_file(temp.path(), "templates/customers/account.txt", "");
         write_file(temp.path(), "README.md", "");
         write_file(temp.path(), "assets/node_modules/package.js", "");
+        write_file(temp.path(), ".prettierrc.json", "{}");
 
         let fs = scan_theme_filesystem(temp.path(), IgnoreFilters::default()).unwrap();
         let keys = fs.files.keys().cloned().collect::<Vec<_>>();
@@ -462,6 +464,12 @@ mod tests {
 
         let keys = fs.files.keys().cloned().collect::<Vec<_>>();
         assert_eq!(keys, vec!["assets/keep.css"]);
+    }
+
+    #[test]
+    fn default_ignore_patterns_include_upstream_entries() {
+        assert!(DEFAULT_IGNORE_PATTERNS.contains(&"**/node_modules/"));
+        assert!(DEFAULT_IGNORE_PATTERNS.contains(&".prettierrc.json"));
     }
 
     #[test]

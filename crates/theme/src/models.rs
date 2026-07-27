@@ -48,6 +48,16 @@ pub struct DuplicateJsonTheme {
     pub shop: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct ThemeEnvironmentInfoJson {
+    pub store: String,
+    pub development_theme_id: Option<i64>,
+    pub cli_version: String,
+    pub os: String,
+    pub shell: String,
+    pub node_version: String,
+}
+
 pub fn theme_preview_url(theme: &Theme, store_fqdn: &str) -> String {
     if theme.role == LIVE_THEME_ROLE {
         format!("https://{store_fqdn}")
@@ -65,4 +75,36 @@ pub fn role_rank(role: &str) -> usize {
         .iter()
         .position(|allowed| *allowed == role)
         .unwrap_or(ALLOWED_ROLES.len())
+}
+
+pub fn theme_environment_info_json(
+    store: Option<&str>,
+    development_theme_id: Option<i64>,
+    cli_version: &str,
+    shell: Option<&str>,
+) -> ThemeEnvironmentInfoJson {
+    ThemeEnvironmentInfoJson {
+        store: store.unwrap_or("Not configured").to_string(),
+        development_theme_id,
+        cli_version: cli_version.to_string(),
+        os: format!("{}-{}", std::env::consts::OS, std::env::consts::ARCH),
+        shell: shell.unwrap_or("unknown").to_string(),
+        node_version: "node-rust".to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn environment_info_defaults_unconfigured_values() {
+        let info = theme_environment_info_json(None, None, "1.2.3", None);
+
+        assert_eq!(info.store, "Not configured");
+        assert_eq!(info.development_theme_id, None);
+        assert_eq!(info.cli_version, "1.2.3");
+        assert_eq!(info.shell, "unknown");
+        assert_eq!(info.node_version, "node-rust");
+    }
 }

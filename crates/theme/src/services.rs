@@ -277,4 +277,49 @@ mod tests {
 
         assert_eq!(themes[0].id, 2);
     }
+
+    #[tokio::test]
+    async fn duplicate_rejects_development_themes() {
+        let api = Api {
+            themes: vec![theme(2, "development")],
+        };
+        let result = duplicate_theme(&api, "shop.myshopify.com", Some("2".into()), None).await;
+
+        assert!(
+            matches!(result, Err(ThemeServiceError::User(message)) if message.contains("Development themes can't be duplicated"))
+        );
+    }
+
+    #[tokio::test]
+    async fn publish_requires_a_theme_filter_when_prompts_are_unavailable() {
+        let api = Api {
+            themes: vec![theme(1, "unpublished")],
+        };
+        let result = publish_theme(&api, "shop.myshopify.com", None).await;
+
+        assert!(matches!(
+            result,
+            Err(ThemeServiceError::Selector(SelectorError::PromptRequired))
+        ));
+    }
+
+    #[tokio::test]
+    async fn rename_selects_theme_by_identifier() {
+        let api = Api {
+            themes: vec![theme(1, "unpublished"), theme(2, "live")],
+        };
+        let renamed = rename_theme(
+            &api,
+            "shop.myshopify.com",
+            &ThemeFilter {
+                theme: Some("2".into()),
+                ..Default::default()
+            },
+            "New name".into(),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(renamed.id, 2);
+    }
 }

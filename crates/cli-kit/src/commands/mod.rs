@@ -13,6 +13,7 @@ use cli_core::error::CliError;
 /// Top-level CLI topic dispatcher.
 #[derive(Debug, Subcommand)]
 #[command(disable_help_subcommand = true)]
+#[allow(clippy::large_enum_variant)]
 pub enum CliSubcommand {
     #[command(subcommand)]
     Auth(AuthSubcommand),
@@ -30,6 +31,7 @@ pub struct CliTopicArgs {
     pub command: CliSubcommand,
 }
 
+#[allow(clippy::large_enum_variant)]
 pub enum CliTopic {
     Auth(AuthTopic),
     Organization(OrganizationTopic),

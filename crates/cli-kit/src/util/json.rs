@@ -1,5 +1,6 @@
 use crate::error::{FatalError, FatalErrorType};
 
+#[allow(clippy::result_large_err)]
 pub fn parse_json<T: serde::de::DeserializeOwned>(
     json_string: &str,
     context: Option<&str>,

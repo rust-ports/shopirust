@@ -1,18 +1,32 @@
 use crate::api;
-use crate::output::public_api::render_confirmation_prompt;
+use crate::output::components::prompts::select_input::Item;
+use crate::output::public_api::{
+    render_confirmation_prompt, render_select_prompt, render_text_prompt,
+};
 use crate::output::{
     output_info, output_result, output_success, output_warn, OutputContent, Token,
 };
 use crate::session::{ensure_authenticated_themes, AdminSession};
 use crate::util::fqdn::normalize_store_fqdn;
+use crate::util::system::{is_ci, terminal_supports_prompting};
 use async_trait::async_trait;
 use clap::{Args, Subcommand, ValueEnum};
 use cli_core::command::TopicCommand;
 use cli_core::error::CliError;
+use futures::future::join_all;
 use serde_json::json;
+use std::future::Future;
 use std::path::PathBuf;
-use theme::config::{load_environment, value_as_bool, value_as_string, value_as_strings};
-use theme::models::{theme_editor_url, theme_preview_url, Theme};
+use std::pin::Pin;
+use theme::config::{
+    load_environment, missing_required_flags, value_as_bool, value_as_string, value_as_strings,
+    EnvironmentFlags, RequiredFlag,
+};
+use theme::local_storage::{
+    current_theme_store, development_theme_id_for_store, host_theme_id,
+    remove_development_theme_id_for_store, remove_host_theme_id, store_current_theme_store,
+};
+use theme::models::{theme_editor_url, theme_environment_info_json, theme_preview_url, Theme};
 use theme::selector::ThemeFilter;
 use theme::services::{
     duplicate_json, theme_info_json, to_pretty_json, DuplicateResult, ListOptions, ThemeAdmin,
@@ -223,13 +237,383 @@ fn multi_environment_names(flags: &ThemeFlags) -> Option<Vec<String>> {
 
 fn reject_global_path_for_multi(flags: &ThemeFlags) -> Result<(), CliError> {
     if flags.path.is_some() {
-        return Err(
-            CliError::abort("Can't use `--path` flag with multiple environments.").with_next_steps(
+        let messages = ThemeCommandRunner::reject_global_path(true);
+        let mut error = CliError::abort(messages[0]);
+        if messages.len() > 1 {
+            error = error.with_next_steps(messages[1..].join("\n"));
+        }
+        return Err(error);
+    }
+    Ok(())
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ThemeCommandEnvironment {
+    pub environment: String,
+    pub flags: EnvironmentFlags,
+    pub validation_flags: EnvironmentFlags,
+    pub requires_auth: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct InvalidThemeCommandEnvironment {
+    pub environment: String,
+    pub reason: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ThemeCommandValidation {
+    pub valid: Vec<ThemeCommandEnvironment>,
+    pub invalid: Vec<InvalidThemeCommandEnvironment>,
+}
+
+pub(crate) struct ThemeCommandRunner;
+
+type ThemeCommandFuture = Pin<Box<dyn Future<Output = Result<(), CliError>> + Send>>;
+
+pub(crate) struct MultiEnvironmentRunConfig {
+    pub command_name: &'static str,
+    pub common: ThemeFlags,
+    pub required_flags: Vec<RequiredFlag>,
+    pub cli_flags: EnvironmentFlags,
+    pub command_allows_force: bool,
+    pub force: bool,
+}
+
+impl ThemeCommandRunner {
+    pub(crate) async fn run_multi_environments<C, F>(
+        command: C,
+        config: MultiEnvironmentRunConfig,
+        mut make_command: F,
+    ) -> Result<(), CliError>
+    where
+        C: Clone + Send + 'static,
+        F: FnMut(C, String, bool) -> ThemeCommandFuture + Send,
+    {
+        let Some(environments) = multi_environment_names(&config.common) else {
+            return make_command(command, String::new(), config.force).await;
+        };
+
+        reject_global_path_for_multi(&config.common)?;
+
+        let loaded = Self::load_environments(
+            &environments,
+            env_base_path(&config.common),
+            &EnvironmentFlags::new(),
+            &config.cli_flags,
+            true,
+        )?;
+        let validation = Self::validate(loaded, &config.required_flags);
+        Self::output_validation_summary(config.command_name, &config.required_flags, &validation);
+
+        if validation.valid.is_empty() {
+            return Ok(());
+        }
+
+        let auto_force = if config.command_allows_force && !config.force {
+            if !prompts_available() {
+                return Err(CliError::abort(
+                    "Confirmation is required to run this command in multiple environments.",
+                ));
+            }
+            confirm(&format!(
+                "Run {} in the following environments?",
+                config.command_name.to_lowercase()
+            ))?
+        } else {
+            config.force
+        };
+
+        if config.command_allows_force && !config.force && !auto_force {
+            return Ok(());
+        }
+
+        let groups = Self::group_by_unique_store(validation.valid);
+        for group in groups {
+            let futures = group.into_iter().map(|environment| {
+                let environment_name = environment.environment;
+                let future = make_command(command.clone(), environment_name.clone(), auto_force);
+                async move { (environment_name, future.await) }
+            });
+
+            for (environment_name, result) in join_all(futures).await {
+                if let Err(error) = result {
+                    output_warn(format!("Environment {environment_name} failed:\n\n{error}"));
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    pub(crate) fn load_environments(
+        environments: &[String],
+        base_path: PathBuf,
+        default_flags: &EnvironmentFlags,
+        cli_flags: &EnvironmentFlags,
+        requires_auth: bool,
+    ) -> Result<Vec<ThemeCommandEnvironment>, CliError> {
+        environments
+            .iter()
+            .map(|environment| {
+                let environment_flags = load_environment(environment, &base_path)
+                    .map_err(|_| CliError::abort("Please provide a valid environment."))?;
+                let validation_flags = Self::merge_flags(
+                    &EnvironmentFlags::new(),
+                    &environment_flags,
+                    cli_flags,
+                    environment,
+                );
+                let flags =
+                    Self::merge_flags(default_flags, &environment_flags, cli_flags, environment);
+                Ok(ThemeCommandEnvironment {
+                    environment: environment.clone(),
+                    flags,
+                    validation_flags,
+                    requires_auth,
+                })
+            })
+            .collect()
+    }
+
+    pub(crate) fn validate(
+        environments: Vec<ThemeCommandEnvironment>,
+        required_flags: &[RequiredFlag],
+    ) -> ThemeCommandValidation {
+        let mut valid = Vec::new();
+        let mut invalid = Vec::new();
+
+        for environment in environments {
+            let missing = missing_required_flags(&environment.validation_flags, required_flags);
+            if missing.is_empty() {
+                valid.push(environment);
+            } else {
+                invalid.push(InvalidThemeCommandEnvironment {
+                    environment: environment.environment,
+                    reason: format!("Missing flags: {}", missing.join(", ")),
+                });
+            }
+        }
+
+        ThemeCommandValidation { valid, invalid }
+    }
+
+    pub(crate) fn group_by_unique_store(
+        environments: Vec<ThemeCommandEnvironment>,
+    ) -> Vec<Vec<ThemeCommandEnvironment>> {
+        let stores = environments
+            .iter()
+            .filter_map(|environment| environment.flags.get("store").and_then(value_as_string))
+            .collect::<Vec<_>>();
+
+        let unique_store_count = stores
+            .iter()
+            .collect::<std::collections::HashSet<_>>()
+            .len();
+        if stores.len() == unique_store_count {
+            return vec![environments];
+        }
+
+        let mut groups: Vec<Vec<ThemeCommandEnvironment>> = Vec::new();
+        for environment in environments {
+            let store = environment.flags.get("store").and_then(value_as_string);
+            if let Some(group) = groups.iter_mut().find(|group| {
+                !group.iter().any(|candidate| {
+                    candidate.flags.get("store").and_then(value_as_string) == store
+                })
+            }) {
+                group.push(environment);
+            } else {
+                groups.push(vec![environment]);
+            }
+        }
+        groups
+    }
+
+    pub(crate) fn reject_global_path(path_provided_by_cli: bool) -> Vec<&'static str> {
+        if path_provided_by_cli {
+            Self::global_path_error_messages()
+        } else {
+            Vec::new()
+        }
+    }
+
+    fn global_path_error_messages() -> Vec<&'static str> {
+        let toml_in_cwd = cwd_path()
+            .join(theme::config::CONFIGURATION_FILE_NAME)
+            .is_file();
+        if toml_in_cwd {
+            vec![
+                "Can't use `--path` flag with multiple environments.",
                 "Configure each environment's theme path in your shopify.theme.toml file instead.",
+            ]
+        } else {
+            vec![
+                "Can't use `--path` flag with multiple environments.",
+                "Run this command from the directory containing shopify.theme.toml.",
+                "No shopify.theme.toml found in current directory.",
+            ]
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn force_after_confirmation(
+        force: bool,
+        command_allows_force: bool,
+        confirmed: bool,
+    ) -> bool {
+        force || (command_allows_force && confirmed)
+    }
+
+    fn merge_flags(
+        default_flags: &EnvironmentFlags,
+        environment_flags: &EnvironmentFlags,
+        cli_flags: &EnvironmentFlags,
+        environment: &str,
+    ) -> EnvironmentFlags {
+        let mut flags = default_flags.clone();
+        flags.extend(environment_flags.clone());
+        flags.extend(cli_flags.clone());
+        flags.insert(
+            "environment".into(),
+            serde_json::Value::Array(vec![serde_json::Value::String(environment.to_string())]),
+        );
+        if let Some(store) = flags.get("store").and_then(value_as_string) {
+            flags.insert(
+                "store".into(),
+                serde_json::Value::String(normalize_store_fqdn(&store, None)),
+            );
+        }
+        flags
+    }
+
+    fn output_validation_summary(
+        command_name: &str,
+        required_flags: &[RequiredFlag],
+        validation: &ThemeCommandValidation,
+    ) {
+        output_info(format!(
+            "Run {} in the following environments:",
+            command_name.to_lowercase()
+        ));
+
+        for environment in &validation.valid {
+            output_info(format!(
+                "{}  {}",
+                environment.environment,
+                Self::format_flag_details(&environment.flags, required_flags)
+            ));
+        }
+
+        for environment in &validation.invalid {
+            output_warn(format!(
+                "{}  Skipping | {}",
+                environment.environment, environment.reason
+            ));
+        }
+    }
+
+    fn format_flag_details(flags: &EnvironmentFlags, required_flags: &[RequiredFlag]) -> String {
+        let details = required_flags
+            .iter()
+            .filter_map(|required| {
+                let used_flag = match required {
+                    RequiredFlag::Flag(flag) => Some(*flag),
+                    RequiredFlag::OneOf(group) => group
+                        .iter()
+                        .find(|flag| has_config_value(flags, flag))
+                        .copied(),
+                }?;
+
+                if used_flag == "password" {
+                    return Some("password".to_string());
+                }
+
+                let value = flags.get(used_flag)?;
+                let display_value = if used_flag == "path" {
+                    value_as_string(value)
+                        .map(|path| format!("path: {}", summarize_path(&path)))
+                        .unwrap_or_else(|| "path".to_string())
+                } else {
+                    format!(
+                        "{used_flag}: {}",
+                        value_as_string(value).unwrap_or_else(|| value.to_string())
+                    )
+                };
+                Some(display_value)
+            })
+            .collect::<Vec<_>>();
+
+        if details.is_empty() {
+            "No flags required".to_string()
+        } else {
+            details.join(", ")
+        }
+    }
+}
+
+fn has_config_value(flags: &EnvironmentFlags, flag: &str) -> bool {
+    match flags.get(flag) {
+        Some(serde_json::Value::Null) | None => false,
+        Some(serde_json::Value::Bool(value)) => *value,
+        Some(serde_json::Value::String(value)) => !value.is_empty(),
+        Some(serde_json::Value::Array(value)) => !value.is_empty(),
+        Some(_) => true,
+    }
+}
+
+fn summarize_path(path: &str) -> String {
+    let parts = path
+        .split(['/', '\\'])
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>();
+    if parts.len() <= 2 {
+        return path.to_string();
+    }
+    let first = if path.starts_with('/') {
+        format!("/{}", parts[0])
+    } else {
+        parts[0].to_string()
+    };
+    format!("{}/.../{}", first, parts[parts.len() - 1])
+}
+
+fn common_cli_flags(flags: &ThemeFlags) -> EnvironmentFlags {
+    let mut values = EnvironmentFlags::new();
+    insert_string(&mut values, "store", flags.store.clone());
+    insert_string(&mut values, "password", flags.password.clone());
+    insert_string(
+        &mut values,
+        "path",
+        flags.path.as_ref().map(|path| path.display().to_string()),
+    );
+    values
+}
+
+fn insert_string(flags: &mut EnvironmentFlags, key: &str, value: Option<String>) {
+    if let Some(value) = value {
+        flags.insert(key.to_string(), serde_json::Value::String(value));
+    }
+}
+
+fn insert_bool(flags: &mut EnvironmentFlags, key: &str, value: bool) {
+    if value {
+        flags.insert(key.to_string(), serde_json::Value::Bool(true));
+    }
+}
+
+fn insert_strings(flags: &mut EnvironmentFlags, key: &str, values: &[String]) {
+    if !values.is_empty() {
+        flags.insert(
+            key.to_string(),
+            serde_json::Value::Array(
+                values
+                    .iter()
+                    .map(|value| serde_json::Value::String(value.clone()))
+                    .collect(),
             ),
         );
     }
-    Ok(())
 }
 
 fn apply_common_environment(
@@ -257,7 +641,11 @@ fn apply_common_environment(
 }
 
 fn require_store(flags: &ThemeFlags) -> Result<String, CliError> {
-    flags.store.clone().ok_or_else(|| {
+    flags
+        .store
+        .clone()
+        .or_else(current_theme_store)
+        .ok_or_else(|| {
         CliError::abort("A store is required").with_next_steps(
             "Specify the store passing `--store=example.myshopify.com` or set the `SHOPIFY_FLAG_STORE` environment variable.",
         )
@@ -266,6 +654,7 @@ fn require_store(flags: &ThemeFlags) -> Result<String, CliError> {
 
 async fn session_for(flags: &ThemeFlags) -> Result<AdminSession, CliError> {
     let store = require_store(flags)?;
+    store_current_theme_store(&store);
     ensure_authenticated_themes(&store, flags.password.as_deref())
         .await
         .map_err(|error| CliError::abort(error.to_string()))
@@ -356,7 +745,59 @@ fn confirm(message: &str) -> Result<bool, CliError> {
         .map_err(|error| CliError::abort(format!("Confirmation failed: {error}")))
 }
 
-fn print_theme_table(themes: &[Theme]) {
+fn prompts_available() -> bool {
+    terminal_supports_prompting()
+}
+
+fn no_prompt_mode(force: bool) -> bool {
+    force || is_ci() || !prompts_available()
+}
+
+async fn select_or_prompt_theme<A: ThemeAdmin + Sync>(
+    api: &A,
+    store: &str,
+    filter: &ThemeFilter,
+    header: &str,
+) -> Result<Theme, ThemeServiceError> {
+    if filter.any() {
+        return theme::services::select_theme(api, store, filter).await;
+    }
+
+    if !prompts_available() {
+        return Err(theme::selector::SelectorError::PromptRequired.into());
+    }
+
+    let themes = theme::selector::allowed_store_themes(store, api.fetch_themes().await?)?;
+    let items = themes
+        .into_iter()
+        .map(|theme| {
+            Item::new(theme.name.clone(), theme.clone())
+                .with_group(format_role_group(&theme.role))
+                .with_hint(format!("#{}", theme.id))
+        })
+        .collect();
+
+    render_select_prompt(header, items).map_err(|error| ThemeServiceError::User(error.to_string()))
+}
+
+fn format_role_group(role: &str) -> String {
+    let mut chars = role.chars();
+    match chars.next() {
+        Some(first) => format!("{}{}", first.to_uppercase(), chars.as_str()),
+        None => String::new(),
+    }
+}
+
+fn maybe_confirm(force: bool, message: &str) -> Result<bool, CliError> {
+    if force || is_ci() || !prompts_available() {
+        return Ok(true);
+    }
+    confirm(message)
+}
+
+fn print_theme_table(themes: &[Theme], store: &str) {
+    let development_theme = development_theme_id_for_store(store);
+    let host_theme = host_theme_id(store);
     output_info(OutputContent::new().add(Token::Raw(format!(
         "{:<31}  {:<22}  {}",
         "name", "role", "id"
@@ -366,11 +807,20 @@ fn print_theme_table(themes: &[Theme]) {
         "───────────────────────────────", "──────────────────────", "──────────────"
     ))));
     for theme in themes {
+        let mut role = if theme.role.is_empty() {
+            String::new()
+        } else {
+            format!("[{}]", theme.role)
+        };
+        if development_theme == Some(theme.id) || host_theme == Some(theme.id) {
+            if !role.is_empty() {
+                role.push(' ');
+            }
+            role.push_str("[current]");
+        }
         output_info(OutputContent::new().add(Token::Raw(format!(
             "{:<31}  {:<22}  #{}",
-            theme.name,
-            format!("[{}]", theme.role),
-            theme.id
+            theme.name, role, theme.id
         ))));
     }
 }
@@ -390,16 +840,42 @@ pub struct List {
 }
 
 impl List {
-    async fn run(mut self) -> Result<(), CliError> {
-        if let Some(environments) = multi_environment_names(&self.common) {
-            reject_global_path_for_multi(&self.common)?;
-            for environment in environments {
-                let mut command = self.clone();
-                command.common.environment = vec![environment];
-                Box::pin(command.run()).await?;
-            }
-            return Ok(());
+    async fn run(self) -> Result<(), CliError> {
+        if multi_environment_names(&self.common).is_some() {
+            let mut cli_flags = common_cli_flags(&self.common);
+            insert_string(
+                &mut cli_flags,
+                "role",
+                self.role.map(|role| role.as_str().to_string()),
+            );
+            insert_string(&mut cli_flags, "name", self.name.clone());
+            insert_string(&mut cli_flags, "id", self.id.map(|id| id.to_string()));
+            return ThemeCommandRunner::run_multi_environments(
+                self.clone(),
+                MultiEnvironmentRunConfig {
+                    command_name: "list",
+                    common: self.common.clone(),
+                    required_flags: vec![
+                        RequiredFlag::Flag("store"),
+                        RequiredFlag::Flag("password"),
+                    ],
+                    cli_flags,
+                    command_allows_force: false,
+                    force: false,
+                },
+                |mut command, environment, _auto_force| {
+                    Box::pin(async move {
+                        command.common.environment = vec![environment];
+                        command.run_single().await
+                    })
+                },
+            )
+            .await;
         }
+        self.run_single().await
+    }
+
+    async fn run_single(mut self) -> Result<(), CliError> {
         if self.common.environment.len() == 1 {
             let env_name = self.common.environment[0].clone();
             apply_common_environment(&mut self.common, &env_name)?;
@@ -420,7 +896,17 @@ impl List {
         if self.json {
             output_result(to_pretty_json(&themes));
         } else {
-            print_theme_table(&themes);
+            if let Some(environment) = self.common.environment.first() {
+                output_info(
+                    OutputContent::new()
+                        .add(Token::Raw(format!("{} theme library", session.store_fqdn))),
+                );
+                output_info(
+                    OutputContent::new()
+                        .add(Token::Raw(format!("Environment name: {environment}"))),
+                );
+            }
+            print_theme_table(&themes, &session.store_fqdn);
         }
         Ok(())
     }
@@ -439,16 +925,37 @@ pub struct Info {
 }
 
 impl Info {
-    async fn run(mut self) -> Result<(), CliError> {
-        if let Some(environments) = multi_environment_names(&self.common) {
-            reject_global_path_for_multi(&self.common)?;
-            for environment in environments {
-                let mut command = self.clone();
-                command.common.environment = vec![environment];
-                Box::pin(command.run()).await?;
-            }
-            return Ok(());
+    async fn run(self) -> Result<(), CliError> {
+        if multi_environment_names(&self.common).is_some() {
+            let mut cli_flags = common_cli_flags(&self.common);
+            insert_bool(&mut cli_flags, "development", self.development);
+            insert_string(&mut cli_flags, "theme", self.theme.clone());
+            return ThemeCommandRunner::run_multi_environments(
+                self.clone(),
+                MultiEnvironmentRunConfig {
+                    command_name: "info",
+                    common: self.common.clone(),
+                    required_flags: vec![
+                        RequiredFlag::Flag("store"),
+                        RequiredFlag::Flag("password"),
+                    ],
+                    cli_flags,
+                    command_allows_force: false,
+                    force: false,
+                },
+                |mut command, environment, _auto_force| {
+                    Box::pin(async move {
+                        command.common.environment = vec![environment];
+                        command.run_single().await
+                    })
+                },
+            )
+            .await;
         }
+        self.run_single().await
+    }
+
+    async fn run_single(mut self) -> Result<(), CliError> {
         if self.common.environment.len() == 1 {
             let env_name = self.common.environment[0].clone();
             apply_common_environment(&mut self.common, &env_name)?;
@@ -462,16 +969,58 @@ impl Info {
                 }
             }
         }
+        if self.theme.is_none() && !self.development {
+            let stored_store = self.common.store.clone().or_else(current_theme_store);
+            let store = stored_store.as_deref();
+            let value = theme_environment_info_json(
+                store,
+                store.and_then(development_theme_id_for_store),
+                env!("CARGO_PKG_VERSION"),
+                std::env::var("SHELL").ok().as_deref(),
+            );
+            if self.json {
+                output_result(to_pretty_json(&value));
+            } else {
+                output_info(OutputContent::new().add(Token::Raw("Theme Configuration".into())));
+                output_info(
+                    OutputContent::new().add(Token::Raw(format!("Store: {}", value.store))),
+                );
+                output_info(
+                    OutputContent::new().add(Token::Raw("Development Theme ID: Not set".into())),
+                );
+                output_info(OutputContent::new().add(Token::Raw("Tooling and System".into())));
+                output_info(
+                    OutputContent::new()
+                        .add(Token::Raw(format!("Shopify CLI: {}", value.cli_version))),
+                );
+                output_info(OutputContent::new().add(Token::Raw(format!("OS: {}", value.os))));
+                output_info(
+                    OutputContent::new().add(Token::Raw(format!("Shell: {}", value.shell))),
+                );
+                output_info(
+                    OutputContent::new()
+                        .add(Token::Raw(format!("Node version: {}", value.node_version))),
+                );
+            }
+            return Ok(());
+        }
+
         let session = session_for(&self.common).await?;
+        if self.development && self.theme.is_none() {
+            self.theme =
+                development_theme_id_for_store(&session.store_fqdn).map(|id| id.to_string());
+            self.development = self.theme.is_none();
+        }
         let filter = ThemeFilter {
             theme: self.theme,
             development: self.development,
             ..Default::default()
         };
-        let theme = theme::services::select_theme(
+        let theme = select_or_prompt_theme(
             &AdminApi { session: &session },
             &session.store_fqdn,
             &filter,
+            "Select a theme to inspect",
         )
         .await
         .map_err(service_error)?;
@@ -521,15 +1070,20 @@ impl Open {
             apply_common_environment(&mut self.common, &env_name)?;
         }
         let session = session_for(&self.common).await?;
-        let theme = theme::services::select_theme(
+        if self.development && self.theme.is_none() {
+            self.theme =
+                development_theme_id_for_store(&session.store_fqdn).map(|id| id.to_string());
+        }
+        let theme = select_or_prompt_theme(
             &AdminApi { session: &session },
             &session.store_fqdn,
             &ThemeFilter {
                 live: self.live,
-                development: self.development,
+                development: self.development && self.theme.is_none(),
                 theme: self.theme,
                 ..Default::default()
             },
+            "Select a theme to open",
         )
         .await
         .map_err(service_error)?;
@@ -567,17 +1121,41 @@ pub struct Delete {
 }
 
 impl Delete {
-    async fn run(mut self) -> Result<(), CliError> {
-        if let Some(environments) = multi_environment_names(&self.common) {
-            reject_global_path_for_multi(&self.common)?;
-            for environment in environments {
-                let mut command = self.clone();
-                command.common.environment = vec![environment];
-                command.force = true;
-                Box::pin(command.run()).await?;
-            }
-            return Ok(());
+    async fn run(self) -> Result<(), CliError> {
+        if multi_environment_names(&self.common).is_some() {
+            let mut cli_flags = common_cli_flags(&self.common);
+            insert_bool(&mut cli_flags, "development", self.development);
+            insert_strings(&mut cli_flags, "theme", &self.theme);
+            return ThemeCommandRunner::run_multi_environments(
+                self.clone(),
+                MultiEnvironmentRunConfig {
+                    command_name: "delete",
+                    common: self.common.clone(),
+                    required_flags: vec![
+                        RequiredFlag::Flag("store"),
+                        RequiredFlag::Flag("password"),
+                        RequiredFlag::OneOf(&["development", "theme"]),
+                    ],
+                    cli_flags,
+                    command_allows_force: true,
+                    force: self.force,
+                },
+                |mut command, environment, auto_force| {
+                    Box::pin(async move {
+                        command.common.environment = vec![environment];
+                        if auto_force {
+                            command.force = true;
+                        }
+                        command.run_single().await
+                    })
+                },
+            )
+            .await;
         }
+        self.run_single().await
+    }
+
+    async fn run_single(mut self) -> Result<(), CliError> {
         if self.common.environment.len() == 1 {
             let env_name = self.common.environment[0].clone();
             apply_common_environment(&mut self.common, &env_name)?;
@@ -595,25 +1173,59 @@ impl Delete {
             }
         }
         let session = session_for(&self.common).await?;
-        if !self.force
-            && !confirm(&format!(
-                "Delete the selected theme from {}?",
-                session.store_fqdn
-            ))?
-        {
-            return Ok(());
+        let api = AdminApi { session: &session };
+        if self.development && self.theme.is_empty() {
+            if let Some(theme_id) = development_theme_id_for_store(&session.store_fqdn) {
+                self.theme = vec![theme_id.to_string()];
+                self.development = false;
+            }
         }
-        let themes = theme::services::delete_themes(
-            &AdminApi { session: &session },
-            &session.store_fqdn,
-            &ThemeFilter {
-                themes: self.theme,
-                development: self.development,
-                ..Default::default()
-            },
-        )
-        .await
-        .map_err(service_error)?;
+        let filter = ThemeFilter {
+            themes: self.theme,
+            development: self.development,
+            ..Default::default()
+        };
+        let themes = if filter.any() {
+            if !maybe_confirm(
+                self.force,
+                &format!("Delete the selected theme from {}?", session.store_fqdn),
+            )? {
+                return Ok(());
+            }
+            theme::services::delete_themes(&api, &session.store_fqdn, &filter)
+                .await
+                .map_err(service_error)?
+        } else {
+            let theme = select_or_prompt_theme(
+                &api,
+                &session.store_fqdn,
+                &filter,
+                &format!("Select a theme to delete from {}", session.store_fqdn),
+            )
+            .await
+            .map_err(service_error)?;
+            if !maybe_confirm(
+                self.force,
+                &format!(
+                    "Delete {} (#{}) from {}?",
+                    theme.name, theme.id, session.store_fqdn
+                ),
+            )? {
+                return Ok(());
+            }
+            api.delete_theme(theme.id).await.map_err(service_error)?;
+            vec![theme]
+        };
+        let development_theme = development_theme_id_for_store(&session.store_fqdn);
+        let host_theme = host_theme_id(&session.store_fqdn);
+        for theme in &themes {
+            if development_theme == Some(theme.id) {
+                remove_development_theme_id_for_store(&session.store_fqdn);
+            }
+            if host_theme == Some(theme.id) {
+                remove_host_theme_id(&session.store_fqdn);
+            }
+        }
         output_success(format!(
             "Deleted {} from {}.",
             if themes.len() == 1 {
@@ -656,22 +1268,79 @@ impl Duplicate {
             }
         }
         let session = session_for(&self.common).await?;
-        if !self.force
-            && !confirm(&format!(
-                "Do you want to duplicate the selected theme on {}?",
-                session.store_fqdn
-            ))?
-        {
+        let no_prompts = no_prompt_mode(self.force);
+        if no_prompts && self.theme.is_none() {
+            let message =
+                "A theme ID is required to duplicate a theme, specify one with the --theme flag";
+            if self.json {
+                output_result(json!({ "message": message, "errors": [] }).to_string());
+            } else {
+                return Err(CliError::abort(message));
+            }
             return Ok(());
         }
-        let (original, result) = theme::services::duplicate_theme(
+        if self.theme.is_none() {
+            let selected = select_or_prompt_theme(
+                &AdminApi { session: &session },
+                &session.store_fqdn,
+                &ThemeFilter::default(),
+                "Select a theme to duplicate",
+            )
+            .await
+            .map_err(service_error)?;
+            self.theme = Some(selected.id.to_string());
+        }
+
+        let original = match theme::services::select_theme(
             &AdminApi { session: &session },
             &session.store_fqdn,
-            self.theme,
-            self.name,
+            &ThemeFilter {
+                theme: self.theme.clone(),
+                ..Default::default()
+            },
         )
         .await
-        .map_err(service_error)?;
+        {
+            Ok(theme) => theme,
+            Err(ThemeServiceError::Selector(theme::selector::SelectorError::NoThemeMatch {
+                ..
+            })) => {
+                let identifier = self.theme.as_deref().unwrap_or_default();
+                let message = format!(
+                    "No theme with ID {identifier} could be found. Use shopify theme list to find a theme ID."
+                );
+                if self.json {
+                    output_result(json!({ "message": message, "errors": [] }).to_string());
+                    return Ok(());
+                }
+                return Err(CliError::abort(message));
+            }
+            Err(error) => return Err(service_error(error)),
+        };
+
+        if original.role == theme::models::DEVELOPMENT_THEME_ROLE {
+            let message =
+                "Development themes can't be duplicated. Use shopify theme push to upload it to the store first.";
+            if self.json {
+                output_result(json!({ "message": message, "errors": [] }).to_string());
+                return Ok(());
+            }
+            return Err(CliError::abort(message));
+        }
+
+        if !maybe_confirm(
+            self.force,
+            &format!(
+                "Do you want to duplicate '{}' on {}?",
+                original.name, session.store_fqdn
+            ),
+        )? {
+            return Ok(());
+        }
+        let result = AdminApi { session: &session }
+            .duplicate_theme(original.id, self.name)
+            .await
+            .map_err(service_error)?;
 
         if !result.user_errors.is_empty() {
             let output = json!({
@@ -699,6 +1368,21 @@ impl Duplicate {
                     original.name, original.id
                 ));
             }
+        } else {
+            let output = json!({
+                "message": format!("The theme '{}' unexpectedly could not be duplicated ", original.name),
+                "errors": [],
+                "requestId": result.request_id,
+            });
+            if self.json {
+                output_result(output.to_string());
+            } else {
+                return Err(CliError::abort(
+                    output["message"]
+                        .as_str()
+                        .unwrap_or("Theme unexpectedly could not be duplicated"),
+                ));
+            }
         }
         Ok(())
     }
@@ -719,16 +1403,41 @@ pub struct Rename {
 }
 
 impl Rename {
-    async fn run(mut self) -> Result<(), CliError> {
-        if let Some(environments) = multi_environment_names(&self.common) {
-            reject_global_path_for_multi(&self.common)?;
-            for environment in environments {
-                let mut command = self.clone();
-                command.common.environment = vec![environment];
-                Box::pin(command.run()).await?;
-            }
-            return Ok(());
+    async fn run(self) -> Result<(), CliError> {
+        if multi_environment_names(&self.common).is_some() {
+            let mut cli_flags = common_cli_flags(&self.common);
+            insert_string(&mut cli_flags, "name", self.name.clone());
+            insert_bool(&mut cli_flags, "development", self.development);
+            insert_bool(&mut cli_flags, "live", self.live);
+            insert_string(&mut cli_flags, "theme", self.theme.clone());
+            return ThemeCommandRunner::run_multi_environments(
+                self.clone(),
+                MultiEnvironmentRunConfig {
+                    command_name: "rename",
+                    common: self.common.clone(),
+                    required_flags: vec![
+                        RequiredFlag::Flag("store"),
+                        RequiredFlag::Flag("password"),
+                        RequiredFlag::Flag("name"),
+                        RequiredFlag::OneOf(&["live", "development", "theme"]),
+                    ],
+                    cli_flags,
+                    command_allows_force: false,
+                    force: false,
+                },
+                |mut command, environment, _auto_force| {
+                    Box::pin(async move {
+                        command.common.environment = vec![environment];
+                        command.run_single().await
+                    })
+                },
+            )
+            .await;
         }
+        self.run_single().await
+    }
+
+    async fn run_single(mut self) -> Result<(), CliError> {
         if self.common.environment.len() == 1 {
             let env_name = self.common.environment[0].clone();
             apply_common_environment(&mut self.common, &env_name)?;
@@ -746,12 +1455,20 @@ impl Rename {
                 self.live |= env.get("live").and_then(value_as_bool).unwrap_or(false);
             }
         }
-        let new_name = self
-            .name
-            .ok_or_else(|| CliError::abort("A new name is required. Specify one with `--name`."))?;
+        let new_name = match self.name {
+            Some(name) => name,
+            None if prompts_available() => render_text_prompt("New name for the theme")
+                .map_err(|error| CliError::abort(format!("Name prompt failed: {error}")))?,
+            None => {
+                return Err(CliError::abort(
+                    "A new name is required. Specify one with `--name`.",
+                ))
+            }
+        };
         let session = session_for(&self.common).await?;
-        let theme = theme::services::rename_theme(
-            &AdminApi { session: &session },
+        let api = AdminApi { session: &session };
+        let theme = select_or_prompt_theme(
+            &api,
             &session.store_fqdn,
             &ThemeFilter {
                 theme: self.theme,
@@ -759,10 +1476,13 @@ impl Rename {
                 live: self.live,
                 ..Default::default()
             },
-            new_name.clone(),
+            "Select a theme to rename",
         )
         .await
         .map_err(service_error)?;
+        api.update_theme_name(theme.id, new_name.clone())
+            .await
+            .map_err(service_error)?;
         output_success(format!(
             "The theme {} (#{}) was renamed to '{}'.",
             theme.name, theme.id, new_name
@@ -782,17 +1502,40 @@ pub struct Publish {
 }
 
 impl Publish {
-    async fn run(mut self) -> Result<(), CliError> {
-        if let Some(environments) = multi_environment_names(&self.common) {
-            reject_global_path_for_multi(&self.common)?;
-            for environment in environments {
-                let mut command = self.clone();
-                command.common.environment = vec![environment];
-                command.force = true;
-                Box::pin(command.run()).await?;
-            }
-            return Ok(());
+    async fn run(self) -> Result<(), CliError> {
+        if multi_environment_names(&self.common).is_some() {
+            let mut cli_flags = common_cli_flags(&self.common);
+            insert_string(&mut cli_flags, "theme", self.theme.clone());
+            return ThemeCommandRunner::run_multi_environments(
+                self.clone(),
+                MultiEnvironmentRunConfig {
+                    command_name: "publish",
+                    common: self.common.clone(),
+                    required_flags: vec![
+                        RequiredFlag::Flag("store"),
+                        RequiredFlag::Flag("password"),
+                        RequiredFlag::Flag("theme"),
+                    ],
+                    cli_flags,
+                    command_allows_force: true,
+                    force: self.force,
+                },
+                |mut command, environment, auto_force| {
+                    Box::pin(async move {
+                        command.common.environment = vec![environment];
+                        if auto_force {
+                            command.force = true;
+                        }
+                        command.run_single().await
+                    })
+                },
+            )
+            .await;
         }
+        self.run_single().await
+    }
+
+    async fn run_single(mut self) -> Result<(), CliError> {
         if self.common.environment.len() == 1 {
             let env_name = self.common.environment[0].clone();
             apply_common_environment(&mut self.common, &env_name)?;
@@ -803,21 +1546,30 @@ impl Publish {
             }
         }
         let session = session_for(&self.common).await?;
-        if !self.force
-            && !confirm(&format!(
-                "Do you want to make the selected theme the new live theme on {}?",
-                session.store_fqdn
-            ))?
-        {
-            return Ok(());
-        }
-        let theme = theme::services::publish_theme(
-            &AdminApi { session: &session },
+        let api = AdminApi { session: &session };
+        let theme = select_or_prompt_theme(
+            &api,
             &session.store_fqdn,
-            self.theme,
+            &ThemeFilter {
+                theme: self.theme,
+                development: false,
+                live: false,
+                ..Default::default()
+            },
+            "Select a theme to publish",
         )
         .await
         .map_err(service_error)?;
+        if !maybe_confirm(
+            self.force,
+            &format!(
+                "Do you want to make '{}' the new live theme on {}?",
+                theme.name, session.store_fqdn
+            ),
+        )? {
+            return Ok(());
+        }
+        api.publish_theme(theme.id).await.map_err(service_error)?;
         let live_theme = Theme {
             role: "live".into(),
             ..theme.clone()
@@ -1121,6 +1873,249 @@ mod tests {
         ] {
             TestCli::try_parse_from(args).unwrap();
         }
+    }
+
+    #[test]
+    fn parses_phase_one_shared_flags_and_globs() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().to_string_lossy().to_string();
+        let cli = TestCli::parse_from([
+            "theme",
+            "push",
+            "--path",
+            &path,
+            "--store",
+            "https://test.myshopify.com",
+            "--password",
+            "shptka_test",
+            "--environment",
+            "staging",
+            "--environment",
+            "production",
+            "--only",
+            "templates/*.json",
+            "--ignore",
+            "assets/*.map",
+        ]);
+
+        match cli.command {
+            ThemeSubcommand::Push(command) => {
+                assert_eq!(
+                    command.common.path.as_deref(),
+                    Some(temp.path().canonicalize().unwrap().as_path())
+                );
+                assert_eq!(command.common.store.as_deref(), Some("test.myshopify.com"));
+                assert_eq!(command.common.password.as_deref(), Some("shptka_test"));
+                assert_eq!(command.common.environment, vec!["staging", "production"]);
+                assert_eq!(command.glob.only, vec!["templates/*.json"]);
+                assert_eq!(command.glob.ignore, vec!["assets/*.map"]);
+            }
+            _ => panic!("expected push"),
+        }
+    }
+
+    #[test]
+    fn parses_later_phase_command_flags_without_execution() {
+        let check = TestCli::parse_from([
+            "theme",
+            "check",
+            "--auto-correct",
+            "--config",
+            ".theme-check.yml",
+            "--fail-level",
+            "suggestion",
+            "--output",
+            "json",
+            "--print",
+        ]);
+        assert!(matches!(check.command, ThemeSubcommand::Check(_)));
+
+        let dev = TestCli::parse_from([
+            "theme",
+            "dev",
+            "--host",
+            "127.0.0.1",
+            "--live-reload",
+            "off",
+            "--error-overlay",
+            "never",
+            "--theme-editor-sync",
+            "--standard-events-inspector",
+            "--port",
+            "9292",
+            "--allow-live",
+        ]);
+        assert!(matches!(dev.command, ThemeSubcommand::Dev(_)));
+
+        let preview = TestCli::parse_from([
+            "theme",
+            "preview",
+            "--theme",
+            "1",
+            "--overrides",
+            "preview.json",
+            "--preview-id",
+            "abc",
+            "--open",
+            "--json",
+        ]);
+        assert!(matches!(preview.command, ThemeSubcommand::Preview(_)));
+    }
+
+    #[tokio::test]
+    async fn info_without_theme_outputs_environment_info_without_authentication() {
+        let command = Info {
+            common: ThemeFlags::default(),
+            json: true,
+            development: false,
+            theme: None,
+        };
+
+        command.run().await.unwrap();
+    }
+
+    #[test]
+    fn theme_command_runner_applies_environment_and_cli_precedence() {
+        let temp = tempfile::tempdir().unwrap();
+        std::fs::write(
+            temp.path().join("shopify.theme.toml"),
+            r#"
+[environments.staging]
+store = "env-store"
+password = "env-password"
+path = "env-path"
+theme = "123"
+"#,
+        )
+        .unwrap();
+
+        let default_flags = EnvironmentFlags::from([
+            (
+                "store".into(),
+                serde_json::Value::String("default-store".into()),
+            ),
+            (
+                "password".into(),
+                serde_json::Value::String("default-password".into()),
+            ),
+        ]);
+        let cli_flags = EnvironmentFlags::from([(
+            "password".into(),
+            serde_json::Value::String("cli-password".into()),
+        )]);
+
+        let environments = ThemeCommandRunner::load_environments(
+            &["staging".into()],
+            temp.path().to_path_buf(),
+            &default_flags,
+            &cli_flags,
+            true,
+        )
+        .unwrap();
+
+        let flags = &environments[0].flags;
+        assert_eq!(
+            flags.get("store").and_then(value_as_string).as_deref(),
+            Some("env-store.myshopify.com")
+        );
+        assert_eq!(
+            flags.get("password").and_then(value_as_string).as_deref(),
+            Some("cli-password")
+        );
+        assert_eq!(
+            flags.get("theme").and_then(value_as_string).as_deref(),
+            Some("123")
+        );
+        assert!(environments[0].requires_auth);
+    }
+
+    #[test]
+    fn theme_command_runner_summarizes_invalid_environments() {
+        let valid_flags = EnvironmentFlags::from([
+            (
+                "store".into(),
+                serde_json::Value::String("shop.myshopify.com".into()),
+            ),
+            ("theme".into(), serde_json::Value::String("1".into())),
+        ]);
+        let invalid_flags = EnvironmentFlags::from([(
+            "store".into(),
+            serde_json::Value::String("shop.myshopify.com".into()),
+        )]);
+        let environments = vec![
+            ThemeCommandEnvironment {
+                environment: "valid".into(),
+                flags: valid_flags.clone(),
+                validation_flags: valid_flags,
+                requires_auth: true,
+            },
+            ThemeCommandEnvironment {
+                environment: "invalid".into(),
+                flags: invalid_flags.clone(),
+                validation_flags: invalid_flags,
+                requires_auth: true,
+            },
+        ];
+
+        let result = ThemeCommandRunner::validate(
+            environments,
+            &[
+                RequiredFlag::Flag("store"),
+                RequiredFlag::OneOf(&["live", "development", "theme"]),
+            ],
+        );
+
+        assert_eq!(result.valid.len(), 1);
+        assert_eq!(result.invalid[0].environment, "invalid");
+        assert_eq!(
+            result.invalid[0].reason,
+            "Missing flags: live or development or theme"
+        );
+    }
+
+    #[test]
+    fn theme_command_runner_groups_same_store_sequentially() {
+        let env = |environment: &str, store: &str| {
+            let flags =
+                EnvironmentFlags::from([("store".into(), serde_json::Value::String(store.into()))]);
+            ThemeCommandEnvironment {
+                environment: environment.into(),
+                flags: flags.clone(),
+                validation_flags: flags,
+                requires_auth: true,
+            }
+        };
+
+        let groups = ThemeCommandRunner::group_by_unique_store(vec![
+            env("one", "a.myshopify.com"),
+            env("two", "b.myshopify.com"),
+            env("three", "a.myshopify.com"),
+        ]);
+
+        assert_eq!(groups.len(), 2);
+        assert_eq!(
+            groups[0]
+                .iter()
+                .map(|environment| environment.environment.as_str())
+                .collect::<Vec<_>>(),
+            vec!["one", "two"]
+        );
+        assert_eq!(groups[1][0].environment, "three");
+    }
+
+    #[test]
+    fn theme_command_runner_rejects_global_path_and_auto_forces_after_confirmation() {
+        assert!(!ThemeCommandRunner::reject_global_path(true).is_empty());
+        assert!(ThemeCommandRunner::reject_global_path(false).is_empty());
+        assert!(ThemeCommandRunner::force_after_confirmation(
+            false, true, true
+        ));
+        assert!(!ThemeCommandRunner::force_after_confirmation(
+            false, true, false
+        ));
+        assert!(ThemeCommandRunner::force_after_confirmation(
+            true, true, false
+        ));
     }
 
     #[test]

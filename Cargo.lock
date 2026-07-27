@@ -287,6 +287,7 @@ dependencies = [
  "console 0.15.11",
  "crossterm 0.28.1",
  "dirs",
+ "futures",
  "governor",
  "hex",
  "indicatif",
@@ -2193,6 +2194,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "base64",
+ "dirs",
  "rand 0.8.6",
  "regex-lite",
  "serde",

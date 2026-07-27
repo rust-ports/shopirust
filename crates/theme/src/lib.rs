@@ -3,6 +3,7 @@ pub mod config;
 pub mod filesystem;
 pub mod generate_name;
 pub mod ignore;
+pub mod local_storage;
 pub mod models;
 pub mod replace_invalid_chars;
 pub mod selector;

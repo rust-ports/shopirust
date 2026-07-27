@@ -113,7 +113,7 @@ pub fn find_theme(
         return filter_themes(store, themes, filter).map(|themes| themes[0].clone());
     }
 
-    themes.first().cloned().ok_or(SelectorError::PromptRequired)
+    Err(SelectorError::PromptRequired)
 }
 
 fn theme_matches(theme: &Theme, identifier: &str) -> bool {
@@ -218,5 +218,16 @@ mod tests {
                 .id,
             7
         );
+    }
+
+    #[test]
+    fn requires_prompt_when_no_filter_is_supplied() {
+        let result = find_theme(
+            "shop.myshopify.com",
+            &[theme(1, "live")],
+            &ThemeFilter::default(),
+        );
+
+        assert_eq!(result, Err(SelectorError::PromptRequired));
     }
 }
