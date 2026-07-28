@@ -1,4 +1,5 @@
 use crate::api;
+use crate::api::generated::graphql::admin::types::MetafieldOwnerType;
 use crate::output::components::prompts::select_input::Item;
 use crate::output::public_api::{
     render_confirmation_prompt, render_select_prompt, render_text_prompt,
@@ -6,7 +7,8 @@ use crate::output::public_api::{
 use crate::output::{
     output_info, output_result, output_success, output_warn, OutputContent, Token,
 };
-use crate::session::{ensure_authenticated_themes, AdminSession};
+use crate::session::public::session::ensure_authenticated_storefront;
+use crate::session::{ensure_authenticated_themes, AdminSession, EnsureAuthenticatedOptions};
 use crate::util::fqdn::normalize_store_fqdn;
 use crate::util::system::{is_ci, terminal_supports_prompting};
 use async_trait::async_trait;
@@ -18,6 +20,7 @@ use serde_json::json;
 use std::future::Future;
 use std::path::PathBuf;
 use std::pin::Pin;
+use std::time::Duration;
 use theme::config::{
     load_environment, missing_required_flags, value_as_bool, value_as_string, value_as_strings,
     EnvironmentFlags, RequiredFlag,
@@ -25,6 +28,7 @@ use theme::config::{
 use theme::local_storage::{
     current_theme_store, development_theme_id_for_store, host_theme_id,
     remove_development_theme_id_for_store, remove_host_theme_id, store_current_theme_store,
+    store_development_theme_id_for_store,
 };
 use theme::models::{theme_editor_url, theme_environment_info_json, theme_preview_url, Theme};
 use theme::selector::ThemeFilter;
@@ -32,6 +36,7 @@ use theme::services::{
     duplicate_json, theme_info_json, to_pretty_json, DuplicateResult, ListOptions, ThemeAdmin,
     ThemeServiceError,
 };
+use theme::sync::{RemoteResult, SyncError, SyncOptions, ThemeSyncAdmin};
 
 #[derive(Debug, Subcommand)]
 #[command(disable_help_subcommand = true)]
@@ -123,26 +128,20 @@ impl TopicCommand for ThemeTopic {
             Self::Duplicate(command) => command.run().await,
             Self::Rename(command) => command.run().await,
             Self::Publish(command) => command.run().await,
-            Self::Check(_) => not_implemented("theme check"),
-            Self::Console(_) => not_implemented("theme console"),
-            Self::Dev(_) => not_implemented("theme dev"),
-            Self::Init(_) => not_implemented("theme init"),
-            Self::LanguageServer(_) => not_implemented("theme language-server"),
-            Self::Metafields(_) => not_implemented("theme metafields"),
-            Self::Package(_) => not_implemented("theme package"),
-            Self::Preview(_) => not_implemented("theme preview"),
-            Self::Profile(_) => not_implemented("theme profile"),
-            Self::Pull(_) => not_implemented("theme pull"),
-            Self::Push(_) => not_implemented("theme push"),
-            Self::Share(_) => not_implemented("theme share"),
+            Self::Check(command) => command.run().await,
+            Self::Console(command) => command.run().await,
+            Self::Dev(command) => command.run().await,
+            Self::Init(command) => command.run().await,
+            Self::LanguageServer(command) => command.run().await,
+            Self::Metafields(command) => command.run().await,
+            Self::Package(command) => command.run().await,
+            Self::Preview(command) => command.run().await,
+            Self::Profile(command) => command.run().await,
+            Self::Pull(command) => command.run().await,
+            Self::Push(command) => command.run().await,
+            Self::Share(command) => command.run().await,
         }
     }
-}
-
-fn not_implemented(command: &str) -> Result<(), CliError> {
-    Err(CliError::abort(format!(
-        "`shopify {command}` is parsed but implemented in a later theme port phase"
-    )))
 }
 
 #[derive(Debug, Clone, Default, Args)]
@@ -722,6 +721,96 @@ impl ThemeAdmin for AdminApi<'_> {
         .await
         .map(|theme| theme.map(from_api_theme))
         .map_err(|error| ThemeServiceError::Api(error.to_string()))
+    }
+}
+
+#[async_trait]
+impl ThemeSyncAdmin for AdminApi<'_> {
+    async fn fetch_checksums(
+        &self,
+        theme_id: i64,
+    ) -> Result<Vec<theme::checksum::Checksum>, SyncError> {
+        api::themes::fetch_checksums(theme_id, self.session)
+            .await
+            .map(|items| {
+                items
+                    .into_iter()
+                    .map(|item| theme::checksum::Checksum {
+                        key: item.key,
+                        checksum: item.checksum,
+                    })
+                    .collect()
+            })
+            .map_err(|error| SyncError::Remote(error.to_string()))
+    }
+
+    async fn fetch_assets(
+        &self,
+        theme_id: i64,
+        keys: Vec<String>,
+    ) -> Result<Vec<theme::filesystem::ThemeAsset>, SyncError> {
+        api::themes::fetch_theme_assets(theme_id, keys, self.session)
+            .await
+            .map(|items| {
+                items
+                    .into_iter()
+                    .map(|item| theme::filesystem::ThemeAsset {
+                        key: item.key,
+                        checksum: item.checksum,
+                        attachment: item.attachment,
+                        value: item.value,
+                        stats: item.stats.map(|stats| theme::filesystem::ThemeAssetStats {
+                            mtime: stats.mtime,
+                            size: stats.size,
+                        }),
+                    })
+                    .collect()
+            })
+            .map_err(|error| SyncError::Remote(error.to_string()))
+    }
+
+    async fn upload_assets(
+        &self,
+        theme_id: i64,
+        assets: Vec<theme::filesystem::ThemeAsset>,
+    ) -> Result<Vec<RemoteResult>, SyncError> {
+        api::themes::bulk_upload_theme_assets(
+            theme_id,
+            assets
+                .into_iter()
+                .map(|asset| api::themes::AssetParams {
+                    key: asset.key,
+                    value: asset.value,
+                    attachment: asset.attachment,
+                })
+                .collect(),
+            self.session,
+        )
+        .await
+        .map(|items| items.into_iter().map(api_result).collect())
+        .map_err(|error| SyncError::Remote(error.to_string()))
+    }
+
+    async fn delete_assets(
+        &self,
+        theme_id: i64,
+        keys: Vec<String>,
+    ) -> Result<Vec<RemoteResult>, SyncError> {
+        api::themes::delete_theme_assets(theme_id, keys, self.session)
+            .await
+            .map(|items| items.into_iter().map(api_result).collect())
+            .map_err(|error| SyncError::Remote(error.to_string()))
+    }
+}
+
+fn api_result(result: api::themes::ThemeOperationResult) -> RemoteResult {
+    RemoteResult {
+        key: result.key,
+        success: result.success,
+        errors: result
+            .errors
+            .and_then(|errors| errors.asset)
+            .unwrap_or_default(),
     }
 }
 
@@ -1612,6 +1701,43 @@ pub struct Check {
     environment: Vec<String>,
 }
 
+impl Check {
+    async fn run(self) -> Result<(), CliError> {
+        let root = self.path.unwrap_or_else(cwd_path);
+        let mut args = Vec::new();
+        if self.auto_correct {
+            args.push("--auto-correct".into());
+        }
+        if let Some(config) = self.config {
+            args.extend(["--config".into(), config]);
+        }
+        args.extend(["--fail-level".into(), self.fail_level]);
+        if self.init {
+            args.push("--init".into());
+        }
+        if self.list {
+            args.push("--list".into());
+        }
+        args.extend(["--output".into(), self.output]);
+        if self.print {
+            args.push("--print".into());
+        }
+        if self.version {
+            args.push("--version".into());
+        }
+        for environment in self.environment {
+            args.extend(["--environment".into(), environment]);
+        }
+        args.push(root.to_string_lossy().into_owned());
+        run_node_package_bin(
+            "@shopify/theme-check-node",
+            &root,
+            args,
+            "Unable to launch Theme Check",
+        )
+    }
+}
+
 #[derive(Debug, Clone, Args)]
 pub struct Console {
     #[command(flatten)]
@@ -1620,6 +1746,22 @@ pub struct Console {
     url: Option<String>,
     #[arg(long = "store-password", env = "SHOPIFY_FLAG_STORE_PASSWORD")]
     store_password: Option<String>,
+}
+
+impl Console {
+    async fn run(self) -> Result<(), CliError> {
+        let session = session_for(&self.common).await?;
+        let url = self.url.unwrap_or_else(|| "/".into());
+        let password_hint = if self.store_password.is_some() {
+            " with a storefront password"
+        } else {
+            ""
+        };
+        Err(CliError::abort(format!(
+            "Theme console requires the storefront Liquid renderer transport, which is not available in this Rust port yet. Storefront session for {} and URL {}{} were resolved successfully.",
+            session.store_fqdn, url, password_hint
+        )))
+    }
 }
 
 #[derive(Debug, Clone, Args)]
@@ -1671,18 +1813,599 @@ pub struct Dev {
     allow_live: bool,
 }
 
+impl Dev {
+    async fn run(self) -> Result<(), CliError> {
+        let live_reload = theme::dev::LiveReloadMode::parse(&self.live_reload)
+            .map_err(|error| CliError::abort(error.to_string()))?;
+        let error_overlay = theme::dev::ErrorOverlayMode::parse(&self.error_overlay)
+            .map_err(|error| CliError::abort(error.to_string()))?;
+        let host =
+            theme::dev::validate_host(self.host.as_deref().unwrap_or(theme::dev::DEFAULT_DEV_HOST))
+                .map_err(|error| CliError::abort(error.to_string()))?;
+        let port = theme::dev::resolve_port(&host, self.port)
+            .map_err(|error| CliError::abort(error.to_string()))?;
+        let root = self.common.path.clone().unwrap_or_else(cwd_path);
+        if !self.force && !recognizable_theme(&root) {
+            return Err(CliError::abort("The directory doesn't appear to contain a Shopify theme. Use --force to proceed anyway."));
+        }
+        let session = session_for(&self.common).await?;
+        let storefront_token = ensure_authenticated_storefront(
+            vec!["devtools".into()],
+            self.common.password.clone(),
+            EnsureAuthenticatedOptions::default(),
+        )
+        .await
+        .map_err(|error| CliError::abort(error.to_string()))?;
+        let api = AdminApi { session: &session };
+        let mut selected = if let Some(theme) = self.theme.clone() {
+            select_or_prompt_theme(
+                &api,
+                &session.store_fqdn,
+                &ThemeFilter {
+                    theme: Some(theme),
+                    ..Default::default()
+                },
+                "Select a theme to develop",
+            )
+            .await
+            .map_err(service_error)?
+        } else if let Some(id) = development_theme_id_for_store(&session.store_fqdn) {
+            match api::themes::fetch_theme(id, &session)
+                .await
+                .map_err(|error| CliError::abort(error.to_string()))?
+            {
+                Some(theme) => from_api_theme(theme),
+                None => {
+                    remove_development_theme_id_for_store(&session.store_fqdn);
+                    create_theme(
+                        &session,
+                        theme::generate_name::generate_theme_name("Development"),
+                        "development",
+                    )
+                    .await?
+                }
+            }
+        } else {
+            create_theme(
+                &session,
+                theme::generate_name::generate_theme_name("Development"),
+                "development",
+            )
+            .await?
+        };
+        if selected.role == "live" && !self.allow_live {
+            return Err(CliError::abort(
+                "Developing against a live theme requires --allow-live",
+            ));
+        }
+        if selected.role == "development" {
+            store_development_theme_id_for_store(&session.store_fqdn, selected.id);
+        }
+        let filters = theme::ignore::IgnoreFilters {
+            only: self.glob.only,
+            ignore: self.glob.ignore,
+            ..Default::default()
+        };
+        let mut filesystem = theme::filesystem::ThemeFileSystem::scan(&root, filters.clone())
+            .map_err(|error| CliError::abort(error.to_string()))?;
+        let options = theme::dev::DevServerOptions {
+            root: root.clone(),
+            host,
+            port,
+            explicit_port: self.port.is_some(),
+            live_reload,
+            error_overlay,
+            poll: self.poll,
+            theme_editor_sync: self.theme_editor_sync,
+            standard_events_inspector: self.standard_events_inspector,
+            nodelete: self.nodelete,
+            filters,
+            notify: self.notify.clone(),
+            store_password: self.store_password.clone(),
+        };
+        if self.theme_editor_sync {
+            let remote_checksums = api
+                .fetch_checksums(selected.id)
+                .await
+                .map_err(|error| CliError::abort(error.to_string()))?;
+            let diff = theme::dev::identify_json_reconciliation(
+                remote_checksums,
+                &filesystem,
+                &options.filters,
+            );
+            let plan = prompt_json_reconciliation_plan(&diff, options.nodelete)?;
+            let _ = theme::dev::apply_json_reconciliation(&api, selected.id, &mut filesystem, plan)
+                .await
+                .map_err(|error| CliError::abort(error.to_string()))?;
+        }
+        let report = theme::dev::push_initial(&api, selected.id, &filesystem, &options)
+            .await
+            .map_err(|error| CliError::abort(error.to_string()))?;
+        selected.processing = false;
+        let theme_access = session.token.starts_with("shptka_");
+        let storefront_password =
+            storefront_password_for_dev(&session, self.store_password.clone()).await?;
+        let dev_session = build_dev_server_session(
+            selected.id,
+            &session,
+            Some(storefront_token),
+            theme_access,
+            storefront_password.clone(),
+        )
+        .await?;
+        let refresh_rx = start_dev_session_refresh(
+            selected.id,
+            session.clone(),
+            self.common.password.clone(),
+            theme_access,
+            storefront_password,
+        );
+        let dev_theme = theme::dev::DevServerTheme {
+            id: selected.id,
+            name: selected.name.clone(),
+            role: selected.role.clone(),
+        };
+        let ctx = theme::dev::DevServerContext {
+            options,
+            session: dev_session,
+            theme: dev_theme,
+        };
+        let urls = theme::dev::build_urls(&ctx);
+        if self.open {
+            open::that(&urls.local)
+                .map_err(|error| CliError::abort(format!("Could not open browser: {error}")))?;
+        }
+        for file in report.files.iter().filter(|file| !file.success) {
+            output_warn(format!("{}: {}", file.key, file.errors.join(", ")));
+        }
+        output_success(format!(
+            "Synced theme '{}' (#{}) to {}.",
+            selected.name, selected.id, session.store_fqdn
+        ));
+        output_info(format!("Local: {}", urls.local));
+        output_info(format!("Preview: {}", urls.preview));
+        output_info(format!("Editor: {}", urls.editor));
+        output_info(format!("Gift card: {}", urls.gift_card));
+        let handle = theme::dev::run_dev_server(
+            &api,
+            ctx,
+            filesystem,
+            theme::dev::DevServerRuntime {
+                refresh_rx: Some(refresh_rx),
+                terminal_controls: true,
+            },
+        )
+        .await
+        .map_err(|error| CliError::abort(error.to_string()))?;
+        output_info(format!("Stopped dev server at {}", handle.urls.local));
+        Ok(())
+    }
+}
+
+fn prompt_json_reconciliation_plan(
+    diff: &theme::dev::JsonReconciliationDiff,
+    nodelete: bool,
+) -> Result<theme::dev::JsonReconciliationPlan, CliError> {
+    let needs_prompt = (!nodelete && !diff.local_only.is_empty())
+        || !diff.remote_only.is_empty()
+        || !diff.conflicts.is_empty();
+    if !needs_prompt {
+        return theme::dev::build_json_reconciliation_plan(diff, nodelete, None, None, None)
+            .map_err(|error| CliError::abort(error.to_string()));
+    }
+    if !prompts_available() {
+        return Err(CliError::abort(
+            "Theme editor sync requires an interactive prompt to reconcile JSON files.",
+        ));
+    }
+
+    let local_only = if !nodelete && !diff.local_only.is_empty() {
+        Some(prompt_reconciliation_choice(
+            "Local JSON files are missing remotely. Choose a reconciliation strategy.",
+            "Delete local files",
+            "Keep local files",
+        )?)
+    } else {
+        None
+    };
+    let remote_only = if !diff.remote_only.is_empty() {
+        Some(prompt_reconciliation_choice(
+            "Remote JSON files are missing locally. Choose a reconciliation strategy.",
+            "Download remote files",
+            "Delete remote files",
+        )?)
+    } else {
+        None
+    };
+    let conflicts = if !diff.conflicts.is_empty() {
+        Some(prompt_reconciliation_choice(
+            "JSON files differ locally and remotely. Choose a reconciliation strategy.",
+            "Keep remote version",
+            "Keep local version",
+        )?)
+    } else {
+        None
+    };
+
+    theme::dev::build_json_reconciliation_plan(diff, nodelete, local_only, remote_only, conflicts)
+        .map_err(|error| CliError::abort(error.to_string()))
+}
+
+fn prompt_reconciliation_choice(
+    message: &str,
+    remote_label: &str,
+    local_label: &str,
+) -> Result<theme::dev::ReconciliationChoice, CliError> {
+    render_select_prompt(
+        message,
+        vec![
+            Item::new(remote_label, theme::dev::ReconciliationChoice::Remote),
+            Item::new(local_label, theme::dev::ReconciliationChoice::Local),
+        ],
+    )
+    .map_err(|error| CliError::abort(format!("Reconciliation prompt failed: {error}")))
+}
+
+async fn storefront_password_for_dev(
+    session: &AdminSession,
+    password: Option<String>,
+) -> Result<Option<String>, CliError> {
+    let protected = api::themes::password_protected(session)
+        .await
+        .map_err(|error| CliError::abort(error.to_string()))?;
+    if !protected {
+        return Ok(None);
+    }
+    let password = match password {
+        Some(password) => password,
+        None if prompts_available() => {
+            render_text_prompt("Storefront password").map_err(|error| {
+                CliError::abort(format!("Unable to read storefront password: {error}"))
+            })?
+        }
+        None => {
+            return Err(CliError::abort(
+                "A storefront password is required because the store is password protected.",
+            ))
+        }
+    };
+    verify_storefront_password(&session.store_fqdn, &password).await?;
+    Ok(Some(password))
+}
+
+async fn build_dev_server_session(
+    theme_id: i64,
+    admin_session: &AdminSession,
+    storefront_token: Option<String>,
+    theme_access: bool,
+    storefront_password: Option<String>,
+) -> Result<theme::dev::DevServerSession, CliError> {
+    let mut session = theme::dev::DevServerSession {
+        store_fqdn: admin_session.store_fqdn.clone(),
+        admin_token: admin_session.token.clone(),
+        storefront_token,
+        theme_access_domain: theme_access.then_some("theme-kit-access.shopifyapps.com".into()),
+        session_cookies: std::collections::BTreeMap::new(),
+    };
+    session.session_cookies =
+        fetch_storefront_session_cookies(theme_id, &session, storefront_password.as_deref())
+            .await?;
+    Ok(session)
+}
+
+fn start_dev_session_refresh(
+    theme_id: i64,
+    admin_session: AdminSession,
+    admin_password: Option<String>,
+    theme_access: bool,
+    storefront_password: Option<String>,
+) -> tokio::sync::mpsc::Receiver<Result<theme::dev::DevServerSession, String>> {
+    let (tx, rx) = tokio::sync::mpsc::channel(4);
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(Duration::from_secs(30 * 60));
+        loop {
+            interval.tick().await;
+            interval.tick().await;
+            let refreshed_admin = match ensure_authenticated_themes(
+                &admin_session.store_fqdn,
+                admin_password.as_deref(),
+            )
+            .await
+            {
+                Ok(session) => session,
+                Err(error) => {
+                    let _ = tx.send(Err(error.to_string())).await;
+                    continue;
+                }
+            };
+            let storefront_token = match ensure_authenticated_storefront(
+                vec!["devtools".into()],
+                admin_password.clone(),
+                EnsureAuthenticatedOptions {
+                    no_prompt: true,
+                    ..EnsureAuthenticatedOptions::default()
+                },
+            )
+            .await
+            {
+                Ok(token) => token,
+                Err(error) => {
+                    let _ = tx.send(Err(error.to_string())).await;
+                    continue;
+                }
+            };
+            let result = build_dev_server_session(
+                theme_id,
+                &refreshed_admin,
+                Some(storefront_token),
+                theme_access,
+                storefront_password.clone(),
+            )
+            .await
+            .map_err(|error| error.to_string());
+            if tx.send(result).await.is_err() {
+                break;
+            }
+        }
+    });
+    rx
+}
+
+async fn verify_storefront_password(store: &str, password: &str) -> Result<(), CliError> {
+    let client = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .map_err(|error| CliError::abort(error.to_string()))?;
+    let response = client
+        .post(format!("https://{store}/password"))
+        .header("cache-control", "no-cache")
+        .header("content-type", "application/x-www-form-urlencoded")
+        .body(format!(
+            "form_type=storefront_password&utf8=%E2%9C%93&password={}",
+            url::form_urlencoded::byte_serialize(password.as_bytes()).collect::<String>()
+        ))
+        .send()
+        .await
+        .map_err(|error| CliError::abort(error.to_string()))?;
+    if response.status().as_u16() == 429 {
+        let retry = response
+            .headers()
+            .get("retry-after")
+            .and_then(|value| value.to_str().ok())
+            .unwrap_or("unknown");
+        return Err(CliError::abort(format!(
+            "Too many incorrect password attempts. Please try again after {retry} seconds."
+        )));
+    }
+    if !redirects_to_storefront(&response, store) {
+        return Err(CliError::abort(
+            "The storefront password is invalid. Retry with a different password.",
+        ));
+    }
+    Ok(())
+}
+
+async fn fetch_storefront_session_cookies(
+    theme_id: i64,
+    session: &theme::dev::DevServerSession,
+    storefront_password: Option<&str>,
+) -> Result<std::collections::BTreeMap<String, String>, CliError> {
+    let client = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .map_err(|error| CliError::abort(error.to_string()))?;
+    let mut url = if let Some(domain) = &session.theme_access_domain {
+        url::Url::parse(&format!("https://{domain}/cli/sfr"))
+    } else {
+        url::Url::parse(&format!("https://{}", session.store_fqdn))
+    }
+    .map_err(|error| CliError::abort(error.to_string()))?;
+    url.query_pairs_mut()
+        .append_pair("preview_theme_id", &theme_id.to_string())
+        .append_pair("_fd", "0")
+        .append_pair("pb", "0");
+
+    let mut response = client.head(url.clone()).send().await;
+    for attempt in 1..=3 {
+        let Ok(resp) = response else {
+            if attempt == 3 {
+                return Err(CliError::abort("Unable to create storefront session."));
+            }
+            tokio::time::sleep(Duration::from_secs(attempt)).await;
+            response = client.head(url.clone()).send().await;
+            continue;
+        };
+        let set_cookies = set_cookie_headers(resp.headers());
+        if let Some(essential) =
+            theme::dev::cookie_from_set_cookie(&set_cookies, "_shopify_essential")
+        {
+            let mut cookies =
+                std::collections::BTreeMap::from([("_shopify_essential".into(), essential)]);
+            if let Some(password) = storefront_password {
+                cookies.extend(
+                    enrich_session_with_storefront_password(&client, session, password, &cookies)
+                        .await?,
+                );
+            }
+            return Ok(cookies);
+        }
+        if attempt == 3 {
+            return Err(CliError::abort(
+                "Your development session could not be created because the \"_shopify_essential\" could not be defined.",
+            ));
+        }
+        tokio::time::sleep(Duration::from_secs(attempt)).await;
+        response = client.head(url.clone()).send().await;
+    }
+    unreachable!()
+}
+
+async fn enrich_session_with_storefront_password(
+    client: &reqwest::Client,
+    session: &theme::dev::DevServerSession,
+    password: &str,
+    cookies: &std::collections::BTreeMap<String, String>,
+) -> Result<std::collections::BTreeMap<String, String>, CliError> {
+    let response = client
+        .post(format!("https://{}/password", session.store_fqdn))
+        .header("cookie", theme::dev::serialize_cookies(cookies))
+        .header("content-type", "application/x-www-form-urlencoded")
+        .body(format!(
+            "password={}",
+            url::form_urlencoded::byte_serialize(password.as_bytes()).collect::<String>()
+        ))
+        .send()
+        .await
+        .map_err(|error| CliError::abort(error.to_string()))?;
+    if !redirects_to_storefront(&response, &session.store_fqdn) {
+        return Err(CliError::abort(
+            "Your development session could not be created because the store password is invalid.",
+        ));
+    }
+    let set_cookies = set_cookie_headers(response.headers());
+    let mut result = std::collections::BTreeMap::new();
+    if let Some(digest) = theme::dev::cookie_from_set_cookie(&set_cookies, "storefront_digest") {
+        result.insert("storefront_digest".into(), digest);
+    }
+    if let Some(essential) = theme::dev::cookie_from_set_cookie(&set_cookies, "_shopify_essential")
+    {
+        result.insert("_shopify_essential".into(), essential);
+    }
+    Ok(result)
+}
+
+fn set_cookie_headers(headers: &reqwest::header::HeaderMap) -> Vec<String> {
+    headers
+        .get_all("set-cookie")
+        .iter()
+        .filter_map(|value| value.to_str().ok())
+        .map(ToOwned::to_owned)
+        .collect()
+}
+
+fn redirects_to_storefront(response: &reqwest::Response, store: &str) -> bool {
+    if response.status().as_u16() != 302 {
+        return false;
+    }
+    let Some(location) = response
+        .headers()
+        .get("location")
+        .and_then(|value| value.to_str().ok())
+    else {
+        return false;
+    };
+    let Ok(url) = url::Url::parse(location)
+        .or_else(|_| url::Url::parse(&format!("https://{store}{location}")))
+    else {
+        return false;
+    };
+    url.origin().ascii_serialization() == format!("https://{store}")
+}
+
 #[derive(Debug, Clone, Args)]
 pub struct Init {
+    #[arg(value_name = "NAME")]
+    name: Option<String>,
     #[arg(long, env = "SHOPIFY_FLAG_PATH", value_parser = parse_existing_directory)]
     path: Option<PathBuf>,
-    #[arg(long = "clone-url", env = "SHOPIFY_FLAG_CLONE_URL")]
-    clone_url: Option<String>,
-    #[arg(long, env = "SHOPIFY_FLAG_LATEST")]
+    #[arg(short = 'u', long = "clone-url", env = "SHOPIFY_FLAG_CLONE_URL", default_value = theme::init::DEFAULT_CLONE_URL)]
+    clone_url: String,
+    #[arg(short = 'l', long, env = "SHOPIFY_FLAG_LATEST")]
     latest: bool,
+}
+
+impl Init {
+    async fn run(self) -> Result<(), CliError> {
+        let base = self.path.unwrap_or_else(cwd_path);
+        let name = match self.name {
+            Some(name) => name,
+            None if prompts_available() => render_text_prompt("Name of the new theme")
+                .map_err(|error| CliError::abort(format!("Unable to read theme name: {error}")))?,
+            None => {
+                return Err(CliError::abort(
+                    "A theme name is required because prompts are not available",
+                ))
+            }
+        };
+        let destination = theme::init::destination(base, &name);
+        if theme::init::is_populated(&destination) {
+            return Err(CliError::abort(format!(
+                "The directory {} is not empty. Choose a new name or path.",
+                destination.display()
+            )));
+        }
+        let status = std::process::Command::new("git")
+            .args(["clone", "--depth", "1", &self.clone_url])
+            .arg(&destination)
+            .status()
+            .map_err(|error| CliError::abort(format!("Unable to launch Git: {error}")))?;
+        if !status.success() {
+            return Err(CliError::abort("Git failed to clone the theme repository"));
+        }
+        if self.latest {
+            run_git(&destination, &["fetch", "--tags", "--depth", "1"])?;
+            let output = std::process::Command::new("git")
+                .args(["tag", "--sort=-version:refname"])
+                .current_dir(&destination)
+                .output()
+                .map_err(|error| CliError::abort(format!("Unable to list Git tags: {error}")))?;
+            let tag = String::from_utf8_lossy(&output.stdout)
+                .lines()
+                .next()
+                .map(str::to_owned)
+                .ok_or_else(|| CliError::abort("The repository doesn't contain a release tag"))?;
+            run_git(&destination, &["checkout", &tag])?;
+        }
+        run_git(&destination, &["remote", "remove", "origin"])?;
+        if self.clone_url == theme::init::DEFAULT_CLONE_URL {
+            for relative in theme::init::skeleton_cleanup_paths() {
+                let target = destination.join(relative);
+                if target.is_dir() {
+                    std::fs::remove_dir_all(&target).map_err(|error| {
+                        CliError::abort(format!("Unable to clean {}: {error}", target.display()))
+                    })?;
+                } else if target.exists() {
+                    std::fs::remove_file(&target).map_err(|error| {
+                        CliError::abort(format!("Unable to clean {}: {error}", target.display()))
+                    })?;
+                }
+            }
+        }
+        output_success(format!("Theme initialized in {}", destination.display()));
+        Ok(())
+    }
+}
+
+fn run_git(directory: &std::path::Path, args: &[&str]) -> Result<(), CliError> {
+    let status = std::process::Command::new("git")
+        .args(args)
+        .current_dir(directory)
+        .status()
+        .map_err(|error| CliError::abort(format!("Unable to launch Git: {error}")))?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(CliError::abort(format!(
+            "Git command failed: git {}",
+            args.join(" ")
+        )))
+    }
 }
 
 #[derive(Debug, Clone, Args)]
 pub struct LanguageServer {}
+
+impl LanguageServer {
+    async fn run(self) -> Result<(), CliError> {
+        let root = cwd_path();
+        run_node_package_bin(
+            "@shopify/theme-language-server-node",
+            &root,
+            Vec::new(),
+            "Unable to launch Theme Language Server",
+        )
+    }
+}
 
 #[derive(Debug, Clone, Subcommand)]
 pub enum MetafieldsSubcommand {
@@ -1703,10 +2426,66 @@ pub struct MetafieldsPull {
     force: bool,
 }
 
+impl Metafields {
+    async fn run(self) -> Result<(), CliError> {
+        match self.command {
+            MetafieldsSubcommand::Pull(command) => command.run().await,
+        }
+    }
+}
+
+impl MetafieldsPull {
+    async fn run(self) -> Result<(), CliError> {
+        let root = self.common.path.clone().unwrap_or_else(cwd_path);
+        let session = session_for(&self.common).await?;
+        let definitions =
+            api::themes::metafield_definitions_by_owner_type(MetafieldOwnerType::Shop, &session)
+                .await
+                .map_err(|error| CliError::abort(error.to_string()))?;
+        let target_dir = root.join("config");
+        std::fs::create_dir_all(&target_dir).map_err(|error| {
+            CliError::abort(format!(
+                "Unable to create metafields directory {}: {error}",
+                target_dir.display()
+            ))
+        })?;
+        let target = target_dir.join("metafields.json");
+        if target.exists()
+            && !self.force
+            && (!prompts_available() || !confirm(&format!("Overwrite {}?", target.display()))?)
+        {
+            return Err(CliError::abort("Metafields pull cancelled"));
+        }
+        let payload = json!({ "metafield_definitions": definitions });
+        std::fs::write(&target, to_pretty_json(&payload)).map_err(|error| {
+            CliError::abort(format!("Unable to write {}: {error}", target.display()))
+        })?;
+        output_success(format!(
+            "Pulled {} metafield definitions to {}",
+            payload["metafield_definitions"]
+                .as_array()
+                .map(Vec::len)
+                .unwrap_or(0),
+            target.display()
+        ));
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone, Args)]
 pub struct Package {
     #[arg(long, env = "SHOPIFY_FLAG_PATH", value_parser = parse_existing_directory)]
     path: Option<PathBuf>,
+}
+
+impl Package {
+    async fn run(self) -> Result<(), CliError> {
+        let root = self.path.unwrap_or_else(cwd_path);
+        let archive = theme::package::package_theme(&root)
+            .map_err(|error| CliError::abort(error.to_string()))?;
+        output_success(format!("Theme packaged to {}", archive.display()));
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, Args)]
@@ -1725,6 +2504,62 @@ pub struct Preview {
     json: bool,
 }
 
+impl Preview {
+    async fn run(self) -> Result<(), CliError> {
+        let overrides_path = PathBuf::from(&self.overrides);
+        let overrides = std::fs::read_to_string(&overrides_path).map_err(|error| {
+            CliError::abort(format!(
+                "Unable to read overrides file {}: {error}",
+                overrides_path.display()
+            ))
+        })?;
+        let overrides_json: serde_json::Value =
+            serde_json::from_str(&overrides).map_err(|error| {
+                CliError::abort(format!(
+                    "Unable to parse overrides file {} as JSON: {error}",
+                    overrides_path.display()
+                ))
+            })?;
+        let session = session_for(&self.common).await?;
+        let api = AdminApi { session: &session };
+        let selected = select_or_prompt_theme(
+            &api,
+            &session.store_fqdn,
+            &ThemeFilter {
+                theme: Some(self.theme),
+                ..Default::default()
+            },
+            "Select a theme to preview",
+        )
+        .await
+        .map_err(service_error)?;
+        let mut preview_url = theme_preview_url(&selected, &session.store_fqdn);
+        preview_url = append_query_param(&preview_url, "pb", &overrides_json.to_string());
+        if let Some(preview_id) = self.preview_id {
+            preview_url = append_query_param(&preview_url, "preview_id", &preview_id);
+        }
+        if self.open {
+            open::that(&preview_url)
+                .map_err(|error| CliError::abort(format!("Could not open browser: {error}")))?;
+        }
+        if self.json {
+            output_result(to_pretty_json(&json!({
+                "theme": {
+                    "id": selected.id,
+                    "name": selected.name,
+                    "role": selected.role,
+                    "shop": session.store_fqdn,
+                    "preview_url": preview_url,
+                    "overrides": overrides_json,
+                }
+            })));
+        } else {
+            output_result(format!("Preview your theme: {preview_url}"));
+        }
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone, Args)]
 pub struct Profile {
     #[command(flatten)]
@@ -1737,6 +2572,47 @@ pub struct Profile {
     store_password: Option<String>,
     #[arg(long, env = "SHOPIFY_FLAG_JSON")]
     json: bool,
+}
+
+impl Profile {
+    async fn run(self) -> Result<(), CliError> {
+        let session = session_for(&self.common).await?;
+        let api = AdminApi { session: &session };
+        let selected = select_or_prompt_theme(
+            &api,
+            &session.store_fqdn,
+            &ThemeFilter {
+                theme: self.theme,
+                ..Default::default()
+            },
+            "Select a theme to profile",
+        )
+        .await
+        .map_err(service_error)?;
+        let profile_url = append_query_param(
+            &absolute_storefront_url(&session.store_fqdn, &self.url),
+            "preview_theme_id",
+            &selected.id.to_string(),
+        );
+        let profile_url = append_query_param(&profile_url, "profile", "1");
+        if self.json {
+            output_result(to_pretty_json(&json!({
+                "theme": {
+                    "id": selected.id,
+                    "name": selected.name,
+                    "role": selected.role,
+                    "shop": session.store_fqdn,
+                },
+                "url": self.url,
+                "profile_url": profile_url,
+                "store_password_provided": self.store_password.is_some(),
+            })));
+        } else {
+            output_result(format!("Profile URL: {profile_url}"));
+            output_warn("Speedscope capture and bundled UI serving are not available in this Rust port yet.");
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, Args)]
@@ -1772,7 +2648,9 @@ pub struct Push {
     #[arg(
         short = 'c',
         long = "development-context",
-        env = "SHOPIFY_FLAG_DEVELOPMENT_CONTEXT"
+        env = "SHOPIFY_FLAG_DEVELOPMENT_CONTEXT",
+        requires = "development",
+        conflicts_with = "theme"
     )]
     development_context: Option<String>,
     #[arg(short = 'l', long, env = "SHOPIFY_FLAG_LIVE")]
@@ -1801,6 +2679,663 @@ pub struct Share {
     force: bool,
     #[arg(long, env = "SHOPIFY_FLAG_LISTING")]
     listing: Option<String>,
+}
+
+impl Pull {
+    async fn run(self) -> Result<(), CliError> {
+        if multi_environment_names(&self.common).is_some() {
+            let mut cli_flags = common_cli_flags(&self.common);
+            insert_string(&mut cli_flags, "theme", self.theme.clone());
+            insert_bool(&mut cli_flags, "development", self.development);
+            insert_bool(&mut cli_flags, "live", self.live);
+            return ThemeCommandRunner::run_multi_environments(
+                self.clone(),
+                MultiEnvironmentRunConfig {
+                    command_name: "pull",
+                    common: self.common.clone(),
+                    required_flags: vec![
+                        RequiredFlag::Flag("store"),
+                        RequiredFlag::Flag("password"),
+                        RequiredFlag::Flag("path"),
+                        RequiredFlag::OneOf(&["live", "development", "theme"]),
+                    ],
+                    cli_flags,
+                    command_allows_force: true,
+                    force: self.force,
+                },
+                |mut command, environment, auto_force| {
+                    Box::pin(async move {
+                        command.common.environment = vec![environment];
+                        if auto_force {
+                            command.force = true;
+                        }
+                        command.run_single().await
+                    })
+                },
+            )
+            .await;
+        }
+        self.run_single().await
+    }
+
+    async fn run_single(mut self) -> Result<(), CliError> {
+        if self.common.environment.len() == 1 {
+            let environment = self.common.environment[0].clone();
+            apply_pull_environment(&mut self, &environment)?;
+        }
+        let root = self.common.path.clone().unwrap_or_else(cwd_path);
+        validate_pull_directory(&root, self.force)?;
+        let session = session_for(&self.common).await?;
+        let api = AdminApi { session: &session };
+        let selected = if self.development {
+            let id = development_theme_id_for_store(&session.store_fqdn).ok_or_else(|| CliError::abort("No development theme is associated with this store. Run `shopify theme dev` first."))?;
+            match api::themes::fetch_theme(id, &session)
+                .await
+                .map_err(|error| CliError::abort(error.to_string()))?
+            {
+                Some(theme) => from_api_theme(theme),
+                None => {
+                    remove_development_theme_id_for_store(&session.store_fqdn);
+                    return Err(CliError::abort("The development theme could not be found. Its stale local reference was removed."));
+                }
+            }
+        } else {
+            select_or_prompt_theme(
+                &api,
+                &session.store_fqdn,
+                &ThemeFilter {
+                    theme: self.theme,
+                    live: self.live,
+                    ..Default::default()
+                },
+                "Select a theme to pull",
+            )
+            .await
+            .map_err(service_error)?
+        };
+        let filters = theme::ignore::IgnoreFilters {
+            only: self.glob.only,
+            ignore: self.glob.ignore,
+            ..Default::default()
+        };
+        let mut filesystem = theme::filesystem::ThemeFileSystem::scan(&root, filters.clone())
+            .map_err(|error| CliError::abort(error.to_string()))?;
+        let report = theme::sync::pull(
+            &api,
+            selected.id,
+            &mut filesystem,
+            &SyncOptions {
+                nodelete: self.nodelete,
+                filters,
+            },
+        )
+        .await
+        .map_err(|error| CliError::abort(error.to_string()))?;
+        if let Some(environment) = self.common.environment.first() {
+            output_info(format!("Environment: {environment}"));
+        }
+        output_success(format!(
+            "Pulled theme '{}' (#{}) from {} ({} files)",
+            selected.name,
+            selected.id,
+            session.store_fqdn,
+            report.files.len()
+        ));
+        output_info(format!(
+            "Preview: {}",
+            theme_preview_url(&selected, &session.store_fqdn)
+        ));
+        output_info(format!(
+            "Customize: {}",
+            theme_editor_url(&selected, &session.store_fqdn)
+        ));
+        Ok(())
+    }
+}
+
+impl Push {
+    async fn run(self) -> Result<(), CliError> {
+        if multi_environment_names(&self.common).is_some() {
+            let mut cli_flags = common_cli_flags(&self.common);
+            insert_string(&mut cli_flags, "theme", self.theme.clone());
+            insert_bool(&mut cli_flags, "development", self.development);
+            insert_string(
+                &mut cli_flags,
+                "development_context",
+                self.development_context.clone(),
+            );
+            insert_bool(&mut cli_flags, "live", self.live);
+            insert_bool(&mut cli_flags, "unpublished", self.unpublished);
+            insert_bool(&mut cli_flags, "allow_live", self.allow_live);
+            insert_bool(&mut cli_flags, "publish", self.publish);
+            insert_bool(&mut cli_flags, "strict", self.strict);
+            insert_string(&mut cli_flags, "listing", self.listing.clone());
+            return ThemeCommandRunner::run_multi_environments(
+                self.clone(),
+                MultiEnvironmentRunConfig {
+                    command_name: "push",
+                    common: self.common.clone(),
+                    required_flags: vec![
+                        RequiredFlag::Flag("store"),
+                        RequiredFlag::Flag("password"),
+                        RequiredFlag::Flag("path"),
+                        RequiredFlag::OneOf(&["live", "development", "theme", "unpublished"]),
+                    ],
+                    cli_flags,
+                    command_allows_force: true,
+                    force: self.force,
+                },
+                |mut command, environment, auto_force| {
+                    Box::pin(async move {
+                        command.common.environment = vec![environment];
+                        if auto_force {
+                            command.force = true;
+                        }
+                        command.run_single(true).await
+                    })
+                },
+            )
+            .await;
+        }
+        self.run_single(false).await
+    }
+
+    async fn run_single(mut self, multi: bool) -> Result<(), CliError> {
+        if self.common.environment.len() == 1 {
+            let environment = self.common.environment[0].clone();
+            apply_push_environment(&mut self, &environment)?;
+        }
+        let root = self.common.path.clone().unwrap_or_else(cwd_path);
+        if !self.force && !recognizable_theme(&root) {
+            return Err(CliError::abort("The directory doesn't appear to contain a Shopify theme. Use --force to proceed anyway."));
+        }
+        if let Some(listing) = &self.listing {
+            theme::listing::validate_listing(&root, listing)
+                .map_err(|error| CliError::abort(error.to_string()))?;
+        }
+        if self.strict {
+            run_strict_check(&root, self.json, self.common.environment.first())?;
+        }
+        let session = session_for(&self.common).await?;
+        let api = AdminApi { session: &session };
+        let mut selected = resolve_push_theme(&api, &session, &self).await?;
+        if selected.role == "live" && !self.allow_live {
+            if multi || !prompts_available() {
+                return Err(CliError::abort("Pushing to a live theme requires --allow-live when prompts are unavailable or multiple environments are used."));
+            }
+            if !confirm(&format!(
+                "Push changes to the live theme '{}' on {}?",
+                selected.name, session.store_fqdn
+            ))? {
+                return Ok(());
+            }
+        }
+        let filters = theme::ignore::IgnoreFilters {
+            only: self.glob.only,
+            ignore: self.glob.ignore,
+            ..Default::default()
+        };
+        let mut filesystem = theme::filesystem::ThemeFileSystem::scan(&root, filters.clone())
+            .map_err(|error| CliError::abort(error.to_string()))?;
+        if let Some(listing) = &self.listing {
+            theme::listing::apply_listing(&root, listing, &mut filesystem.files)
+                .map_err(|error| CliError::abort(error.to_string()))?;
+        }
+        let report = theme::sync::push(
+            &api,
+            selected.id,
+            &filesystem,
+            &SyncOptions {
+                nodelete: self.nodelete,
+                filters,
+            },
+        )
+        .await
+        .map_err(|error| CliError::abort(error.to_string()))?;
+        if self.publish {
+            api.publish_theme(selected.id)
+                .await
+                .map_err(service_error)?;
+            selected.role = "live".into();
+        }
+        if self.json {
+            let mut value = serde_json::to_value(theme_info_json(&selected, &session.store_fqdn))
+                .unwrap_or_else(|_| json!({}));
+            let object = value.as_object_mut().expect("theme info is an object");
+            if let Some(environment) = self.common.environment.first() {
+                object.insert("environment".into(), json!(environment));
+            }
+            if report.has_failures() {
+                object.insert("warning".into(), json!("The theme was pushed with errors"));
+                object.insert(
+                    "errors".into(),
+                    json!(report
+                        .files
+                        .iter()
+                        .filter(|file| !file.success)
+                        .map(|file| json!({"key": file.key, "errors": file.errors}))
+                        .collect::<Vec<_>>()),
+                );
+            }
+            output_result(to_pretty_json(&value));
+        } else {
+            if let Some(environment) = self.common.environment.first() {
+                output_info(format!("Environment: {environment}"));
+            }
+            for file in report.files.iter().filter(|file| !file.success) {
+                output_warn(format!("{}: {}", file.key, file.errors.join(", ")));
+            }
+            if self.publish {
+                output_success(format!(
+                    "The theme '{}' (#{}) was pushed and published.",
+                    selected.name, selected.id
+                ));
+            } else if report.has_failures() {
+                output_warn(format!(
+                    "The theme '{}' (#{}) was pushed with errors.",
+                    selected.name, selected.id
+                ));
+            } else {
+                output_success(format!(
+                    "The theme '{}' (#{}) was pushed successfully.",
+                    selected.name, selected.id
+                ));
+            }
+            output_info(format!(
+                "Preview: {}",
+                theme_preview_url(&selected, &session.store_fqdn)
+            ));
+            output_info(format!(
+                "Customize: {}",
+                theme_editor_url(&selected, &session.store_fqdn)
+            ));
+        }
+        Ok(())
+    }
+}
+
+impl Share {
+    async fn run(self) -> Result<(), CliError> {
+        Push {
+            common: self.common,
+            glob: GlobFlags::default(),
+            json: false,
+            theme: Some(theme::generate_name::generate_theme_name("Share")),
+            development: false,
+            development_context: None,
+            live: false,
+            unpublished: true,
+            nodelete: false,
+            allow_live: false,
+            publish: false,
+            force: self.force,
+            strict: false,
+            listing: self.listing,
+        }
+        .run()
+        .await
+    }
+}
+
+fn recognizable_theme(root: &std::path::Path) -> bool {
+    root.join("layout/theme.liquid").is_file()
+        || root.join("config/settings_schema.json").is_file()
+        || root.join("templates").is_dir()
+}
+
+fn validate_pull_directory(root: &std::path::Path, force: bool) -> Result<(), CliError> {
+    if force {
+        return Ok(());
+    }
+    let empty = root
+        .read_dir()
+        .map(|mut entries| entries.next().is_none())
+        .unwrap_or(false);
+    if !empty && !recognizable_theme(root) {
+        if !prompts_available() {
+            return Err(CliError::abort("Confirmation is required to pull into a directory that doesn't contain a Shopify theme."));
+        }
+        if !confirm(
+            "The directory doesn't appear to contain a Shopify theme. Pull files here anyway?",
+        )? {
+            return Err(CliError::abort("Theme pull cancelled"));
+        }
+    }
+    let git = std::process::Command::new("git")
+        .args(["status", "--porcelain"])
+        .current_dir(root)
+        .output();
+    if let Ok(output) = git {
+        if !output.stdout.is_empty() {
+            if !prompts_available() {
+                return Err(CliError::abort("Confirmation is required to pull into a Git worktree with uncommitted changes."));
+            }
+            if !confirm("This Git worktree contains uncommitted changes. Continue pulling?")? {
+                return Err(CliError::abort("Theme pull cancelled"));
+            }
+        }
+    }
+    Ok(())
+}
+
+async fn resolve_push_theme(
+    api: &AdminApi<'_>,
+    session: &AdminSession,
+    command: &Push,
+) -> Result<Theme, CliError> {
+    if command.development {
+        if let Some(context) = &command.development_context {
+            let name = theme::generate_name::generate_theme_name(context);
+            if let Some(found) = api::themes::find_development_theme_by_name(&name, session)
+                .await
+                .map_err(|error| CliError::abort(error.to_string()))?
+            {
+                return Ok(from_api_theme(found));
+            }
+        } else if let Some(id) = development_theme_id_for_store(&session.store_fqdn) {
+            if let Some(found) = api::themes::fetch_theme(id, session)
+                .await
+                .map_err(|error| CliError::abort(error.to_string()))?
+            {
+                return Ok(from_api_theme(found));
+            }
+            remove_development_theme_id_for_store(&session.store_fqdn);
+        }
+        let name = command
+            .development_context
+            .as_deref()
+            .map(theme::generate_name::generate_theme_name)
+            .unwrap_or_else(|| theme::generate_name::generate_theme_name("Development"));
+        let created = create_theme(session, name, "development").await?;
+        store_development_theme_id_for_store(&session.store_fqdn, created.id);
+        return Ok(created);
+    }
+    if command.unpublished {
+        let name =
+            match command.theme.clone() {
+                Some(name) => name,
+                None if prompts_available() => render_text_prompt("Name of the new theme")
+                    .map_err(|error| CliError::abort(error.to_string()))?,
+                None => return Err(CliError::abort(
+                    "A theme name is required when creating an unpublished theme without prompts",
+                )),
+            };
+        return create_theme(session, name, "unpublished").await;
+    }
+    select_or_prompt_theme(
+        api,
+        &session.store_fqdn,
+        &ThemeFilter {
+            theme: command.theme.clone(),
+            live: command.live,
+            ..Default::default()
+        },
+        "Select a theme to push to",
+    )
+    .await
+    .map_err(service_error)
+}
+
+async fn create_theme(session: &AdminSession, name: String, role: &str) -> Result<Theme, CliError> {
+    api::themes::theme_create(
+        api::themes::ThemeParams {
+            name: Some(name),
+            role: Some(role.into()),
+            ..Default::default()
+        },
+        session,
+    )
+    .await
+    .map_err(|error| CliError::abort(error.to_string()))?
+    .map(from_api_theme)
+    .ok_or_else(|| CliError::abort("Failed to create theme"))
+}
+
+fn run_node_package_bin(
+    package: &str,
+    root: &std::path::Path,
+    args: Vec<String>,
+    error_context: &str,
+) -> Result<(), CliError> {
+    let bin = resolve_node_package_bin(package, root)?;
+    let status = std::process::Command::new("node")
+        .arg(bin)
+        .args(args)
+        .current_dir(root)
+        .status()
+        .map_err(|error| CliError::abort(format!("{error_context}: {error}")))?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(CliError::abort(format!(
+            "{error_context}: process exited with {}",
+            status
+                .code()
+                .map(|code| code.to_string())
+                .unwrap_or_else(|| "a signal".into())
+        )))
+    }
+}
+
+fn resolve_node_package_bin(package: &str, root: &std::path::Path) -> Result<String, CliError> {
+    let script = r#"
+const path = require('path');
+const packageName = process.argv[1];
+const pkgPath = require.resolve(`${packageName}/package.json`);
+const pkg = require(pkgPath);
+const bin = typeof pkg.bin === 'string' ? pkg.bin : Object.values(pkg.bin || {})[0];
+if (!bin) process.exit(2);
+process.stdout.write(path.resolve(path.dirname(pkgPath), bin));
+"#;
+    let output = std::process::Command::new("node")
+        .args(["-e", script, package])
+        .current_dir(root)
+        .output()
+        .map_err(|error| CliError::abort(format!("Unable to launch Node.js: {error}")))?;
+    if !output.status.success() {
+        return Err(CliError::abort(format!(
+            "Unable to resolve {package}. Install the pinned Node package before retrying."
+        )));
+    }
+    let bin = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if bin.is_empty() {
+        Err(CliError::abort(format!(
+            "Unable to resolve executable for {package}"
+        )))
+    } else {
+        Ok(bin)
+    }
+}
+
+fn append_query_param(url: &str, key: &str, value: &str) -> String {
+    let separator = if url.contains('?') { '&' } else { '?' };
+    format!(
+        "{url}{separator}{}={}",
+        percent_encode_component(key),
+        percent_encode_component(value)
+    )
+}
+
+fn absolute_storefront_url(store: &str, path_or_url: &str) -> String {
+    if path_or_url.starts_with("http://") || path_or_url.starts_with("https://") {
+        path_or_url.into()
+    } else if path_or_url.starts_with('/') {
+        format!("https://{store}{path_or_url}")
+    } else {
+        format!("https://{store}/{path_or_url}")
+    }
+}
+
+fn percent_encode_component(value: &str) -> String {
+    let mut encoded = String::new();
+    for byte in value.bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                encoded.push(byte as char)
+            }
+            _ => encoded.push_str(&format!("%{byte:02X}")),
+        }
+    }
+    encoded
+}
+
+fn run_strict_check(
+    root: &std::path::Path,
+    json_output: bool,
+    environment: Option<&String>,
+) -> Result<(), CliError> {
+    let script = "const path=require('path');const pkgPath=require.resolve('@shopify/theme-check-node/package.json');const pkg=require(pkgPath);const bin=typeof pkg.bin==='string'?pkg.bin:Object.values(pkg.bin||{})[0];if(!bin){process.exit(2)};process.stdout.write(path.resolve(path.dirname(pkgPath),bin));";
+    let output = std::process::Command::new("node")
+        .args(["-e", script])
+        .current_dir(root)
+        .output()
+        .map_err(|error| {
+            CliError::abort(format!(
+                "Unable to launch the pinned Theme Check runtime: {error}"
+            ))
+        })?;
+    if !output.status.success() {
+        let prefix = environment
+            .map(|name| format!("Environment {name}: "))
+            .unwrap_or_default();
+        return Err(CliError::abort(format!("{prefix}Strict push requires @shopify/theme-check-node. Install the pinned checker runtime before retrying{}.", if json_output { " (JSON output requested)" } else { "" })));
+    }
+    let checker = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let mut args = vec![
+        checker,
+        root.to_string_lossy().into_owned(),
+        "--fail-level".into(),
+        "error".into(),
+    ];
+    if json_output {
+        args.extend(["--output".into(), "json".into()]);
+    }
+    let result = std::process::Command::new("node")
+        .args(args)
+        .current_dir(root)
+        .output()
+        .map_err(|error| {
+            CliError::abort(format!(
+                "Unable to launch the pinned Theme Check runtime: {error}"
+            ))
+        })?;
+    let stdout = String::from_utf8_lossy(&result.stdout).trim().to_string();
+    let stderr = String::from_utf8_lossy(&result.stderr).trim().to_string();
+    if !stdout.is_empty() {
+        if json_output {
+            output_result(stdout);
+        } else {
+            output_info(stdout);
+        }
+    }
+    if !stderr.is_empty() {
+        output_warn(stderr);
+    }
+    if !result.status.success() {
+        let prefix = environment
+            .map(|name| format!("Environment {name}: "))
+            .unwrap_or_default();
+        return Err(CliError::abort(format!(
+            "{prefix}Strict push failed because Theme Check reported errors."
+        )));
+    }
+    Ok(())
+}
+
+fn apply_pull_environment(command: &mut Pull, environment: &str) -> Result<(), CliError> {
+    apply_common_environment(&mut command.common, environment)?;
+    if let Ok(env) = load_environment(environment, env_base_path(&command.common)) {
+        if command.theme.is_none() {
+            command.theme = env.get("theme").and_then(value_as_string);
+        }
+        if !command.live {
+            command.live = env.get("live").and_then(value_as_bool).unwrap_or(false);
+        }
+        if !command.development {
+            command.development = env
+                .get("development")
+                .and_then(value_as_bool)
+                .unwrap_or(false);
+        }
+        if !command.nodelete {
+            command.nodelete = env.get("nodelete").and_then(value_as_bool).unwrap_or(false);
+        }
+        if command.glob.only.is_empty() {
+            command.glob.only = env
+                .get("only")
+                .and_then(value_as_strings)
+                .unwrap_or_default();
+        }
+        if command.glob.ignore.is_empty() {
+            command.glob.ignore = env
+                .get("ignore")
+                .and_then(value_as_strings)
+                .unwrap_or_default();
+        }
+    }
+    Ok(())
+}
+
+fn apply_push_environment(command: &mut Push, environment: &str) -> Result<(), CliError> {
+    apply_common_environment(&mut command.common, environment)?;
+    if let Ok(env) = load_environment(environment, env_base_path(&command.common)) {
+        if command.theme.is_none() {
+            command.theme = env.get("theme").and_then(value_as_string);
+        }
+        if !command.live {
+            command.live = env.get("live").and_then(value_as_bool).unwrap_or(false);
+        }
+        if !command.development {
+            command.development = env
+                .get("development")
+                .and_then(value_as_bool)
+                .unwrap_or(false);
+        }
+        if !command.unpublished {
+            command.unpublished = env
+                .get("unpublished")
+                .and_then(value_as_bool)
+                .unwrap_or(false);
+        }
+        if command.development_context.is_none() {
+            command.development_context = env
+                .get("development_context")
+                .and_then(value_as_string)
+                .or_else(|| env.get("development-context").and_then(value_as_string));
+        }
+        if !command.nodelete {
+            command.nodelete = env.get("nodelete").and_then(value_as_bool).unwrap_or(false);
+        }
+        if !command.allow_live {
+            command.allow_live = env
+                .get("allow_live")
+                .and_then(value_as_bool)
+                .or_else(|| env.get("allow-live").and_then(value_as_bool))
+                .unwrap_or(false);
+        }
+        if !command.publish {
+            command.publish = env.get("publish").and_then(value_as_bool).unwrap_or(false);
+        }
+        if !command.strict {
+            command.strict = env.get("strict").and_then(value_as_bool).unwrap_or(false);
+        }
+        if command.listing.is_none() {
+            command.listing = env.get("listing").and_then(value_as_string);
+        }
+        if command.glob.only.is_empty() {
+            command.glob.only = env
+                .get("only")
+                .and_then(value_as_strings)
+                .unwrap_or_default();
+        }
+        if command.glob.ignore.is_empty() {
+            command.glob.ignore = env
+                .get("ignore")
+                .and_then(value_as_strings)
+                .unwrap_or_default();
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]

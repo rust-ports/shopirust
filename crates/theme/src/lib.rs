@@ -1,10 +1,15 @@
 pub mod checksum;
 pub mod config;
+pub mod dev;
 pub mod filesystem;
 pub mod generate_name;
 pub mod ignore;
+pub mod init;
+pub mod listing;
 pub mod local_storage;
 pub mod models;
+pub mod package;
 pub mod replace_invalid_chars;
 pub mod selector;
 pub mod services;
+pub mod sync;
