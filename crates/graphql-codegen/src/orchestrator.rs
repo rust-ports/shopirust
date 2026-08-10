@@ -43,31 +43,49 @@ pub fn run_codegen(config: &CodegenConfig) -> Result<(), String> {
 
     // 5. Generate mod.rs entries
     let mut mod_lines = vec!["pub mod types;".to_string()];
+    let mut errors = Vec::new();
 
-    // 6. Process each .graphql file
+    // 6. Process each .graphql file (skip individual failures)
     for gql_path in &gql_files {
-        let content = fs::read_to_string(gql_path)
-            .map_err(|e| format!("Failed to read {}: {e}", gql_path.display()))?;
+        let content = match fs::read_to_string(gql_path) {
+            Ok(c) => c,
+            Err(e) => {
+                errors.push(format!("Failed to read {}: {e}", gql_path.display()));
+                continue;
+            }
+        };
 
-        let operation = parse_graphql(&content)
-            .ok_or_else(|| format!("Failed to parse {}", gql_path.display()))?;
+        let Some(operation) = parse_graphql(&content) else {
+            errors.push(format!("Failed to parse {}", gql_path.display()));
+            continue;
+        };
 
-        // Find matching .ts generated file
         let gql_stem = gql_path.file_stem().unwrap().to_str().unwrap();
         let ts_path = base.join("generated").join(format!("{gql_stem}.ts"));
 
         if !ts_path.exists() {
-            return Err(format!(
+            errors.push(format!(
                 "Generated TypeScript file not found for {}: {}",
                 gql_path.display(),
                 ts_path.display()
             ));
+            continue;
         }
-        let ts_content = fs::read_to_string(&ts_path)
-            .map_err(|e| format!("Failed to read {}: {e}", ts_path.display()))?;
-        let (variables_type, response_type) = extract_types(&ts_content, &operation)?;
+        let ts_content = match fs::read_to_string(&ts_path) {
+            Ok(c) => c,
+            Err(e) => {
+                errors.push(format!("Failed to read {}: {e}", ts_path.display()));
+                continue;
+            }
+        };
+        let (variables_type, response_type) = match extract_types(&ts_content, &operation) {
+            Ok(t) => t,
+            Err(e) => {
+                errors.push(format!("{}: {e}", gql_path.display()));
+                continue;
+            }
+        };
 
-        // Build the output model
         let module_name = to_module_name(gql_stem);
         let suffix = match operation.operation_type {
             GraphqlOperationType::Query => "QUERY",
@@ -88,7 +106,6 @@ pub fn run_codegen(config: &CodegenConfig) -> Result<(), String> {
             shared_types: shared_types.clone(),
         };
 
-        // Generate Rust code
         let rust_code = generate_rust(
             &output,
             &GenOptions {
@@ -96,25 +113,38 @@ pub fn run_codegen(config: &CodegenConfig) -> Result<(), String> {
             },
         );
 
-        // Write .rs file
         let rs_path = config.out_dir.join(format!("{}.rs", module_name));
-        fs::write(&rs_path, &rust_code)
-            .map_err(|e| format!("Failed to write {}: {e}", rs_path.display()))?;
+        if let Err(e) = fs::write(&rs_path, &rust_code) {
+            errors.push(format!("Failed to write {}: {e}", rs_path.display()));
+            continue;
+        }
 
         println!("Generated: {}", rs_path.display());
         mod_lines.push(format!("pub mod {};", module_name));
     }
 
-    // Write mod.rs
     let mod_content = format!("{}\n", mod_lines.join("\n"));
     fs::write(config.out_dir.join("mod.rs"), mod_content)
         .map_err(|e| format!("Failed to write mod.rs: {e}"))?;
 
     println!(
         "Generated {} files in {}",
-        gql_files.len(),
+        mod_lines.len().saturating_sub(1),
         config.out_dir.display()
     );
+
+    if !errors.is_empty() {
+        for e in &errors {
+            eprintln!("warning: {e}");
+        }
+        if mod_lines.len() <= 1 {
+            return Err(format!(
+                "No operations generated for {}: {}",
+                config.module_name,
+                errors.join("; ")
+            ));
+        }
+    }
     Ok(())
 }
 
@@ -170,28 +200,56 @@ fn extract_types(
         GraphqlOperationType::Mutation => "Mutation",
     };
 
-    let variables_name = format!("{op_pascal}{type_suffix}Variables");
-    let response_name = format!("{op_pascal}{type_suffix}");
+    // GraphQL ops sometimes use `URL` while generated TS normalizes to `Url`.
+    let candidates = [
+        format!("{op_pascal}{type_suffix}"),
+        format!("{}{type_suffix}", normalize_acronyms(&op_pascal)),
+    ];
 
     let mut variables_type = None;
     let mut response_type = None;
 
     for def in &defs {
-        if def.name == variables_name {
-            variables_type = Some(def.type_expr.clone());
-        } else if def.name == response_name {
-            response_type = Some(def.type_expr.clone());
+        for candidate in &candidates {
+            if def.name == format!("{candidate}Variables") {
+                variables_type = Some(def.type_expr.clone());
+            }
+            if def.name == *candidate {
+                response_type = Some(def.type_expr.clone());
+            }
+        }
+    }
+
+    // Fallback: first exported *Query / *Mutation type in the file.
+    if response_type.is_none() {
+        for def in &defs {
+            if def.name.ends_with(type_suffix) && !def.name.ends_with("Variables") {
+                response_type = Some(def.type_expr.clone());
+                let vars_name = format!("{}Variables", def.name);
+                if let Some(v) = defs.iter().find(|d| d.name == vars_name) {
+                    variables_type = Some(v.type_expr.clone());
+                }
+                break;
+            }
         }
     }
 
     let response = response_type.ok_or_else(|| {
         format!(
-            "Response type '{response_name}' not found in {}",
-            response_name
+            "Response type matching {:?} not found (have: {:?})",
+            candidates,
+            defs.iter().map(|d| &d.name).collect::<Vec<_>>()
         )
     })?;
 
     Ok((variables_type, response))
+}
+
+fn normalize_acronyms(s: &str) -> String {
+    s.replace("URL", "Url")
+        .replace("ID", "Id")
+        .replace("API", "Api")
+        .replace("UUID", "Uuid")
 }
 
 fn capitalize(s: &str) -> String {
