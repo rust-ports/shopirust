@@ -295,14 +295,25 @@ mod tests {
     use crate::gql_parser::parse_graphql;
     use crate::ts_parser::{parse_ts_file, parse_types_dts};
 
-    const UPSTREAM_BASE: &str =
-        "/home/mohammed-niri/projects/gitCloned/cli/packages/cli-kit/src/cli/api/graphql/admin";
+    fn upstream_admin_graphql() -> Option<PathBuf> {
+        if let Ok(path) = std::env::var("UPSTREAM_ADMIN_GRAPHQL") {
+            let path = PathBuf::from(path);
+            return path.exists().then_some(path);
+        }
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../../gitCloned/cli/packages/cli-kit/src/cli/api/graphql/admin");
+        path.exists().then_some(path)
+    }
 
     #[test]
     fn test_e2e_theme_create() {
-        let gql_path = format!("{UPSTREAM_BASE}/mutations/theme_create.graphql");
-        let ts_path = format!("{UPSTREAM_BASE}/generated/theme_create.ts");
-        let dts_path = format!("{UPSTREAM_BASE}/generated/types.d.ts");
+        let Some(upstream) = upstream_admin_graphql() else {
+            eprintln!("skip: upstream admin GraphQL fixtures not found");
+            return;
+        };
+        let gql_path = upstream.join("mutations/theme_create.graphql");
+        let ts_path = upstream.join("generated/theme_create.ts");
+        let dts_path = upstream.join("generated/types.d.ts");
 
         let gql_content = std::fs::read_to_string(&gql_path).unwrap();
         let ts_content = std::fs::read_to_string(&ts_path).unwrap();
@@ -432,15 +443,15 @@ mod tests {
 
     #[test]
     fn test_e2e_theme_files_upsert() {
-        let gql_content = std::fs::read_to_string(format!(
-            "{UPSTREAM_BASE}/mutations/theme_files_upsert.graphql"
-        ))
-        .unwrap();
+        let Some(upstream) = upstream_admin_graphql() else {
+            eprintln!("skip: upstream admin GraphQL fixtures not found");
+            return;
+        };
+        let gql_content =
+            std::fs::read_to_string(upstream.join("mutations/theme_files_upsert.graphql")).unwrap();
         let ts_content =
-            std::fs::read_to_string(format!("{UPSTREAM_BASE}/generated/theme_files_upsert.ts"))
-                .unwrap();
-        let dts_content =
-            std::fs::read_to_string(format!("{UPSTREAM_BASE}/generated/types.d.ts")).unwrap();
+            std::fs::read_to_string(upstream.join("generated/theme_files_upsert.ts")).unwrap();
+        let dts_content = std::fs::read_to_string(upstream.join("generated/types.d.ts")).unwrap();
 
         let operation = parse_graphql(&gql_content).expect("should parse .graphql");
         let defs = parse_ts_file(&ts_content);
@@ -490,6 +501,10 @@ mod tests {
 
     #[test]
     fn test_run_codegen_writes_shared_module_once() {
+        let Some(upstream) = upstream_admin_graphql() else {
+            eprintln!("skip: upstream admin GraphQL fixtures not found");
+            return;
+        };
         let unique = format!(
             "graphql-codegen-test-{}-{}",
             std::process::id(),
@@ -500,7 +515,7 @@ mod tests {
         );
         let out_dir = std::env::temp_dir().join(unique);
         let config = CodegenConfig {
-            base_dir: PathBuf::from(UPSTREAM_BASE),
+            base_dir: upstream,
             out_dir: out_dir.clone(),
             module_name: "cli_kit".to_string(),
         };
