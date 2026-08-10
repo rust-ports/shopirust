@@ -135,7 +135,7 @@ mod tests {
         let flags = GlobalFlags {
             verbose: true,
             no_color: false,
-            path: Some("/tmp".into()),
+            path: Some(std::path::PathBuf::from("/tmp")),
         };
 
         run_cli(MockTopic::Mock(MockCmd), &flags, |data| {

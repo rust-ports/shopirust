@@ -1,8 +1,10 @@
 mod auth;
+mod app;
 mod organization;
 mod theme;
 
 use auth::{AuthSubcommand, AuthTopic, AuthTopicArgs};
+use app::{AppSubcommand, AppTopic, AppTopicArgs};
 use organization::{OrganizationSubcommand, OrganizationTopic, OrganizationTopicArgs};
 use theme::{ThemeSubcommand, ThemeTopic, ThemeTopicArgs};
 
@@ -17,6 +19,8 @@ use cli_core::error::CliError;
 pub enum CliSubcommand {
     #[command(subcommand)]
     Auth(AuthSubcommand),
+    #[command(subcommand)]
+    App(AppSubcommand),
     #[command(subcommand)]
     Organization(OrganizationSubcommand),
     #[command(subcommand)]
@@ -34,6 +38,7 @@ pub struct CliTopicArgs {
 #[allow(clippy::large_enum_variant)]
 pub enum CliTopic {
     Auth(AuthTopic),
+    App(AppTopic),
     Organization(OrganizationTopic),
     Theme(ThemeTopic),
     Help,
@@ -48,6 +53,9 @@ impl TopicCommand for CliTopic {
         match args.command {
             CliSubcommand::Auth(cmd) => {
                 Self::Auth(AuthTopic::from_args(AuthTopicArgs { command: cmd }))
+            }
+            CliSubcommand::App(cmd) => {
+                Self::App(AppTopic::from_args(AppTopicArgs { command: cmd }))
             }
             CliSubcommand::Organization(cmd) => {
                 Self::Organization(OrganizationTopic::from_args(OrganizationTopicArgs {
@@ -65,10 +73,11 @@ impl TopicCommand for CliTopic {
     async fn execute(self) -> Result<(), CliError> {
         match self {
             Self::Auth(topic) => topic.execute().await,
+            Self::App(topic) => topic.execute().await,
             Self::Organization(topic) => topic.execute().await,
             Self::Theme(topic) => topic.execute().await,
             Self::Help => {
-                println!("A CLI tool to build for the Shopify platform\n\nUSAGE\n  $ shopify [COMMAND]\n\nTOPICS\n  auth          Auth operations.\n  organization  List organizations you have access to.\n  theme         Manage Shopify themes.\n\nCOMMANDS\n  help          Display help for Shopify CLI\n  version       Shopify CLI version currently installed.");
+                println!("A CLI tool to build for the Shopify platform\n\nUSAGE\n  $ shopify [COMMAND]\n\nTOPICS\n  app           Build Shopify apps.\n  auth          Auth operations.\n  organization  List organizations you have access to.\n  theme         Manage Shopify themes.\n\nCOMMANDS\n  help          Display help for Shopify CLI\n  version       Shopify CLI version currently installed.");
                 Ok(())
             }
             Self::Version => {
@@ -116,6 +125,12 @@ mod tests {
     fn test_cli_topic_from_args_theme() {
         let topic = parse_topic(&["shopify", "theme", "list", "--store", "test"]);
         assert!(matches!(topic, CliTopic::Theme(_)));
+    }
+
+    #[test]
+    fn test_cli_topic_from_args_app() {
+        let topic = parse_topic(&["shopify", "app", "info", "--path", "."]);
+        assert!(matches!(topic, CliTopic::App(_)));
     }
 
     #[test]

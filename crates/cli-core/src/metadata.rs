@@ -22,7 +22,7 @@ impl MetadataCollector {
             flags.path.is_some().to_string(),
         );
         if let Some(ref path) = flags.path {
-            let hash = sha256_hash(path);
+            let hash = sha256_hash(&path.display().to_string());
             data.insert("cmd_all_path_override_hash".into(), hash);
         }
     }
