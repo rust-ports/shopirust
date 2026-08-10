@@ -39,6 +39,8 @@ pub struct GraphqlError {
 #[derive(Debug, Deserialize)]
 pub struct GraphqlErrorExtensions {
     pub code: Option<Value>,
+    #[serde(rename = "requiredAccess")]
+    pub required_access: Option<Value>,
     pub app_errors: Option<GraphqlAppErrors>,
 }
 
@@ -536,6 +538,16 @@ async fn wait_for_rate_limit_restore(cost: &GraphqlCost) {
 fn extract_error_messages(errors: &[GraphqlError]) -> String {
     let mut messages: Vec<String> = Vec::new();
     for error in errors {
+        if let Some(required_access) = error
+            .extensions
+            .as_ref()
+            .and_then(missing_theme_access_requirement)
+        {
+            messages.push(format!(
+                "The authenticated account or access token is missing {required_access}."
+            ));
+            continue;
+        }
         if let Some(app_errors) = error
             .extensions
             .as_ref()
@@ -562,6 +574,20 @@ fn extract_error_messages(errors: &[GraphqlError]) -> String {
     }
 }
 
+fn missing_theme_access_requirement(extensions: &GraphqlErrorExtensions) -> Option<String> {
+    if extensions.code.as_ref().and_then(Value::as_str) != Some("ACCESS_DENIED") {
+        return None;
+    }
+    let required_access = extensions
+        .required_access
+        .as_ref()
+        .and_then(Value::as_str)
+        .map(|value| value.trim().trim_end_matches('.').to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| "the required theme access scope".into());
+    Some(required_access)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -586,6 +612,7 @@ mod tests {
             message: None,
             extensions: Some(GraphqlErrorExtensions {
                 code: None,
+                required_access: None,
                 app_errors: Some(GraphqlAppErrors {
                     errors: Some(vec![GraphqlAppError {
                         message: Some("forbidden".into()),
@@ -606,6 +633,7 @@ mod tests {
             message: None,
             extensions: Some(GraphqlErrorExtensions {
                 code: None,
+                required_access: None,
                 app_errors: Some(GraphqlAppErrors {
                     errors: Some(vec![GraphqlAppError {
                         message: Some("validation failed".into()),
@@ -615,6 +643,38 @@ mod tests {
             }),
         }];
         assert_eq!(extract_error_messages(&errors), "validation failed");
+    }
+
+    #[tokio::test]
+    async fn extract_error_messages_theme_access_denied_with_required_scope() {
+        let errors = vec![GraphqlError {
+            message: Some("Access denied for themes field.".into()),
+            extensions: Some(GraphqlErrorExtensions {
+                code: Some(Value::String("ACCESS_DENIED".into())),
+                required_access: Some(Value::String("`read_themes` access scope.".into())),
+                app_errors: None,
+            }),
+        }];
+        assert_eq!(
+            extract_error_messages(&errors),
+            "The authenticated account or access token is missing `read_themes` access scope."
+        );
+    }
+
+    #[tokio::test]
+    async fn extract_error_messages_theme_access_denied_default_scope() {
+        let errors = vec![GraphqlError {
+            message: Some("Access denied for themes field.".into()),
+            extensions: Some(GraphqlErrorExtensions {
+                code: Some(Value::String("ACCESS_DENIED".into())),
+                required_access: None,
+                app_errors: None,
+            }),
+        }];
+        assert_eq!(
+            extract_error_messages(&errors),
+            "The authenticated account or access token is missing the required theme access scope."
+        );
     }
 
     #[tokio::test]

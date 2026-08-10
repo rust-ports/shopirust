@@ -232,11 +232,179 @@ fn crc32(bytes: &[u8]) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
     #[test]
     fn removes_comments_without_touching_strings() {
         assert_eq!(
             strip_json_comments("/*x*/[{\"url\":\"//x\"}]"),
             "[{\"url\":\"//x\"}]"
         );
+    }
+
+    #[test]
+    fn extract_metadata_reads_theme_name_and_version() {
+        let temp = tempfile::tempdir().unwrap();
+        fs::create_dir_all(temp.path().join("config")).unwrap();
+        fs::write(
+            temp.path().join("config/settings_schema.json"),
+            r#"[{"name": "theme_info", "theme_name": "Dawn", "theme_version": "7.0.2"}]"#,
+        )
+        .unwrap();
+
+        let metadata = extract_metadata(temp.path()).unwrap();
+        assert_eq!(metadata.theme_name, "Dawn");
+        assert_eq!(metadata.theme_version, Some("7.0.2".into()));
+    }
+
+    #[test]
+    fn extract_metadata_supports_nested_theme_info_object() {
+        let temp = tempfile::tempdir().unwrap();
+        fs::create_dir_all(temp.path().join("config")).unwrap();
+        fs::write(
+            temp.path().join("config/settings_schema.json"),
+            r#"[{"theme_info": {"theme_name": "Test", "theme_version": "1.0"}}]"#,
+        )
+        .unwrap();
+
+        let metadata = extract_metadata(temp.path()).unwrap();
+        assert_eq!(metadata.theme_name, "Test");
+        assert_eq!(metadata.theme_version, Some("1.0".into()));
+    }
+
+    #[test]
+    fn extract_metadata_fails_when_schema_is_missing() {
+        let temp = tempfile::tempdir().unwrap();
+        let result = extract_metadata(temp.path());
+        assert!(matches!(result, Err(PackageError::MissingSchema)));
+    }
+
+    #[test]
+    fn extract_metadata_fails_when_theme_name_is_missing() {
+        let temp = tempfile::tempdir().unwrap();
+        fs::create_dir_all(temp.path().join("config")).unwrap();
+        fs::write(
+            temp.path().join("config/settings_schema.json"),
+            r#"[{"name": "other"}]"#,
+        )
+        .unwrap();
+
+        let result = extract_metadata(temp.path());
+        assert!(matches!(result, Err(PackageError::MissingThemeName)));
+    }
+
+    #[test]
+    fn extract_metadata_fails_on_invalid_json() {
+        let temp = tempfile::tempdir().unwrap();
+        fs::create_dir_all(temp.path().join("config")).unwrap();
+        fs::write(
+            temp.path().join("config/settings_schema.json"),
+            r#"[{"name": "theme_info", "theme_name": "Dawn", "theme_version": "7.0.2""#,
+        )
+        .unwrap();
+
+        let result = extract_metadata(temp.path());
+        assert!(matches!(result, Err(PackageError::InvalidJson(_))));
+    }
+
+    #[test]
+    fn package_theme_creates_zip_with_correct_name() {
+        let temp = tempfile::tempdir().unwrap();
+        fs::create_dir_all(temp.path().join("assets")).unwrap();
+        fs::write(temp.path().join("assets/base.css"), "body{}").unwrap();
+        fs::create_dir_all(temp.path().join("config")).unwrap();
+        fs::write(
+            temp.path().join("config/settings_schema.json"),
+            r#"[{"name": "theme_info", "theme_name": "Dawn", "theme_version": "7.0.2"}]"#,
+        )
+        .unwrap();
+        fs::create_dir_all(temp.path().join("layout")).unwrap();
+        fs::write(
+            temp.path().join("layout/theme.liquid"),
+            "{{ content_for_header }}",
+        )
+        .unwrap();
+
+        let zip_path = package_theme(temp.path()).unwrap();
+        assert!(zip_path.ends_with("Dawn-7.0.2.zip"));
+        assert!(zip_path.exists());
+    }
+
+    #[test]
+    fn package_theme_creates_zip_without_version_when_missing() {
+        let temp = tempfile::tempdir().unwrap();
+        fs::create_dir_all(temp.path().join("assets")).unwrap();
+        fs::write(temp.path().join("assets/base.css"), "body{}").unwrap();
+        fs::create_dir_all(temp.path().join("config")).unwrap();
+        fs::write(
+            temp.path().join("config/settings_schema.json"),
+            r#"[{"name": "theme_info", "theme_name": "Dawn"}]"#,
+        )
+        .unwrap();
+
+        let zip_path = package_theme(temp.path()).unwrap();
+        assert!(zip_path.ends_with("Dawn.zip"));
+    }
+
+    #[test]
+    fn package_theme_includes_listings_release_notes_and_update_extension() {
+        let temp = tempfile::tempdir().unwrap();
+        fs::create_dir_all(temp.path().join("assets")).unwrap();
+        fs::write(temp.path().join("assets/base.css"), "body{}").unwrap();
+        fs::create_dir_all(temp.path().join("config")).unwrap();
+        fs::write(
+            temp.path().join("config/settings_schema.json"),
+            r#"[{"name": "theme_info", "theme_name": "Dawn", "theme_version": "1.0.0"}]"#,
+        )
+        .unwrap();
+        fs::create_dir_all(temp.path().join("listings/b2b/templates")).unwrap();
+        fs::write(temp.path().join("listings/b2b/templates/index.json"), "{}").unwrap();
+        fs::write(temp.path().join("release-notes.md"), "# notes").unwrap();
+        fs::write(temp.path().join("update_extension.json"), "{}").unwrap();
+
+        let zip_path = package_theme(temp.path()).unwrap();
+        let bytes = fs::read(&zip_path).unwrap();
+        let as_text = String::from_utf8_lossy(&bytes);
+        assert!(as_text.contains("listings/b2b/templates/index.json"));
+        assert!(as_text.contains("release-notes.md"));
+        assert!(as_text.contains("update_extension.json"));
+        assert!(as_text.contains("assets/base.css"));
+    }
+
+    #[test]
+    fn package_theme_excludes_invalid_directories() {
+        let temp = tempfile::tempdir().unwrap();
+        fs::create_dir_all(temp.path().join("assets")).unwrap();
+        fs::write(temp.path().join("assets/base.css"), "body{}").unwrap();
+        fs::create_dir_all(temp.path().join("config/unsupported_dir")).unwrap();
+        fs::write(temp.path().join("config/unsupported_dir/extra.json"), "{}").unwrap();
+        fs::create_dir_all(temp.path().join("config")).unwrap();
+        fs::write(
+            temp.path().join("config/settings_schema.json"),
+            r#"[{"name": "theme_info", "theme_name": "Dawn"}]"#,
+        )
+        .unwrap();
+
+        let zip_path = package_theme(temp.path()).unwrap();
+        let zip_bytes = fs::read(zip_path).unwrap();
+        let zip_str = String::from_utf8_lossy(&zip_bytes);
+        assert!(!zip_str.contains("unsupported_dir"));
+        assert!(zip_str.contains("assets/base.css"));
+    }
+
+    #[test]
+    fn valid_package_theme_key_accepts_valid_keys() {
+        assert!(valid_package_theme_key("assets/theme.css"));
+        assert!(valid_package_theme_key("layout/theme.liquid"));
+        assert!(valid_package_theme_key("config/settings_schema.json"));
+        assert!(valid_package_theme_key("templates/index.json"));
+        assert!(valid_package_theme_key("templates/customers/account.json"));
+    }
+
+    #[test]
+    fn valid_package_theme_key_rejects_invalid_keys() {
+        assert!(!valid_package_theme_key("README.md"));
+        assert!(!valid_package_theme_key("assets/node_modules/package.js"));
+        assert!(!valid_package_theme_key("config/extra/file.json"));
+        assert!(!valid_package_theme_key(""));
     }
 }

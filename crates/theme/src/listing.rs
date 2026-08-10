@@ -133,8 +133,149 @@ fn overlay_json(
 #[cfg(test)]
 mod tests {
     use super::*;
+
     #[test]
     fn formats_listing_names() {
         assert_eq!(display_case("summer-sale_2026"), "Summer Sale 2026");
+    }
+
+    #[test]
+    fn available_listings_returns_empty_when_listings_directory_missing() {
+        let temp = tempfile::tempdir().unwrap();
+        let listings = available_listings(temp.path()).unwrap();
+        assert!(listings.is_empty());
+    }
+
+    #[test]
+    fn available_listings_returns_sorted_directory_names() {
+        let temp = tempfile::tempdir().unwrap();
+        let listings_dir = temp.path().join("listings");
+        fs::create_dir_all(listings_dir.join("zebra")).unwrap();
+        fs::create_dir_all(listings_dir.join("alpha")).unwrap();
+        fs::create_dir_all(listings_dir.join("beta")).unwrap();
+
+        let listings = available_listings(temp.path()).unwrap();
+        assert_eq!(listings, vec!["alpha", "beta", "zebra"]);
+    }
+
+    #[test]
+    fn validate_listing_succeeds_for_existing_listing() {
+        let temp = tempfile::tempdir().unwrap();
+        fs::create_dir_all(temp.path().join("listings").join("modern")).unwrap();
+
+        let path = validate_listing(temp.path(), "modern").unwrap();
+        assert!(path.ends_with("listings/modern"));
+    }
+
+    #[test]
+    fn validate_listing_is_case_insensitive() {
+        let temp = tempfile::tempdir().unwrap();
+        fs::create_dir_all(temp.path().join("listings").join("modern")).unwrap();
+
+        let path = validate_listing(temp.path(), "MODERN").unwrap();
+        assert!(path.ends_with("listings/modern"));
+    }
+
+    #[test]
+    fn validate_listing_fails_with_not_found_error() {
+        let temp = tempfile::tempdir().unwrap();
+        fs::create_dir_all(temp.path().join("listings").join("modern")).unwrap();
+
+        let result = validate_listing(temp.path(), "classic");
+        assert!(matches!(result, Err(ListingError::NotFound { .. })));
+    }
+
+    #[test]
+    fn validate_listing_fails_with_no_presets_when_directory_missing() {
+        let temp = tempfile::tempdir().unwrap();
+
+        let result = validate_listing(temp.path(), "modern");
+        assert!(matches!(result, Err(ListingError::NoPresets(_))));
+    }
+
+    #[test]
+    fn apply_listing_overlays_template_and_section_json() {
+        let temp = tempfile::tempdir().unwrap();
+        let listing_dir = temp.path().join("listings").join("modern");
+        fs::create_dir_all(listing_dir.join("templates")).unwrap();
+        fs::create_dir_all(listing_dir.join("sections")).unwrap();
+        fs::write(
+            listing_dir.join("templates").join("index.json"),
+            r#"{"sections": {"main": {"type": "main"}}}"#,
+        )
+        .unwrap();
+        fs::write(
+            listing_dir.join("sections").join("header.json"),
+            r#"{"name": "header"}"#,
+        )
+        .unwrap();
+
+        let mut assets = BTreeMap::new();
+        assets.insert(
+            "config/settings_data.json".into(),
+            ThemeAsset {
+                key: "config/settings_data.json".into(),
+                checksum: String::new(),
+                attachment: None,
+                value: Some(r#"{"current":"Default"}"#.into()),
+                stats: None,
+            },
+        );
+
+        apply_listing(temp.path(), "modern", &mut assets).unwrap();
+
+        assert!(assets.contains_key("templates/index.json"));
+        assert!(assets.contains_key("sections/header.json"));
+        assert_eq!(
+            assets
+                .get("config/settings_data.json")
+                .unwrap()
+                .value
+                .as_deref(),
+            Some("{\n  \"current\": \"Modern\"\n}")
+        );
+    }
+
+    #[test]
+    fn apply_listing_does_not_overlay_non_json_files() {
+        let temp = tempfile::tempdir().unwrap();
+        let listing_dir = temp.path().join("listings").join("modern");
+        fs::create_dir_all(listing_dir.join("sections")).unwrap();
+        fs::write(listing_dir.join("sections").join("header.liquid"), "html").unwrap();
+
+        let mut assets = BTreeMap::new();
+        apply_listing(temp.path(), "modern", &mut assets).unwrap();
+
+        assert!(!assets.contains_key("sections/header.liquid"));
+    }
+
+    #[test]
+    fn apply_listing_preserves_settings_data_when_json_is_malformed() {
+        let temp = tempfile::tempdir().unwrap();
+        let listing_dir = temp.path().join("listings").join("modern");
+        fs::create_dir_all(listing_dir.join("templates")).unwrap();
+        fs::write(listing_dir.join("templates").join("index.json"), "{}").unwrap();
+
+        let mut assets = BTreeMap::new();
+        assets.insert(
+            "config/settings_data.json".into(),
+            ThemeAsset {
+                key: "config/settings_data.json".into(),
+                checksum: String::new(),
+                attachment: None,
+                value: Some("not valid json".into()),
+                stats: None,
+            },
+        );
+
+        apply_listing(temp.path(), "modern", &mut assets).unwrap();
+        assert_eq!(
+            assets
+                .get("config/settings_data.json")
+                .unwrap()
+                .value
+                .as_deref(),
+            Some("not valid json")
+        );
     }
 }

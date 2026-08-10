@@ -140,6 +140,7 @@ fn has_value(flags: &EnvironmentFlags, flag: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
 
     #[test]
     fn validates_required_flags() {
@@ -159,5 +160,157 @@ mod tests {
             missing_required_flags(&flags, &[RequiredFlag::Flag("path")]),
             vec!["path"]
         );
+    }
+
+    #[test]
+    fn load_environment_reads_toml_and_returns_flags() {
+        let temp = tempfile::tempdir().unwrap();
+        let toml_path = temp.path().join("shopify.theme.toml");
+        fs::write(
+            &toml_path,
+            r#"
+[environments.production]
+store = "shop.myshopify.com"
+password = "secret"
+"#,
+        )
+        .unwrap();
+
+        let flags = load_environment("production", temp.path()).unwrap();
+        assert_eq!(
+            flags.get("store").and_then(Value::as_str),
+            Some("shop.myshopify.com")
+        );
+        assert_eq!(
+            flags.get("password").and_then(Value::as_str),
+            Some("secret")
+        );
+    }
+
+    #[test]
+    fn load_environment_fails_when_file_not_found() {
+        let temp = tempfile::tempdir().unwrap();
+        let result = load_environment("production", temp.path());
+        assert!(matches!(result, Err(ConfigError::FileNotFound)));
+    }
+
+    #[test]
+    fn load_environment_fails_when_no_environments_section() {
+        let temp = tempfile::tempdir().unwrap();
+        fs::write(
+            temp.path().join("shopify.theme.toml"),
+            r#"store = "shop.myshopify.com""#,
+        )
+        .unwrap();
+
+        let result = load_environment("production", temp.path());
+        assert!(matches!(result, Err(ConfigError::NoEnvironments(_))));
+    }
+
+    #[test]
+    fn load_environment_fails_when_environment_not_found() {
+        let temp = tempfile::tempdir().unwrap();
+        fs::write(
+            temp.path().join("shopify.theme.toml"),
+            r#"
+[environments.production]
+store = "shop.myshopify.com"
+"#,
+        )
+        .unwrap();
+
+        let result = load_environment("staging", temp.path());
+        assert!(matches!(result, Err(ConfigError::EnvironmentNotFound(_))));
+    }
+
+    #[test]
+    fn find_path_up_searches_current_directory() {
+        let temp = tempfile::tempdir().unwrap();
+        fs::write(temp.path().join("shopify.theme.toml"), "").unwrap();
+
+        assert_eq!(
+            find_path_up("shopify.theme.toml", temp.path()),
+            Some(temp.path().join("shopify.theme.toml"))
+        );
+    }
+
+    #[test]
+    fn find_path_up_searches_parent_directories() {
+        let temp = tempfile::tempdir().unwrap();
+        let child = temp.path().join("child");
+        fs::create_dir_all(&child).unwrap();
+        fs::write(temp.path().join("shopify.theme.toml"), "").unwrap();
+
+        assert_eq!(
+            find_path_up("shopify.theme.toml", &child),
+            Some(temp.path().join("shopify.theme.toml"))
+        );
+    }
+
+    #[test]
+    fn find_path_up_returns_none_when_not_found() {
+        let temp = tempfile::tempdir().unwrap();
+        assert_eq!(find_path_up("shopify.theme.toml", temp.path()), None);
+    }
+
+    #[test]
+    fn find_path_up_starts_from_parent_when_given_file() {
+        let temp = tempfile::tempdir().unwrap();
+        fs::write(temp.path().join("shopify.theme.toml"), "").unwrap();
+        let file_path = temp.path().join("sub").join("file.txt");
+        fs::create_dir_all(file_path.parent().unwrap()).unwrap();
+        fs::write(&file_path, "").unwrap();
+
+        assert_eq!(
+            find_path_up("shopify.theme.toml", &file_path),
+            Some(temp.path().join("shopify.theme.toml"))
+        );
+    }
+
+    #[test]
+    fn value_as_string_converts_strings_numbers_and_bools() {
+        assert_eq!(
+            value_as_string(&Value::String("hello".into())),
+            Some("hello".into())
+        );
+        assert_eq!(
+            value_as_string(&Value::Number(42.into())),
+            Some("42".into())
+        );
+        assert_eq!(value_as_string(&Value::Bool(true)), Some("true".into()));
+        assert_eq!(value_as_string(&Value::Null), None);
+        assert_eq!(value_as_string(&Value::Array(vec![])), None);
+    }
+
+    #[test]
+    fn value_as_bool_parses_native_and_string_bools() {
+        assert_eq!(value_as_bool(&Value::Bool(true)), Some(true));
+        assert_eq!(value_as_bool(&Value::Bool(false)), Some(false));
+        assert_eq!(value_as_bool(&Value::String("true".into())), Some(true));
+        assert_eq!(value_as_bool(&Value::String("TRUE".into())), Some(true));
+        assert_eq!(value_as_bool(&Value::String("yes".into())), Some(true));
+        assert_eq!(value_as_bool(&Value::String("1".into())), Some(true));
+        assert_eq!(value_as_bool(&Value::String("false".into())), Some(false));
+        assert_eq!(value_as_bool(&Value::String("FALSE".into())), Some(false));
+        assert_eq!(value_as_bool(&Value::String("no".into())), Some(false));
+        assert_eq!(value_as_bool(&Value::String("0".into())), Some(false));
+        assert_eq!(value_as_bool(&Value::String("maybe".into())), None);
+        assert_eq!(value_as_bool(&Value::Null), None);
+    }
+
+    #[test]
+    fn value_as_strings_wraps_single_value_and_unwraps_array() {
+        assert_eq!(
+            value_as_strings(&Value::String("a".into())),
+            Some(vec!["a".into()])
+        );
+        assert_eq!(
+            value_as_strings(&Value::Array(vec![
+                Value::String("a".into()),
+                Value::String("b".into())
+            ])),
+            Some(vec!["a".into(), "b".into()])
+        );
+        assert_eq!(value_as_strings(&Value::Null), None);
     }
 }

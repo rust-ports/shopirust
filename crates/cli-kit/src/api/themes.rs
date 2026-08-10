@@ -1,4 +1,4 @@
-use crate::api::admin::{admin_request_doc, AdminError};
+use crate::api::admin::{admin_request_doc_with_retry, AdminError};
 use crate::api::generated::graphql::admin::find_development_theme_by_name::{
     FindDevelopmentThemeByNameResponse, FindDevelopmentThemeByNameThemesNodes,
     FindDevelopmentThemeByNameVariables, FIND_DEVELOPMENT_THEME_BY_NAME_QUERY,
@@ -53,9 +53,11 @@ use crate::api::generated::graphql::admin::types::{
     ThemeRole,
 };
 use crate::api::graphql::GraphqlRequestError;
+use crate::api::rest_api_throttler::RestResponse;
 use crate::session::AdminSession;
+use crate::util::retry::RetryConfig;
 use serde::{Deserialize, Serialize};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 pub type Key = String;
 
@@ -210,7 +212,7 @@ pub async fn fetch_theme(
     id: i64,
     session: &AdminSession,
 ) -> std::result::Result<Option<Theme>, AdminError> {
-    let response: GetThemeResponse = request_theme_admin_doc(
+    let response: GetThemeResponse = match request_theme_admin_doc(
         GET_THEME_QUERY,
         session,
         Some(GetThemeVariables {
@@ -218,7 +220,12 @@ pub async fn fetch_theme(
         }),
         "Failed to fetch theme",
     )
-    .await?;
+    .await
+    {
+        Ok(response) => response,
+        Err(error) if is_missing_theme_access_error(&error) => return Err(error),
+        Err(_) => return Ok(None),
+    };
 
     response.theme.map(build_theme_from_get_theme).transpose()
 }
@@ -646,6 +653,23 @@ pub async fn metafield_definitions_by_owner_type(
         .collect())
 }
 
+pub async fn create_or_update_theme_preview(
+    payload: theme::preview::ThemePreviewPayload,
+    session: &AdminSession,
+) -> std::result::Result<theme::preview::ThemePreview, AdminError> {
+    let client = crate::api::admin::AdminClient::new(session.clone());
+    let response: RestResponse<serde_json::Value> = client
+        .post("/theme_preview.json", payload.to_admin_json())
+        .await
+        .map_err(|error| {
+            AdminError::Abort(format!("Failed to create theme preview: {error}"), None)
+        })?;
+
+    theme::preview::parse_preview_response(response.body).map_err(|error| {
+        AdminError::Abort(format!("Failed to create theme preview: {error}"), None)
+    })
+}
+
 pub async fn password_protected(session: &AdminSession) -> std::result::Result<bool, AdminError> {
     let response: OnlineStorePasswordProtectionResponse = request_theme_admin_doc(
         ONLINE_STORE_PASSWORD_PROTECTION_QUERY,
@@ -763,13 +787,42 @@ where
     T: serde::de::DeserializeOwned,
     V: serde::Serialize,
 {
-    admin_request_doc(query, session, variables)
+    admin_request_doc_with_retry(query, session, variables, theme_api_retry_config())
         .await
         .map_err(|error| graphql_to_admin_error(context, error))
 }
 
+fn theme_api_retry_config() -> RetryConfig {
+    RetryConfig {
+        max_retry_time: Duration::from_secs(90),
+        ..RetryConfig::default()
+    }
+}
+
 fn graphql_to_admin_error(context: &str, error: GraphqlRequestError) -> AdminError {
+    if let GraphqlRequestError::ApiError(message, _) = &error {
+        if message.contains("The authenticated account or access token is missing") {
+            return AdminError::Abort(message.clone(), Some(theme_access_next_steps()));
+        }
+    }
     AdminError::Abort(format!("{context}: {error}"), None)
+}
+
+fn is_missing_theme_access_error(error: &AdminError) -> bool {
+    error
+        .to_string()
+        .contains("The authenticated account or access token is missing")
+}
+
+fn theme_access_next_steps() -> String {
+    [
+        "If you authenticated with an Admin API access token, update the app or integration that issued the token to include the required theme access scopes, then reauthorize it or generate a new token.",
+        "For theme pull, theme list, and theme info, add the read_themes scope.",
+        "For theme push and theme dev, add both the read_themes and write_themes scopes.",
+        "If you authenticated with your Shopify account, make sure your staff or collaborator account can access Online Store themes, then run shopify auth logout and try again.",
+        "See Shopify access scopes: https://shopify.dev/api/usage/access-scopes.",
+    ]
+    .join("\n")
 }
 
 fn abort_on_user_errors(
@@ -1084,5 +1137,51 @@ mod tests {
         assert_eq!(base64_encode(b"f"), "Zg==");
         assert_eq!(base64_encode(b"fo"), "Zm8=");
         assert_eq!(base64_encode(b"foo"), "Zm9v");
+    }
+
+    #[test]
+    fn theme_access_denied_error_keeps_upstream_headline_and_next_steps() {
+        let error = graphql_to_admin_error(
+            "Failed to fetch theme",
+            GraphqlRequestError::ApiError(
+                "The authenticated account or access token is missing `read_themes` access scope."
+                    .into(),
+                200,
+            ),
+        );
+
+        assert_eq!(
+            error.to_string(),
+            "The authenticated account or access token is missing `read_themes` access scope."
+        );
+        match error {
+            AdminError::Abort(_, Some(next_steps)) => {
+                assert!(next_steps.contains("read_themes"));
+                assert!(next_steps.contains("write_themes"));
+                assert!(next_steps.contains("shopify auth logout"));
+            }
+            other => panic!("expected abort with next steps, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn non_theme_access_graphql_errors_keep_context() {
+        let error = graphql_to_admin_error(
+            "Failed to fetch theme",
+            GraphqlRequestError::ApiError("Tema não existe".into(), 200),
+        );
+
+        assert_eq!(
+            error.to_string(),
+            "Failed to fetch theme: GraphQL API error (HTTP 200): Tema não existe"
+        );
+    }
+
+    #[test]
+    fn theme_api_retry_config_matches_upstream_max_retry_time() {
+        assert_eq!(
+            theme_api_retry_config().max_retry_time,
+            Duration::from_secs(90)
+        );
     }
 }

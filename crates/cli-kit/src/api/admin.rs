@@ -5,6 +5,7 @@ use crate::api::graphql::{GraphqlClient, GraphqlRequestError};
 use crate::api::rest_api_throttler::{RestClient, RestError, RestResponse};
 use crate::error::{abort_error, bug_error, FatalError};
 pub use crate::session::AdminSession;
+use crate::util::retry::RetryConfig;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
@@ -193,6 +194,21 @@ where
     V: Serialize,
 {
     admin_request(query, session, variables).await
+}
+
+pub async fn admin_request_doc_with_retry<T, V>(
+    query: &str,
+    session: &AdminSession,
+    variables: Option<V>,
+    retry_config: RetryConfig,
+) -> Result<T, GraphqlRequestError>
+where
+    T: DeserializeOwned,
+    V: Serialize,
+{
+    AdminClient::new(session.clone())
+        .query_with_retry(query, variables, retry_config)
+        .await
 }
 
 /// Execute an Admin REST request with the same session-per-call shape as the
@@ -406,6 +422,22 @@ impl AdminClient {
             .await
             .map_err(|e| GraphqlRequestError::ApiError(e.to_string(), 0))?;
         let client = self.graphql_client_for_version(&version);
+        client.query_with_variables(query, variables).await
+    }
+
+    pub async fn query_with_retry<T: DeserializeOwned, V: serde::Serialize>(
+        &self,
+        query: &str,
+        variables: Option<V>,
+        retry_config: RetryConfig,
+    ) -> Result<T, GraphqlRequestError> {
+        let version = self
+            .fetch_latest_api_version()
+            .await
+            .map_err(|e| GraphqlRequestError::ApiError(e.to_string(), 0))?;
+        let client = self
+            .graphql_client_for_version(&version)
+            .with_retry(retry_config);
         client.query_with_variables(query, variables).await
     }
 

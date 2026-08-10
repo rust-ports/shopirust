@@ -107,4 +107,60 @@ mod tests {
         assert_eq!(info.shell, "unknown");
         assert_eq!(info.node_version, "node-rust");
     }
+
+    #[test]
+    fn theme_preview_url_returns_base_url_for_live_theme() {
+        let theme = Theme {
+            id: 1,
+            name: "Live".into(),
+            created_at_runtime: false,
+            processing: false,
+            role: LIVE_THEME_ROLE.into(),
+            src: None,
+        };
+        assert_eq!(
+            theme_preview_url(&theme, "shop.myshopify.com"),
+            "https://shop.myshopify.com"
+        );
+    }
+
+    #[test]
+    fn theme_preview_url_returns_preview_url_for_non_live_theme() {
+        let theme = Theme {
+            id: 42,
+            name: "Dev".into(),
+            created_at_runtime: false,
+            processing: false,
+            role: DEVELOPMENT_THEME_ROLE.into(),
+            src: None,
+        };
+        assert_eq!(
+            theme_preview_url(&theme, "shop.myshopify.com"),
+            "https://shop.myshopify.com?preview_theme_id=42"
+        );
+    }
+
+    #[test]
+    fn theme_editor_url_formats_correctly() {
+        let theme = Theme {
+            id: 7,
+            name: "Test".into(),
+            created_at_runtime: false,
+            processing: false,
+            role: UNPUBLISHED_THEME_ROLE.into(),
+            src: None,
+        };
+        assert_eq!(
+            theme_editor_url(&theme, "shop.myshopify.com"),
+            "https://shop.myshopify.com/admin/themes/7/editor"
+        );
+    }
+
+    #[test]
+    fn role_rank_sorts_allowed_roles() {
+        assert_eq!(role_rank(LIVE_THEME_ROLE), 0);
+        assert_eq!(role_rank(UNPUBLISHED_THEME_ROLE), 1);
+        assert_eq!(role_rank(DEVELOPMENT_THEME_ROLE), 2);
+        assert_eq!(role_rank("demo"), 3);
+    }
 }

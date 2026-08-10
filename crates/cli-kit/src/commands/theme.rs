@@ -5,7 +5,7 @@ use crate::output::public_api::{
     render_confirmation_prompt, render_select_prompt, render_text_prompt,
 };
 use crate::output::{
-    output_info, output_result, output_success, output_warn, OutputContent, Token,
+    output_debug, output_info, output_result, output_success, output_warn, OutputContent, Token,
 };
 use crate::session::public::session::ensure_authenticated_storefront;
 use crate::session::{ensure_authenticated_themes, AdminSession, EnsureAuthenticatedOptions};
@@ -17,6 +17,7 @@ use cli_core::command::TopicCommand;
 use cli_core::error::CliError;
 use futures::future::join_all;
 use serde_json::json;
+use std::collections::BTreeMap;
 use std::future::Future;
 use std::path::PathBuf;
 use std::pin::Pin;
@@ -27,10 +28,13 @@ use theme::config::{
 };
 use theme::local_storage::{
     current_theme_store, development_theme_id_for_store, host_theme_id,
-    remove_development_theme_id_for_store, remove_host_theme_id, store_current_theme_store,
-    store_development_theme_id_for_store,
+    remove_development_theme_id_for_store, remove_host_theme_id,
+    remove_storefront_password_for_store, store_current_theme_store,
+    store_development_theme_id_for_store, store_storefront_password_for_store,
+    storefront_password_for_store,
 };
 use theme::models::{theme_editor_url, theme_environment_info_json, theme_preview_url, Theme};
+use theme::preview::{ThemePreviewError, ThemePreviewHttpClient, ThemePreviewPayload};
 use theme::selector::ThemeFilter;
 use theme::services::{
     duplicate_json, theme_info_json, to_pretty_json, DuplicateResult, ListOptions, ThemeAdmin,
@@ -246,6 +250,10 @@ fn reject_global_path_for_multi(flags: &ThemeFlags) -> Result<(), CliError> {
     Ok(())
 }
 
+fn format_environment_failure(environment: &str, error: &impl std::fmt::Display) -> String {
+    format!("Environment {environment} failed:\n\n{error}")
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ThemeCommandEnvironment {
     pub environment: String,
@@ -337,7 +345,7 @@ impl ThemeCommandRunner {
 
             for (environment_name, result) in join_all(futures).await {
                 if let Err(error) = result {
-                    output_warn(format!("Environment {environment_name} failed:\n\n{error}"));
+                    output_warn(format_environment_failure(&environment_name, &error));
                 }
             }
         }
@@ -705,6 +713,21 @@ impl ThemeAdmin for AdminApi<'_> {
             .map_err(|error| ThemeServiceError::Api(error.to_string()))
     }
 
+    async fn create_theme(&self, name: String, role: String) -> Result<Theme, ThemeServiceError> {
+        api::themes::theme_create(
+            api::themes::ThemeParams {
+                name: Some(name),
+                role: Some(role),
+                ..Default::default()
+            },
+            self.session,
+        )
+        .await
+        .map(|opt| opt.map(from_api_theme))
+        .map_err(|error| ThemeServiceError::Api(error.to_string()))?
+        .ok_or_else(|| ThemeServiceError::Api("Failed to create theme".into()))
+    }
+
     async fn update_theme_name(
         &self,
         id: i64,
@@ -721,6 +744,30 @@ impl ThemeAdmin for AdminApi<'_> {
         .await
         .map(|theme| theme.map(from_api_theme))
         .map_err(|error| ThemeServiceError::Api(error.to_string()))
+    }
+}
+
+#[async_trait]
+impl ThemePreviewHttpClient for AdminApi<'_> {
+    async fn post_theme_preview(
+        &self,
+        payload: ThemePreviewPayload,
+    ) -> Result<theme::preview::ThemePreview, ThemePreviewError> {
+        api::themes::create_or_update_theme_preview(payload, self.session)
+            .await
+            .map_err(|error| ThemePreviewError::Api(error.to_string()))
+    }
+}
+
+#[async_trait]
+impl MetafieldsAdmin for AdminApi<'_> {
+    async fn metafield_definitions_by_owner_type(
+        &self,
+        owner_type: MetafieldOwnerType,
+    ) -> Result<Vec<api::themes::MetafieldDefinition>, String> {
+        api::themes::metafield_definitions_by_owner_type(owner_type, self.session)
+            .await
+            .map_err(|error| error.to_string())
     }
 }
 
@@ -803,6 +850,72 @@ impl ThemeSyncAdmin for AdminApi<'_> {
     }
 }
 
+#[async_trait]
+impl theme::console::ConsoleAdmin for AdminApi<'_> {
+    async fn fetch_theme(&self, id: i64) -> Result<Option<Theme>, theme::console::ConsoleError> {
+        api::themes::fetch_theme(id, self.session)
+            .await
+            .map(|theme| theme.map(from_api_theme))
+            .map_err(|error| theme::console::ConsoleError::Api(error.to_string()))
+    }
+
+    async fn create_theme(
+        &self,
+        name: String,
+        role: String,
+    ) -> Result<Theme, theme::console::ConsoleError> {
+        api::themes::theme_create(
+            api::themes::ThemeParams {
+                name: Some(name),
+                role: Some(role),
+                ..Default::default()
+            },
+            self.session,
+        )
+        .await
+        .map_err(|error| theme::console::ConsoleError::Api(error.to_string()))?
+        .map(from_api_theme)
+        .ok_or_else(|| theme::console::ConsoleError::Api("Failed to create theme".into()))
+    }
+
+    async fn upload_assets(
+        &self,
+        theme_id: i64,
+        assets: Vec<theme::filesystem::ThemeAsset>,
+    ) -> Result<(), theme::console::ConsoleError> {
+        let results = api::themes::bulk_upload_theme_assets(
+            theme_id,
+            assets
+                .into_iter()
+                .map(|asset| api::themes::AssetParams {
+                    key: asset.key,
+                    value: asset.value,
+                    attachment: asset.attachment,
+                })
+                .collect(),
+            self.session,
+        )
+        .await
+        .map_err(|error| theme::console::ConsoleError::Api(error.to_string()))?;
+
+        let errors = results
+            .into_iter()
+            .filter(|result| !result.success)
+            .flat_map(|result| {
+                result
+                    .errors
+                    .and_then(|errors| errors.asset)
+                    .unwrap_or_default()
+            })
+            .collect::<Vec<_>>();
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(theme::console::ConsoleError::Api(errors.join(", ")))
+        }
+    }
+}
+
 fn api_result(result: api::themes::ThemeOperationResult) -> RemoteResult {
     RemoteResult {
         key: result.key,
@@ -847,6 +960,16 @@ async fn select_or_prompt_theme<A: ThemeAdmin + Sync>(
     store: &str,
     filter: &ThemeFilter,
     header: &str,
+) -> Result<Theme, ThemeServiceError> {
+    select_or_prompt_theme_with_options(api, store, filter, header, false).await
+}
+
+async fn select_or_prompt_theme_with_options<A: ThemeAdmin + Sync>(
+    api: &A,
+    store: &str,
+    filter: &ThemeFilter,
+    header: &str,
+    _include_all_development_themes: bool,
 ) -> Result<Theme, ThemeServiceError> {
     if filter.any() {
         return theme::services::select_theme(api, store, filter).await;
@@ -918,7 +1041,7 @@ fn print_theme_table(themes: &[Theme], store: &str) {
 pub struct List {
     #[command(flatten)]
     common: ThemeFlags,
-    #[arg(long, env = "SHOPIFY_FLAG_JSON")]
+    #[arg(short = 'j', long, env = "SHOPIFY_FLAG_JSON")]
     json: bool,
     #[arg(long, env = "SHOPIFY_FLAG_ROLE")]
     role: Option<Role>,
@@ -1005,7 +1128,7 @@ impl List {
 pub struct Info {
     #[command(flatten)]
     common: ThemeFlags,
-    #[arg(long, env = "SHOPIFY_FLAG_JSON")]
+    #[arg(short = 'j', long, env = "SHOPIFY_FLAG_JSON")]
     json: bool,
     #[arg(short = 'd', long, env = "SHOPIFY_FLAG_DEVELOPMENT")]
     development: bool,
@@ -1285,11 +1408,12 @@ impl Delete {
                 .await
                 .map_err(service_error)?
         } else {
-            let theme = select_or_prompt_theme(
+            let theme = select_or_prompt_theme_with_options(
                 &api,
                 &session.store_fqdn,
                 &filter,
                 &format!("Select a theme to delete from {}", session.store_fqdn),
+                self.show_all,
             )
             .await
             .map_err(service_error)?;
@@ -1332,7 +1456,7 @@ impl Delete {
 pub struct Duplicate {
     #[command(flatten)]
     common: ThemeFlags,
-    #[arg(long, env = "SHOPIFY_FLAG_JSON")]
+    #[arg(short = 'j', long, env = "SHOPIFY_FLAG_JSON")]
     json: bool,
     #[arg(short = 't', long, env = "SHOPIFY_FLAG_THEME_ID")]
     theme: Option<String>,
@@ -1675,7 +1799,11 @@ impl Publish {
 
 #[derive(Debug, Clone, Args)]
 pub struct Check {
-    #[arg(long, env = "SHOPIFY_FLAG_PATH", value_parser = parse_existing_directory)]
+    #[arg(
+        long,
+        env = "SHOPIFY_FLAG_PATH",
+        value_parser = parse_existing_directory
+    )]
     path: Option<PathBuf>,
     #[arg(short = 'a', long = "auto-correct", env = "SHOPIFY_FLAG_AUTO_CORRECT")]
     auto_correct: bool,
@@ -1752,16 +1880,75 @@ impl Console {
     async fn run(self) -> Result<(), CliError> {
         let session = session_for(&self.common).await?;
         let url = self.url.unwrap_or_else(|| "/".into());
-        let password_hint = if self.store_password.is_some() {
-            " with a storefront password"
+        let api = AdminApi { session: &session };
+        let manager =
+            theme::console::ReplThemeManager::new(&session.store_fqdn, env!("CARGO_PKG_VERSION"));
+        let repl_theme = manager.find_or_create(&api).await.map_err(console_error)?;
+
+        let storefront_password = if api::themes::password_protected(&session)
+            .await
+            .map_err(|error| CliError::abort(error.to_string()))?
+        {
+            storefront_password_for_dev(&session, self.store_password.clone()).await?
         } else {
-            ""
+            None
         };
-        Err(CliError::abort(format!(
-            "Theme console requires the storefront Liquid renderer transport, which is not available in this Rust port yet. Storefront session for {} and URL {}{} were resolved successfully.",
-            session.store_fqdn, url, password_hint
-        )))
+
+        output_info("Welcome to Shopify Liquid console\n(press Ctrl + C to exit)");
+
+        if self
+            .common
+            .password
+            .as_deref()
+            .is_some_and(|password| password.starts_with("shpat_"))
+        {
+            return Err(CliError::abort(theme::console::ADMIN_TOKEN_ERROR)
+                .with_next_steps(theme::console::ADMIN_TOKEN_NEXT_STEPS));
+        }
+
+        let storefront_token = ensure_authenticated_storefront(
+            Vec::new(),
+            self.common.password.clone(),
+            EnsureAuthenticatedOptions {
+                no_prompt: true,
+                ..EnsureAuthenticatedOptions::default()
+            },
+        )
+        .await
+        .map_err(|error| CliError::abort(error.to_string()))?;
+        let theme_access = session.token.starts_with("shptka_");
+        let dev_session = build_dev_server_session(
+            repl_theme.id,
+            &session,
+            Some(storefront_token),
+            theme_access,
+            storefront_password.clone(),
+        )
+        .await?;
+        let refresh_rx = start_dev_session_refresh(
+            repl_theme.id,
+            session.clone(),
+            self.common.password.clone(),
+            theme_access,
+            storefront_password,
+            Vec::new(),
+        );
+        let renderer = theme::console::ReqwestStorefrontRenderer::new().map_err(console_error)?;
+        theme::console::run_repl_stdio_with_refresh(
+            &renderer,
+            dev_session.into(),
+            repl_theme.id.to_string(),
+            url,
+            Some(refresh_rx),
+        )
+        .await
+        .map_err(console_error)
     }
+}
+
+fn console_error(error: theme::console::ConsoleError) -> CliError {
+    output_debug(format!("{error:?}"));
+    CliError::abort(error.to_string())
 }
 
 #[derive(Debug, Clone, Args)]
@@ -1813,6 +2000,9 @@ pub struct Dev {
     allow_live: bool,
 }
 
+/// Upstream theme-environment always enables the standard-events Dev bundle for `theme dev`.
+const STANDARD_EVENTS_DEV_BUNDLE: bool = true;
+
 impl Dev {
     async fn run(self) -> Result<(), CliError> {
         let live_reload = theme::dev::LiveReloadMode::parse(&self.live_reload)
@@ -1826,7 +2016,30 @@ impl Dev {
             .map_err(|error| CliError::abort(error.to_string()))?;
         let root = self.common.path.clone().unwrap_or_else(cwd_path);
         if !self.force && !recognizable_theme(&root) {
-            return Err(CliError::abort("The directory doesn't appear to contain a Shopify theme. Use --force to proceed anyway."));
+            if !theme::utilities::theme_ui::ensure_directory_confirmed(
+                self.force, None, None, false,
+            )
+            .await
+            .map_err(|error| CliError::abort(error.to_string()))?
+            {
+                return Ok(());
+            }
+        }
+        if self
+            .common
+            .password
+            .as_deref()
+            .is_some_and(|password| password.starts_with("shpat_"))
+        {
+            output_warn(OutputContent::new().add(Token::Raw(
+                "Admin API token missing features:\n\
+                 Directly using an Admin API token will result in some missing features.\n\
+                 We recommend generating a password from the Theme Access app.\n\
+                 Alternatively, you can authenticate normally by not passing the --password flag.\n\
+                 Known limitations: Hot module reloading, Password protected storefronts.\n\
+                 Theme Access app: https://shopify.dev/docs/storefronts/themes/tools/theme-access"
+                    .into(),
+            )));
         }
         let session = session_for(&self.common).await?;
         let storefront_token = ensure_authenticated_storefront(
@@ -1886,8 +2099,7 @@ impl Dev {
             ignore: self.glob.ignore,
             ..Default::default()
         };
-        let mut filesystem = theme::filesystem::ThemeFileSystem::scan(&root, filters.clone())
-            .map_err(|error| CliError::abort(error.to_string()))?;
+        let mut filesystem = build_dev_filesystem(&root, filters.clone(), self.listing.as_deref())?;
         let options = theme::dev::DevServerOptions {
             root: root.clone(),
             host,
@@ -1897,6 +2109,8 @@ impl Dev {
             error_overlay,
             poll: self.poll,
             theme_editor_sync: self.theme_editor_sync,
+            // Always true for `theme dev` (matches upstream theme-environment).
+            standard_events_dev_bundle: STANDARD_EVENTS_DEV_BUNDLE,
             standard_events_inspector: self.standard_events_inspector,
             nodelete: self.nodelete,
             filters,
@@ -1938,7 +2152,8 @@ impl Dev {
             session.clone(),
             self.common.password.clone(),
             theme_access,
-            storefront_password,
+            storefront_password.clone(),
+            vec!["devtools".into()],
         );
         let dev_theme = theme::dev::DevServerTheme {
             id: selected.id,
@@ -1949,6 +2164,7 @@ impl Dev {
             options,
             session: dev_session,
             theme: dev_theme,
+            kind: theme::dev::DevServerKind::Theme,
         };
         let urls = theme::dev::build_urls(&ctx);
         if self.open {
@@ -1962,16 +2178,23 @@ impl Dev {
             "Synced theme '{}' (#{}) to {}.",
             selected.name, selected.id, session.store_fqdn
         ));
-        output_info(format!("Local: {}", urls.local));
-        output_info(format!("Preview: {}", urls.preview));
-        output_info(format!("Editor: {}", urls.editor));
-        output_info(format!("Gift card: {}", urls.gift_card));
+        for line in theme::dev::render_dev_links(&urls) {
+            output_info(line);
+        }
         let handle = theme::dev::run_dev_server(
             &api,
             ctx,
             filesystem,
             theme::dev::DevServerRuntime {
                 refresh_rx: Some(refresh_rx),
+                refresh: Some(build_dev_session_refresh(
+                    selected.id,
+                    session.clone(),
+                    self.common.password.clone(),
+                    theme_access,
+                    storefront_password,
+                    vec!["devtools".into()],
+                )),
                 terminal_controls: true,
             },
         )
@@ -1980,6 +2203,24 @@ impl Dev {
         output_info(format!("Stopped dev server at {}", handle.urls.local));
         Ok(())
     }
+}
+
+fn build_dev_filesystem(
+    root: &std::path::Path,
+    filters: theme::ignore::IgnoreFilters,
+    listing: Option<&str>,
+) -> Result<theme::filesystem::ThemeFileSystem, CliError> {
+    if let Some(listing) = listing {
+        theme::listing::validate_listing(root, listing)
+            .map_err(|error| CliError::abort(error.to_string()))?;
+    }
+    let mut filesystem = theme::filesystem::ThemeFileSystem::scan(root, filters)
+        .map_err(|error| CliError::abort(error.to_string()))?;
+    if let Some(listing) = listing {
+        theme::listing::apply_listing(root, listing, &mut filesystem.files)
+            .map_err(|error| CliError::abort(error.to_string()))?;
+    }
+    Ok(filesystem)
 }
 
 fn prompt_json_reconciliation_plan(
@@ -2056,21 +2297,45 @@ async fn storefront_password_for_dev(
     if !protected {
         return Ok(None);
     }
-    let password = match password {
-        Some(password) => password,
-        None if prompts_available() => {
-            render_text_prompt("Storefront password").map_err(|error| {
-                CliError::abort(format!("Unable to read storefront password: {error}"))
-            })?
-        }
-        None => {
-            return Err(CliError::abort(
-                "A storefront password is required because the store is password protected.",
-            ))
-        }
+    let stored_password = if password.is_none() {
+        storefront_password_for_store(&session.store_fqdn)
+    } else {
+        None
     };
-    verify_storefront_password(&session.store_fqdn, &password).await?;
-    Ok(Some(password))
+    let from_storage = stored_password.is_some();
+    let mut password = match password {
+        Some(password) => password,
+        None => stored_password.unwrap_or_default(),
+    };
+
+    if password.is_empty() {
+        password = prompt_storefront_password()?;
+    }
+
+    match verify_storefront_password(&session.store_fqdn, &password).await {
+        Ok(()) => {
+            store_storefront_password_for_store(&session.store_fqdn, &password);
+            Ok(Some(password))
+        }
+        Err(_error) if from_storage && prompts_available() => {
+            remove_storefront_password_for_store(&session.store_fqdn);
+            let password = prompt_storefront_password()?;
+            verify_storefront_password(&session.store_fqdn, &password).await?;
+            store_storefront_password_for_store(&session.store_fqdn, &password);
+            Ok(Some(password))
+        }
+        Err(error) => Err(error),
+    }
+}
+
+fn prompt_storefront_password() -> Result<String, CliError> {
+    if !prompts_available() {
+        return Err(CliError::abort(
+            "A storefront password is required because the store is password protected.",
+        ));
+    }
+    render_text_prompt("Storefront password")
+        .map_err(|error| CliError::abort(format!("Unable to read storefront password: {error}")))
 }
 
 async fn build_dev_server_session(
@@ -2099,6 +2364,7 @@ fn start_dev_session_refresh(
     admin_password: Option<String>,
     theme_access: bool,
     storefront_password: Option<String>,
+    storefront_scopes: Vec<String>,
 ) -> tokio::sync::mpsc::Receiver<Result<theme::dev::DevServerSession, String>> {
     let (tx, rx) = tokio::sync::mpsc::channel(4);
     tokio::spawn(async move {
@@ -2119,7 +2385,7 @@ fn start_dev_session_refresh(
                 }
             };
             let storefront_token = match ensure_authenticated_storefront(
-                vec!["devtools".into()],
+                storefront_scopes.clone(),
                 admin_password.clone(),
                 EnsureAuthenticatedOptions {
                     no_prompt: true,
@@ -2149,6 +2415,51 @@ fn start_dev_session_refresh(
         }
     });
     rx
+}
+
+/// Returns an on-demand session refresh callback used by the dev server to
+/// recover from theme-ID mismatches (mirrors upstream `session.refresh()`).
+fn build_dev_session_refresh(
+    theme_id: i64,
+    admin_session: AdminSession,
+    admin_password: Option<String>,
+    theme_access: bool,
+    storefront_password: Option<String>,
+    storefront_scopes: Vec<String>,
+) -> theme::dev::DevServerRefresh {
+    std::sync::Arc::new(move || {
+        let admin_session = admin_session.clone();
+        let admin_password = admin_password.clone();
+        let storefront_password = storefront_password.clone();
+        let storefront_scopes = storefront_scopes.clone();
+        Box::pin(async move {
+            let refreshed_admin = ensure_authenticated_themes(
+                &admin_session.store_fqdn,
+                admin_password.as_deref(),
+            )
+            .await
+            .map_err(|error| error.to_string())?;
+            let storefront_token = ensure_authenticated_storefront(
+                storefront_scopes,
+                admin_password,
+                EnsureAuthenticatedOptions {
+                    no_prompt: true,
+                    ..EnsureAuthenticatedOptions::default()
+                },
+            )
+            .await
+            .map_err(|error| error.to_string())?;
+            build_dev_server_session(
+                theme_id,
+                &refreshed_admin,
+                Some(storefront_token),
+                theme_access,
+                storefront_password,
+            )
+            .await
+            .map_err(|error| error.to_string())
+        })
+    })
 }
 
 async fn verify_storefront_password(store: &str, password: &str) -> Result<(), CliError> {
@@ -2205,14 +2516,15 @@ async fn fetch_storefront_session_cookies(
         .append_pair("_fd", "0")
         .append_pair("pb", "0");
 
-    let mut response = client.head(url.clone()).send().await;
+    let mut response = send_essential_cookie_head(&client, &url, session).await;
     for attempt in 1..=3 {
         let Ok(resp) = response else {
             if attempt == 3 {
+                abort_on_missing_required_file(theme_id, session).await?;
                 return Err(CliError::abort("Unable to create storefront session."));
             }
             tokio::time::sleep(Duration::from_secs(attempt)).await;
-            response = client.head(url.clone()).send().await;
+            response = send_essential_cookie_head(&client, &url, session).await;
             continue;
         };
         let set_cookies = set_cookie_headers(resp.headers());
@@ -2230,14 +2542,90 @@ async fn fetch_storefront_session_cookies(
             return Ok(cookies);
         }
         if attempt == 3 {
+            abort_on_missing_required_file(theme_id, session).await?;
             return Err(CliError::abort(
                 "Your development session could not be created because the \"_shopify_essential\" could not be defined.",
             ));
         }
         tokio::time::sleep(Duration::from_secs(attempt)).await;
-        response = client.head(url.clone()).send().await;
+        response = send_essential_cookie_head(&client, &url, session).await;
     }
     unreachable!()
+}
+
+async fn send_essential_cookie_head(
+    client: &reqwest::Client,
+    url: &url::Url,
+    session: &theme::dev::DevServerSession,
+) -> Result<reqwest::Response, reqwest::Error> {
+    let headers = essential_cookie_head_headers(session);
+    client.head(url.clone()).headers(headers).send().await
+}
+
+/// Theme Access / shop auth headers for the essential-cookie HEAD request.
+fn essential_cookie_head_headers(
+    session: &theme::dev::DevServerSession,
+) -> reqwest::header::HeaderMap {
+    let mut headers = reqwest::header::HeaderMap::new();
+    if let Some(token) = &session.storefront_token {
+        if let Ok(value) = reqwest::header::HeaderValue::from_str(&format!("Bearer {token}")) {
+            headers.insert(reqwest::header::AUTHORIZATION, value);
+        }
+    }
+    if let Ok(value) = reqwest::header::HeaderValue::from_str(&session.store_fqdn) {
+        headers.insert("X-Shopify-Shop", value);
+    }
+    if let Ok(value) = reqwest::header::HeaderValue::from_str(&session.admin_token) {
+        headers.insert("X-Shopify-Access-Token", value);
+    }
+    if let Some(domain) = &session.theme_access_domain {
+        if let Ok(value) = reqwest::header::HeaderValue::from_str(domain) {
+            headers.insert(reqwest::header::HOST, value);
+        }
+    }
+    headers
+}
+
+const REQUIRED_THEME_FILES: &[&str] = &["layout/theme.liquid", "config/settings_schema.json"];
+
+fn required_theme_files_missing(assets_len: usize) -> bool {
+    assets_len != REQUIRED_THEME_FILES.len()
+}
+
+fn missing_required_theme_files_message(theme_id: i64) -> String {
+    format!(
+        "Theme {theme_id} is missing required files. Run shopify theme delete -t {theme_id} to remove this theme and try again."
+    )
+}
+
+async fn abort_on_missing_required_file(
+    theme_id: i64,
+    session: &theme::dev::DevServerSession,
+) -> Result<(), CliError> {
+    let admin = session_from_dev(session);
+    let assets = api::themes::fetch_theme_assets(
+        theme_id,
+        REQUIRED_THEME_FILES
+            .iter()
+            .map(|key| (*key).to_string())
+            .collect(),
+        &admin,
+    )
+    .await
+    .unwrap_or_default();
+    if required_theme_files_missing(assets.len()) {
+        return Err(CliError::abort(missing_required_theme_files_message(
+            theme_id,
+        )));
+    }
+    Ok(())
+}
+
+fn session_from_dev(session: &theme::dev::DevServerSession) -> AdminSession {
+    AdminSession {
+        store_fqdn: session.store_fqdn.clone(),
+        token: session.admin_token.clone(),
+    }
 }
 
 async fn enrich_session_with_storefront_password(
@@ -2284,14 +2672,21 @@ fn set_cookie_headers(headers: &reqwest::header::HeaderMap) -> Vec<String> {
 }
 
 fn redirects_to_storefront(response: &reqwest::Response, store: &str) -> bool {
-    if response.status().as_u16() != 302 {
+    redirects_to_storefront_location(
+        response.status().as_u16(),
+        response
+            .headers()
+            .get("location")
+            .and_then(|value| value.to_str().ok()),
+        store,
+    )
+}
+
+fn redirects_to_storefront_location(status: u16, location: Option<&str>, store: &str) -> bool {
+    if status != 302 {
         return false;
     }
-    let Some(location) = response
-        .headers()
-        .get("location")
-        .and_then(|value| value.to_str().ok())
-    else {
+    let Some(location) = location else {
         return false;
     };
     let Ok(url) = url::Url::parse(location)
@@ -2306,7 +2701,11 @@ fn redirects_to_storefront(response: &reqwest::Response, store: &str) -> bool {
 pub struct Init {
     #[arg(value_name = "NAME")]
     name: Option<String>,
-    #[arg(long, env = "SHOPIFY_FLAG_PATH", value_parser = parse_existing_directory)]
+    #[arg(
+        long,
+        env = "SHOPIFY_FLAG_PATH",
+        value_parser = parse_existing_directory
+    )]
     path: Option<PathBuf>,
     #[arg(short = 'u', long = "clone-url", env = "SHOPIFY_FLAG_CLONE_URL", default_value = theme::init::DEFAULT_CLONE_URL)]
     clone_url: String,
@@ -2371,6 +2770,16 @@ impl Init {
                 }
             }
         }
+        let ai_instruction = prompt_ai_instruction()?;
+        if ai_instruction != theme::init::AiInstructions::Skip {
+            let copied = create_ai_instructions_from_repo(&destination, ai_instruction)?;
+            if !copied.is_empty() {
+                output_warn(format!(
+                    "Files created instead of symlinks: {}",
+                    copied.join(", ")
+                ));
+            }
+        }
         output_success(format!("Theme initialized in {}", destination.display()));
         Ok(())
     }
@@ -2390,6 +2799,114 @@ fn run_git(directory: &std::path::Path, args: &[&str]) -> Result<(), CliError> {
             args.join(" ")
         )))
     }
+}
+
+fn prompt_ai_instruction() -> Result<theme::init::AiInstructions, CliError> {
+    if !prompts_available() {
+        return Ok(theme::init::AiInstructions::Skip);
+    }
+    render_select_prompt(
+        "Which LLM instruction file would you like to include in your theme?",
+        vec![
+            Item::new("All", theme::init::AiInstructions::All),
+            Item::new(
+                "VS Code (GitHub Copilot)",
+                theme::init::AiInstructions::VsCode,
+            ),
+            Item::new("Cursor", theme::init::AiInstructions::Cursor),
+            Item::new("Claude", theme::init::AiInstructions::Claude),
+            Item::new("Skip", theme::init::AiInstructions::Skip),
+        ],
+    )
+    .map_err(|error| CliError::abort(format!("AI instruction prompt failed: {error}")))
+}
+
+fn create_ai_instructions_from_repo(
+    theme_root: &std::path::Path,
+    choice: theme::init::AiInstructions,
+) -> Result<Vec<String>, CliError> {
+    let temp = std::env::temp_dir().join(format!(
+        "shopify-theme-ai-instructions-{}",
+        std::process::id()
+    ));
+    if temp.exists() {
+        std::fs::remove_dir_all(&temp).map_err(|error| {
+            CliError::abort(format!(
+                "Unable to clean temporary AI instructions directory {}: {error}",
+                temp.display()
+            ))
+        })?;
+    }
+    let status = std::process::Command::new("git")
+        .args(["clone", "--depth", "1", theme::init::INSTRUCTIONS_URL])
+        .arg(&temp)
+        .status()
+        .map_err(|error| CliError::abort(format!("Unable to launch Git: {error}")))?;
+    if !status.success() {
+        return Err(CliError::abort("Failed to clone AI instructions"));
+    }
+    let source = temp.join("ai/github/copilot-instructions.md");
+    let content = std::fs::read_to_string(&source)
+        .map_err(|error| CliError::abort(format!("Failed to read AI instructions: {error}")))?;
+    let result = create_ai_instruction_files(theme_root, &content, choice);
+    let _ = std::fs::remove_dir_all(&temp);
+    result
+}
+
+fn create_ai_instruction_files(
+    theme_root: &std::path::Path,
+    source_content: &str,
+    choice: theme::init::AiInstructions,
+) -> Result<Vec<String>, CliError> {
+    let agents_path = theme_root.join("AGENTS.md");
+    let agents_content = format!("# AGENTS.md\n\n{source_content}");
+    std::fs::write(&agents_path, &agents_content).map_err(|error| {
+        CliError::abort(format!(
+            "Failed to create AI instructions at {}: {error}",
+            agents_path.display()
+        ))
+    })?;
+
+    let mut copied = Vec::new();
+    for (relative, _) in theme::init::instruction_links(choice) {
+        let link_path = theme_root.join(relative);
+        if let Some(parent) = link_path.parent() {
+            std::fs::create_dir_all(parent).map_err(|error| {
+                CliError::abort(format!(
+                    "Failed to create AI instruction directory {}: {error}",
+                    parent.display()
+                ))
+            })?;
+        }
+        if link_path.exists() {
+            std::fs::remove_file(&link_path).map_err(|error| {
+                CliError::abort(format!(
+                    "Failed to replace AI instruction file {}: {error}",
+                    link_path.display()
+                ))
+            })?;
+        }
+        if symlink_file(&agents_path, &link_path).is_err() {
+            std::fs::write(&link_path, &agents_content).map_err(|error| {
+                CliError::abort(format!(
+                    "Failed to create AI instruction file {}: {error}",
+                    link_path.display()
+                ))
+            })?;
+            copied.push(relative.to_string());
+        }
+    }
+    Ok(copied)
+}
+
+#[cfg(unix)]
+fn symlink_file(source: &std::path::Path, target: &std::path::Path) -> std::io::Result<()> {
+    std::os::unix::fs::symlink(source, target)
+}
+
+#[cfg(windows)]
+fn symlink_file(source: &std::path::Path, target: &std::path::Path) -> std::io::Result<()> {
+    std::os::windows::fs::symlink_file(source, target)
 }
 
 #[derive(Debug, Clone, Args)]
@@ -2437,44 +2954,189 @@ impl Metafields {
 impl MetafieldsPull {
     async fn run(self) -> Result<(), CliError> {
         let root = self.common.path.clone().unwrap_or_else(cwd_path);
-        let session = session_for(&self.common).await?;
-        let definitions =
-            api::themes::metafield_definitions_by_owner_type(MetafieldOwnerType::Shop, &session)
-                .await
-                .map_err(|error| CliError::abort(error.to_string()))?;
-        let target_dir = root.join("config");
-        std::fs::create_dir_all(&target_dir).map_err(|error| {
-            CliError::abort(format!(
-                "Unable to create metafields directory {}: {error}",
-                target_dir.display()
-            ))
-        })?;
-        let target = target_dir.join("metafields.json");
-        if target.exists()
-            && !self.force
-            && (!prompts_available() || !confirm(&format!("Overwrite {}?", target.display()))?)
-        {
-            return Err(CliError::abort("Metafields pull cancelled"));
+        if !has_required_theme_directories(&root) {
+            if std::env::var("SHOPIFY_LANGUAGE_SERVER").as_deref() == Ok("1") {
+                return Ok(());
+            }
+            if !theme::utilities::theme_ui::ensure_directory_confirmed(
+                self.force, None, None, false,
+            )
+            .await
+            .map_err(|error| CliError::abort(error.to_string()))?
+            {
+                return Ok(());
+            }
         }
-        let payload = json!({ "metafield_definitions": definitions });
-        std::fs::write(&target, to_pretty_json(&payload)).map_err(|error| {
-            CliError::abort(format!("Unable to write {}: {error}", target.display()))
-        })?;
-        output_success(format!(
-            "Pulled {} metafield definitions to {}",
-            payload["metafield_definitions"]
-                .as_array()
-                .map(Vec::len)
-                .unwrap_or(0),
-            target.display()
-        ));
+        let session = session_for(&self.common).await?;
+        let api = AdminApi { session: &session };
+        let result = pull_metafield_definitions(&api).await?;
+        write_metafield_definitions(&root, &result.definitions)?;
+
+        if !result.failed_owner_types.is_empty() {
+            output_debug(format!(
+                "Failed to fetch metafield definitions for the following owner types: {}",
+                result.failed_owner_types.join(", ")
+            ));
+        }
+        output_success("Metafield definitions have been successfully downloaded.");
         Ok(())
     }
 }
 
+fn has_required_theme_directories(root: &std::path::Path) -> bool {
+    ["config", "layout", "sections", "templates"]
+        .iter()
+        .all(|directory| root.join(directory).is_dir())
+}
+
+#[async_trait]
+trait MetafieldsAdmin {
+    async fn metafield_definitions_by_owner_type(
+        &self,
+        owner_type: MetafieldOwnerType,
+    ) -> Result<Vec<api::themes::MetafieldDefinition>, String>;
+}
+
+#[derive(Debug, Clone)]
+struct MetafieldOwner {
+    handle: &'static str,
+    owner_type: MetafieldOwnerType,
+}
+
+fn metafield_owners() -> Vec<MetafieldOwner> {
+    vec![
+        MetafieldOwner {
+            handle: "article",
+            owner_type: MetafieldOwnerType::Article,
+        },
+        MetafieldOwner {
+            handle: "blog",
+            owner_type: MetafieldOwnerType::Blog,
+        },
+        MetafieldOwner {
+            handle: "collection",
+            owner_type: MetafieldOwnerType::Collection,
+        },
+        MetafieldOwner {
+            handle: "company",
+            owner_type: MetafieldOwnerType::Company,
+        },
+        MetafieldOwner {
+            handle: "company_location",
+            owner_type: MetafieldOwnerType::CompanyLocation,
+        },
+        MetafieldOwner {
+            handle: "location",
+            owner_type: MetafieldOwnerType::Location,
+        },
+        MetafieldOwner {
+            handle: "market",
+            owner_type: MetafieldOwnerType::Market,
+        },
+        MetafieldOwner {
+            handle: "order",
+            owner_type: MetafieldOwnerType::Order,
+        },
+        MetafieldOwner {
+            handle: "page",
+            owner_type: MetafieldOwnerType::Page,
+        },
+        MetafieldOwner {
+            handle: "product",
+            owner_type: MetafieldOwnerType::Product,
+        },
+        MetafieldOwner {
+            handle: "variant",
+            owner_type: MetafieldOwnerType::Productvariant,
+        },
+        MetafieldOwner {
+            handle: "shop",
+            owner_type: MetafieldOwnerType::Shop,
+        },
+    ]
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct MetafieldsPullResult {
+    definitions: BTreeMap<String, Vec<api::themes::MetafieldDefinition>>,
+    failed_owner_types: Vec<String>,
+}
+
+async fn pull_metafield_definitions<A: MetafieldsAdmin + Sync>(
+    api: &A,
+) -> Result<MetafieldsPullResult, CliError> {
+    let mut definitions = BTreeMap::new();
+    let mut failed_owner_types = Vec::new();
+
+    for owner in metafield_owners() {
+        match api
+            .metafield_definitions_by_owner_type(owner.owner_type.clone())
+            .await
+        {
+            Ok(owner_definitions) => {
+                definitions.insert(owner.handle.to_string(), owner_definitions);
+            }
+            Err(_) => {
+                failed_owner_types.push(owner_type_name(&owner.owner_type).to_string());
+                definitions.insert(owner.handle.to_string(), Vec::new());
+            }
+        }
+    }
+
+    if failed_owner_types.len() == metafield_owners().len() {
+        return Err(CliError::abort("Failed to fetch metafield definitions.")
+            .with_next_steps("Check your network connection and try again.\nEnsure you have the permission to fetch metafield definitions."));
+    }
+
+    Ok(MetafieldsPullResult {
+        definitions,
+        failed_owner_types,
+    })
+}
+
+fn owner_type_name(owner_type: &MetafieldOwnerType) -> &'static str {
+    match owner_type {
+        MetafieldOwnerType::Article => "ARTICLE",
+        MetafieldOwnerType::Blog => "BLOG",
+        MetafieldOwnerType::Collection => "COLLECTION",
+        MetafieldOwnerType::Company => "COMPANY",
+        MetafieldOwnerType::CompanyLocation => "COMPANY_LOCATION",
+        MetafieldOwnerType::Location => "LOCATION",
+        MetafieldOwnerType::Market => "MARKET",
+        MetafieldOwnerType::Order => "ORDER",
+        MetafieldOwnerType::Page => "PAGE",
+        MetafieldOwnerType::Product => "PRODUCT",
+        MetafieldOwnerType::Productvariant => "PRODUCTVARIANT",
+        MetafieldOwnerType::Shop => "SHOP",
+        _ => "UNKNOWN",
+    }
+}
+
+fn write_metafield_definitions(
+    root: &std::path::Path,
+    definitions: &BTreeMap<String, Vec<api::themes::MetafieldDefinition>>,
+) -> Result<PathBuf, CliError> {
+    let target_dir = root.join(".shopify");
+    std::fs::create_dir_all(&target_dir).map_err(|error| {
+        CliError::abort(format!(
+            "Unable to create metafields directory {}: {error}",
+            target_dir.display()
+        ))
+    })?;
+    let target = target_dir.join("metafields.json");
+    std::fs::write(&target, to_pretty_json(definitions)).map_err(|error| {
+        CliError::abort(format!("Unable to write {}: {error}", target.display()))
+    })?;
+    Ok(target)
+}
+
 #[derive(Debug, Clone, Args)]
 pub struct Package {
-    #[arg(long, env = "SHOPIFY_FLAG_PATH", value_parser = parse_existing_directory)]
+    #[arg(
+        long,
+        env = "SHOPIFY_FLAG_PATH",
+        value_parser = parse_existing_directory
+    )]
     path: Option<PathBuf>,
 }
 
@@ -2483,7 +3145,10 @@ impl Package {
         let root = self.path.unwrap_or_else(cwd_path);
         let archive = theme::package::package_theme(&root)
             .map_err(|error| CliError::abort(error.to_string()))?;
-        output_success(format!("Theme packaged to {}", archive.display()));
+        output_success(format!(
+            "Your local theme was packaged in {}",
+            archive.display()
+        ));
         Ok(())
     }
 }
@@ -2506,20 +3171,8 @@ pub struct Preview {
 
 impl Preview {
     async fn run(self) -> Result<(), CliError> {
-        let overrides_path = PathBuf::from(&self.overrides);
-        let overrides = std::fs::read_to_string(&overrides_path).map_err(|error| {
-            CliError::abort(format!(
-                "Unable to read overrides file {}: {error}",
-                overrides_path.display()
-            ))
-        })?;
-        let overrides_json: serde_json::Value =
-            serde_json::from_str(&overrides).map_err(|error| {
-                CliError::abort(format!(
-                    "Unable to parse overrides file {} as JSON: {error}",
-                    overrides_path.display()
-                ))
-            })?;
+        let overrides_json = theme::preview::read_overrides_file(&self.overrides)
+            .map_err(|error| CliError::abort(error.to_string()))?;
         let session = session_for(&self.common).await?;
         let api = AdminApi { session: &session };
         let selected = select_or_prompt_theme(
@@ -2533,28 +3186,28 @@ impl Preview {
         )
         .await
         .map_err(service_error)?;
-        let mut preview_url = theme_preview_url(&selected, &session.store_fqdn);
-        preview_url = append_query_param(&preview_url, "pb", &overrides_json.to_string());
-        if let Some(preview_id) = self.preview_id {
-            preview_url = append_query_param(&preview_url, "preview_id", &preview_id);
-        }
+        let preview = theme::preview::create_or_update_preview(
+            &api,
+            &selected,
+            overrides_json,
+            self.preview_id,
+        )
+        .await
+        .map_err(|error| CliError::abort(error.to_string()))?;
         if self.open {
-            open::that(&preview_url)
+            open::that(&preview.url)
                 .map_err(|error| CliError::abort(format!("Could not open browser: {error}")))?;
         }
         if self.json {
             output_result(to_pretty_json(&json!({
-                "theme": {
-                    "id": selected.id,
-                    "name": selected.name,
-                    "role": selected.role,
-                    "shop": session.store_fqdn,
-                    "preview_url": preview_url,
-                    "overrides": overrides_json,
-                }
+                "url": preview.url,
+                "preview_identifier": preview.preview_identifier,
             })));
         } else {
-            output_result(format!("Preview your theme: {preview_url}"));
+            output_result(format!(
+                "Preview your theme: {}\nPreview ID: {}",
+                preview.url, preview.preview_identifier
+            ));
         }
         Ok(())
     }
@@ -2570,7 +3223,7 @@ pub struct Profile {
     url: String,
     #[arg(long = "store-password", env = "SHOPIFY_FLAG_STORE_PASSWORD")]
     store_password: Option<String>,
-    #[arg(long, env = "SHOPIFY_FLAG_JSON")]
+    #[arg(short = 'j', long, env = "SHOPIFY_FLAG_JSON")]
     json: bool,
 }
 
@@ -2578,38 +3231,78 @@ impl Profile {
     async fn run(self) -> Result<(), CliError> {
         let session = session_for(&self.common).await?;
         let api = AdminApi { session: &session };
+        let filter = if self.theme.is_some() {
+            ThemeFilter {
+                theme: self.theme,
+                ..Default::default()
+            }
+        } else {
+            ThemeFilter {
+                live: true,
+                ..Default::default()
+            }
+        };
         let selected = select_or_prompt_theme(
             &api,
             &session.store_fqdn,
-            &ThemeFilter {
-                theme: self.theme,
-                ..Default::default()
-            },
+            &filter,
             "Select a theme to profile",
         )
         .await
         .map_err(service_error)?;
-        let profile_url = append_query_param(
-            &absolute_storefront_url(&session.store_fqdn, &self.url),
-            "preview_theme_id",
-            &selected.id.to_string(),
-        );
-        let profile_url = append_query_param(&profile_url, "profile", "1");
-        if self.json {
-            output_result(to_pretty_json(&json!({
-                "theme": {
-                    "id": selected.id,
-                    "name": selected.name,
-                    "role": selected.role,
-                    "shop": session.store_fqdn,
-                },
-                "url": self.url,
-                "profile_url": profile_url,
-                "store_password_provided": self.store_password.is_some(),
-            })));
+
+        output_info(format!(
+            "Generating Liquid profile for {} {}",
+            session.store_fqdn, self.url
+        ));
+
+        let storefront_password = if api::themes::password_protected(&session)
+            .await
+            .map_err(|error| CliError::abort(error.to_string()))?
+        {
+            storefront_password_for_dev(&session, self.store_password.clone()).await?
         } else {
-            output_result(format!("Profile URL: {profile_url}"));
-            output_warn("Speedscope capture and bundled UI serving are not available in this Rust port yet.");
+            None
+        };
+
+        if self.common.password.is_some() {
+            return Err(CliError::abort(theme::profile::PROFILE_PASSWORD_ERROR)
+                .with_next_steps(theme::profile::PROFILE_PASSWORD_NEXT_STEPS));
+        }
+
+        let storefront_token = ensure_authenticated_storefront(
+            Vec::new(),
+            None,
+            EnsureAuthenticatedOptions {
+                no_prompt: true,
+                ..EnsureAuthenticatedOptions::default()
+            },
+        )
+        .await
+        .map_err(|error| CliError::abort(error.to_string()))?;
+        let theme_access = session.token.starts_with("shptka_");
+        let dev_session = build_dev_server_session(
+            selected.id,
+            &session,
+            Some(storefront_token),
+            theme_access,
+            storefront_password,
+        )
+        .await?;
+        let renderer = theme::console::ReqwestStorefrontRenderer::new().map_err(console_error)?;
+        let profile_json = theme::profile::capture_profile(
+            &renderer,
+            &dev_session.into(),
+            selected.id.to_string(),
+            self.url,
+        )
+        .await
+        .map_err(console_error)?;
+        if self.json {
+            output_result(profile_json);
+        } else {
+            let files = theme::profile::open_profile(&profile_json).map_err(console_error)?;
+            output_debug(format!("[Theme Profile] Opening URL: {}", files.url));
         }
         Ok(())
     }
@@ -2639,7 +3332,7 @@ pub struct Push {
     common: ThemeFlags,
     #[command(flatten)]
     glob: GlobFlags,
-    #[arg(long, env = "SHOPIFY_FLAG_JSON")]
+    #[arg(short = 'j', long, env = "SHOPIFY_FLAG_JSON")]
     json: bool,
     #[arg(short = 't', long, env = "SHOPIFY_FLAG_THEME_ID")]
     theme: Option<String>,
@@ -2760,7 +3453,7 @@ impl Pull {
         };
         let mut filesystem = theme::filesystem::ThemeFileSystem::scan(&root, filters.clone())
             .map_err(|error| CliError::abort(error.to_string()))?;
-        let report = theme::sync::pull(
+        let report = theme::downloader::download_theme(
             &api,
             selected.id,
             &mut filesystem,
@@ -2770,7 +3463,8 @@ impl Pull {
             },
         )
         .await
-        .map_err(|error| CliError::abort(error.to_string()))?;
+        .map_err(|error| CliError::abort(error.to_string()))?
+        .sync;
         if let Some(environment) = self.common.environment.first() {
             output_info(format!("Environment: {environment}"));
         }
@@ -2846,8 +3540,14 @@ impl Push {
             apply_push_environment(&mut self, &environment)?;
         }
         let root = self.common.path.clone().unwrap_or_else(cwd_path);
-        if !self.force && !recognizable_theme(&root) {
-            return Err(CliError::abort("The directory doesn't appear to contain a Shopify theme. Use --force to proceed anyway."));
+        if !recognizable_theme(&root)
+            && !theme::utilities::theme_ui::ensure_directory_confirmed(
+                self.force, None, None, multi,
+            )
+            .await
+            .map_err(|error| CliError::abort(error.to_string()))?
+        {
+            return Ok(());
         }
         if let Some(listing) = &self.listing {
             theme::listing::validate_listing(&root, listing)
@@ -2881,7 +3581,7 @@ impl Push {
             theme::listing::apply_listing(&root, listing, &mut filesystem.files)
                 .map_err(|error| CliError::abort(error.to_string()))?;
         }
-        let report = theme::sync::push(
+        let report = theme::uploader::upload_theme(
             &api,
             selected.id,
             &filesystem,
@@ -2891,7 +3591,8 @@ impl Push {
             },
         )
         .await
-        .map_err(|error| CliError::abort(error.to_string()))?;
+        .map_err(|error| CliError::abort(error.to_string()))?
+        .sync;
         if self.publish {
             api.publish_theme(selected.id)
                 .await
@@ -2906,16 +3607,22 @@ impl Push {
                 object.insert("environment".into(), json!(environment));
             }
             if report.has_failures() {
-                object.insert("warning".into(), json!("The theme was pushed with errors"));
-                object.insert(
-                    "errors".into(),
-                    json!(report
-                        .files
-                        .iter()
-                        .filter(|file| !file.success)
-                        .map(|file| json!({"key": file.key, "errors": file.errors}))
-                        .collect::<Vec<_>>()),
-                );
+                let warning = match self.common.environment.first() {
+                    Some(environment) => format!(
+                        "The theme '{}' was pushed with errors and no error overlay will be shown during development. Environment: {environment}",
+                        selected.name
+                    ),
+                    None => format!(
+                        "The theme '{}' was pushed with errors",
+                        selected.name
+                    ),
+                };
+                object.insert("warning".into(), json!(warning));
+                let mut errors = serde_json::Map::new();
+                for file in report.files.iter().filter(|file| !file.success) {
+                    errors.insert(file.key.clone(), json!(file.errors));
+                }
+                object.insert("errors".into(), serde_json::Value::Object(errors));
             }
             output_result(to_pretty_json(&value));
         } else {
@@ -2927,8 +3634,8 @@ impl Push {
             }
             if self.publish {
                 output_success(format!(
-                    "The theme '{}' (#{}) was pushed and published.",
-                    selected.name, selected.id
+                    "Your theme is now live at https://{}",
+                    session.store_fqdn
                 ));
             } else if report.has_failures() {
                 output_warn(format!(
@@ -3147,38 +3854,6 @@ process.stdout.write(path.resolve(path.dirname(pkgPath), bin));
     }
 }
 
-fn append_query_param(url: &str, key: &str, value: &str) -> String {
-    let separator = if url.contains('?') { '&' } else { '?' };
-    format!(
-        "{url}{separator}{}={}",
-        percent_encode_component(key),
-        percent_encode_component(value)
-    )
-}
-
-fn absolute_storefront_url(store: &str, path_or_url: &str) -> String {
-    if path_or_url.starts_with("http://") || path_or_url.starts_with("https://") {
-        path_or_url.into()
-    } else if path_or_url.starts_with('/') {
-        format!("https://{store}{path_or_url}")
-    } else {
-        format!("https://{store}/{path_or_url}")
-    }
-}
-
-fn percent_encode_component(value: &str) -> String {
-    let mut encoded = String::new();
-    for byte in value.bytes() {
-        match byte {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
-                encoded.push(byte as char)
-            }
-            _ => encoded.push_str(&format!("%{byte:02X}")),
-        }
-    }
-    encoded
-}
-
 fn run_strict_check(
     root: &std::path::Path,
     json_output: bool,
@@ -3342,6 +4017,7 @@ fn apply_push_environment(command: &mut Push, environment: &str) -> Result<(), C
 mod tests {
     use super::*;
     use clap::Parser;
+    use std::sync::Mutex;
 
     #[derive(Debug, Parser)]
     struct TestCli {
@@ -3495,6 +4171,36 @@ mod tests {
             "--json",
         ]);
         assert!(matches!(preview.command, ThemeSubcommand::Preview(_)));
+    }
+
+    #[test]
+    fn parses_json_short_aliases_for_upstream_theme_commands() {
+        for args in [
+            vec!["theme", "list", "-j"],
+            vec!["theme", "info", "-j"],
+            vec!["theme", "duplicate", "-j"],
+            vec!["theme", "profile", "-j"],
+            vec!["theme", "push", "-j"],
+        ] {
+            match TestCli::parse_from(args).command {
+                ThemeSubcommand::List(command) => assert!(command.json),
+                ThemeSubcommand::Info(command) => assert!(command.json),
+                ThemeSubcommand::Duplicate(command) => assert!(command.json),
+                ThemeSubcommand::Profile(command) => assert!(command.json),
+                ThemeSubcommand::Push(command) => assert!(command.json),
+                _ => panic!("expected JSON-capable command"),
+            }
+        }
+    }
+
+    #[test]
+    fn parses_delete_show_all_flag() {
+        let cli = TestCli::parse_from(["theme", "delete", "--show-all"]);
+
+        match cli.command {
+            ThemeSubcommand::Delete(command) => assert!(command.show_all),
+            _ => panic!("expected delete"),
+        }
     }
 
     #[tokio::test]
@@ -3659,5 +4365,440 @@ theme = "123"
             theme::models::ALLOWED_ROLES,
             ["live", "unpublished", "development"]
         );
+    }
+
+    #[test]
+    fn creates_ai_instruction_files_for_all_supported_targets() {
+        let temp = tempfile::tempdir().unwrap();
+
+        let copied = create_ai_instruction_files(
+            temp.path(),
+            "Use Shopify Liquid patterns.",
+            theme::init::AiInstructions::All,
+        )
+        .unwrap();
+
+        assert!(copied.is_empty());
+        assert_eq!(
+            std::fs::read_to_string(temp.path().join("AGENTS.md")).unwrap(),
+            "# AGENTS.md\n\nUse Shopify Liquid patterns."
+        );
+        assert_eq!(
+            std::fs::read_to_string(temp.path().join("copilot-instructions.md")).unwrap(),
+            "# AGENTS.md\n\nUse Shopify Liquid patterns."
+        );
+        assert_eq!(
+            std::fs::read_to_string(temp.path().join("CLAUDE.md")).unwrap(),
+            "# AGENTS.md\n\nUse Shopify Liquid patterns."
+        );
+    }
+
+    #[test]
+    fn cursor_ai_instruction_choice_creates_only_agents_file() {
+        let temp = tempfile::tempdir().unwrap();
+
+        create_ai_instruction_files(
+            temp.path(),
+            "Use Shopify Liquid patterns.",
+            theme::init::AiInstructions::Cursor,
+        )
+        .unwrap();
+
+        assert!(temp.path().join("AGENTS.md").exists());
+        assert!(!temp.path().join(".cursor").exists());
+    }
+
+    #[test]
+    fn dev_filesystem_errors_when_listing_is_missing() {
+        let temp = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(temp.path().join("layout")).unwrap();
+        std::fs::create_dir_all(temp.path().join("config")).unwrap();
+        std::fs::write(
+            temp.path().join("layout/theme.liquid"),
+            "{{ content_for_layout }}",
+        )
+        .unwrap();
+        std::fs::write(
+            temp.path().join("config/settings_data.json"),
+            r#"{"current":"Default"}"#,
+        )
+        .unwrap();
+
+        let error = build_dev_filesystem(
+            temp.path(),
+            theme::ignore::IgnoreFilters::default(),
+            Some("summer"),
+        )
+        .unwrap_err();
+
+        assert!(error
+            .to_string()
+            .contains("No theme listings are available"));
+    }
+
+    #[test]
+    fn dev_filesystem_applies_listing_overlay() {
+        let temp = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(temp.path().join("layout")).unwrap();
+        std::fs::create_dir_all(temp.path().join("config")).unwrap();
+        std::fs::create_dir_all(temp.path().join("listings/summer/templates")).unwrap();
+        std::fs::create_dir_all(temp.path().join("listings/summer/sections")).unwrap();
+        std::fs::write(
+            temp.path().join("layout/theme.liquid"),
+            "{{ content_for_layout }}",
+        )
+        .unwrap();
+        std::fs::write(
+            temp.path().join("config/settings_data.json"),
+            r#"{"current":"Default"}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            temp.path().join("listings/summer/templates/index.json"),
+            r#"{"sections":{"hero":{"type":"hero"}}}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            temp.path().join("listings/summer/sections/hero.json"),
+            r#"{"settings":{"title":"Summer"}}"#,
+        )
+        .unwrap();
+
+        let filesystem = build_dev_filesystem(
+            temp.path(),
+            theme::ignore::IgnoreFilters::default(),
+            Some("summer"),
+        )
+        .unwrap();
+
+        assert_eq!(
+            filesystem
+                .files
+                .get("templates/index.json")
+                .and_then(|asset| asset.value.as_deref()),
+            Some(r#"{"sections":{"hero":{"type":"hero"}}}"#)
+        );
+        assert_eq!(
+            filesystem
+                .files
+                .get("sections/hero.json")
+                .and_then(|asset| asset.value.as_deref()),
+            Some(r#"{"settings":{"title":"Summer"}}"#)
+        );
+        assert_eq!(
+            filesystem
+                .files
+                .get("config/settings_data.json")
+                .and_then(|asset| asset.value.as_deref()),
+            Some("{\n  \"current\": \"Summer\"\n}")
+        );
+    }
+
+    struct MetafieldsApi {
+        failures: Vec<&'static str>,
+        requests: Mutex<Vec<&'static str>>,
+    }
+
+    #[async_trait]
+    impl MetafieldsAdmin for MetafieldsApi {
+        async fn metafield_definitions_by_owner_type(
+            &self,
+            owner_type: MetafieldOwnerType,
+        ) -> Result<Vec<api::themes::MetafieldDefinition>, String> {
+            let owner = owner_type_name(&owner_type);
+            self.requests.lock().unwrap().push(owner);
+            if self.failures.contains(&owner) {
+                Err(format!("{owner} failed"))
+            } else {
+                Ok(vec![api::themes::MetafieldDefinition {
+                    key: format!("{}_key", owner.to_lowercase()),
+                    namespace: "custom".into(),
+                    name: owner.into(),
+                    description: None,
+                    r#type: api::themes::MetafieldDefinitionType {
+                        name: "single_line_text_field".into(),
+                        category: "TEXT".into(),
+                    },
+                }])
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn metafields_pull_fetches_all_upstream_owner_types() {
+        let api = MetafieldsApi {
+            failures: Vec::new(),
+            requests: Mutex::new(Vec::new()),
+        };
+
+        let result = pull_metafield_definitions(&api).await.unwrap();
+
+        assert_eq!(
+            result
+                .definitions
+                .keys()
+                .map(String::as_str)
+                .collect::<Vec<_>>(),
+            vec![
+                "article",
+                "blog",
+                "collection",
+                "company",
+                "company_location",
+                "location",
+                "market",
+                "order",
+                "page",
+                "product",
+                "shop",
+                "variant",
+            ]
+        );
+        assert_eq!(result.failed_owner_types, Vec::<String>::new());
+        assert_eq!(api.requests.lock().unwrap().len(), 12);
+    }
+
+    #[tokio::test]
+    async fn metafields_pull_keeps_partial_results_when_some_owner_types_fail() {
+        let api = MetafieldsApi {
+            failures: vec!["ARTICLE", "SHOP"],
+            requests: Mutex::new(Vec::new()),
+        };
+
+        let result = pull_metafield_definitions(&api).await.unwrap();
+
+        assert_eq!(result.failed_owner_types, vec!["ARTICLE", "SHOP"]);
+        assert!(result.definitions["article"].is_empty());
+        assert!(result.definitions["shop"].is_empty());
+        assert_eq!(result.definitions["product"].len(), 1);
+    }
+
+    #[tokio::test]
+    async fn metafields_pull_errors_only_when_all_owner_types_fail() {
+        let api = MetafieldsApi {
+            failures: vec![
+                "ARTICLE",
+                "BLOG",
+                "COLLECTION",
+                "COMPANY",
+                "COMPANY_LOCATION",
+                "LOCATION",
+                "MARKET",
+                "ORDER",
+                "PAGE",
+                "PRODUCT",
+                "PRODUCTVARIANT",
+                "SHOP",
+            ],
+            requests: Mutex::new(Vec::new()),
+        };
+
+        let error = pull_metafield_definitions(&api).await.unwrap_err();
+
+        assert!(error
+            .to_string()
+            .contains("Failed to fetch metafield definitions"));
+    }
+
+    #[test]
+    fn metafields_pull_writes_hidden_shopify_metafields_file() {
+        let temp = tempfile::tempdir().unwrap();
+        let mut definitions = BTreeMap::new();
+        definitions.insert("shop".into(), Vec::new());
+
+        let target = write_metafield_definitions(temp.path(), &definitions).unwrap();
+
+        assert_eq!(target, temp.path().join(".shopify/metafields.json"));
+        let content = std::fs::read_to_string(target).unwrap();
+        assert!(content.contains("\"shop\""));
+        assert!(!temp.path().join("config/metafields.json").exists());
+    }
+
+    #[test]
+    fn push_json_errors_are_path_keyed_map() {
+        let theme = Theme {
+            id: 11,
+            name: "Development".into(),
+            role: "development".into(),
+            created_at_runtime: false,
+            processing: false,
+            src: None,
+        };
+        let mut value = serde_json::to_value(theme_info_json(&theme, "shop.myshopify.com")).unwrap();
+        let object = value.as_object_mut().unwrap();
+        object.insert(
+            "warning".into(),
+            json!("The theme 'Development' was pushed with errors"),
+        );
+        let mut errors = serde_json::Map::new();
+        errors.insert("assets/bad.css".into(), json!(["invalid"]));
+        object.insert("errors".into(), serde_json::Value::Object(errors));
+        let rendered = to_pretty_json(&value);
+        assert!(rendered.contains("\"theme\""));
+        assert!(rendered.contains("\"assets/bad.css\""));
+        assert!(rendered.contains("\"invalid\""));
+        assert!(!rendered.contains("\"key\": \"assets/bad.css\""));
+    }
+
+    #[test]
+    fn list_and_info_and_duplicate_json_shapes() {
+        let theme = Theme {
+            id: 42,
+            name: "Dawn".into(),
+            role: "unpublished".into(),
+            created_at_runtime: false,
+            processing: false,
+            src: None,
+        };
+        let list_json = to_pretty_json(&vec![&theme]);
+        assert!(list_json.contains("\"id\": 42"));
+        assert!(list_json.contains("\"name\": \"Dawn\""));
+        assert!(list_json.contains("\"role\": \"unpublished\""));
+        assert!(list_json.contains("\"createdAtRuntime\""));
+
+        let info = to_pretty_json(&theme_info_json(&theme, "shop.myshopify.com"));
+        let info_value: serde_json::Value = serde_json::from_str(&info).unwrap();
+        assert_eq!(info_value["theme"]["id"], 42);
+        assert_eq!(info_value["theme"]["shop"], "shop.myshopify.com");
+        assert!(info_value["theme"]["editor_url"].as_str().unwrap().contains("/admin/themes/42/editor"));
+        assert!(info_value["theme"]["preview_url"]
+            .as_str()
+            .unwrap()
+            .contains("preview_theme_id=42"));
+
+        let duplicate = to_pretty_json(&duplicate_json(&theme, "shop.myshopify.com"));
+        let duplicate_value: serde_json::Value = serde_json::from_str(&duplicate).unwrap();
+        assert_eq!(duplicate_value["theme"]["id"], 42);
+        assert_eq!(duplicate_value["theme"]["shop"], "shop.myshopify.com");
+        assert!(duplicate_value["theme"].get("editor_url").is_none());
+        assert!(duplicate_value["theme"].get("preview_url").is_none());
+    }
+
+    #[test]
+    fn parse_existing_directory_rejects_missing_path() {
+        let missing = "/tmp/cli-rust-theme-path-does-not-exist-xyz";
+        let error = parse_existing_directory(missing).unwrap_err();
+        assert!(error.contains("doesn't exist"));
+        assert!(error.contains(missing));
+    }
+
+    #[test]
+    fn multi_env_failure_warning_includes_environment_name() {
+        let warning = format_environment_failure("staging", &"boom");
+        assert!(warning.starts_with("Environment staging failed:"));
+        assert!(warning.contains("boom"));
+    }
+
+    #[test]
+    fn theme_command_runner_rejects_multi_env_when_store_missing() {
+        let flags = EnvironmentFlags::from([(
+            "password".into(),
+            serde_json::Value::String("token".into()),
+        )]);
+        let environments = vec![ThemeCommandEnvironment {
+            environment: "staging".into(),
+            flags: flags.clone(),
+            validation_flags: flags,
+            requires_auth: true,
+        }];
+        let result = ThemeCommandRunner::validate(
+            environments,
+            &[
+                RequiredFlag::Flag("store"),
+                RequiredFlag::Flag("password"),
+            ],
+        );
+        assert!(result.valid.is_empty());
+        assert_eq!(result.invalid[0].environment, "staging");
+        assert!(result.invalid[0].reason.contains("store"));
+    }
+
+    #[test]
+    fn missing_required_theme_files_message_mentions_delete_hint() {
+        assert!(required_theme_files_missing(0));
+        assert!(required_theme_files_missing(1));
+        assert!(!required_theme_files_missing(REQUIRED_THEME_FILES.len()));
+        let message = missing_required_theme_files_message(99);
+        assert!(message.contains("missing required files"));
+        assert!(message.contains("shopify theme delete -t 99"));
+    }
+
+    #[test]
+    fn redirects_to_storefront_location_accepts_302_to_store_origin() {
+        assert!(redirects_to_storefront_location(
+            302,
+            Some("https://shop.myshopify.com/"),
+            "shop.myshopify.com"
+        ));
+        assert!(redirects_to_storefront_location(
+            302,
+            Some("/"),
+            "shop.myshopify.com"
+        ));
+        assert!(!redirects_to_storefront_location(
+            200,
+            Some("https://shop.myshopify.com/"),
+            "shop.myshopify.com"
+        ));
+        assert!(!redirects_to_storefront_location(
+            302,
+            Some("https://evil.example/"),
+            "shop.myshopify.com"
+        ));
+        assert!(!redirects_to_storefront_location(302, None, "shop.myshopify.com"));
+    }
+
+    #[test]
+    fn essential_cookie_head_headers_include_shop_token_and_bearer() {
+        let session = theme::dev::DevServerSession {
+            store_fqdn: "shop.myshopify.com".into(),
+            admin_token: "shptka_admin".into(),
+            storefront_token: Some("sfr_token".into()),
+            theme_access_domain: Some("theme-kit-access.shopifyapps.com".into()),
+            session_cookies: Default::default(),
+        };
+        let headers = essential_cookie_head_headers(&session);
+        assert_eq!(
+            headers.get("X-Shopify-Shop").and_then(|v| v.to_str().ok()),
+            Some("shop.myshopify.com")
+        );
+        assert_eq!(
+            headers
+                .get("X-Shopify-Access-Token")
+                .and_then(|v| v.to_str().ok()),
+            Some("shptka_admin")
+        );
+        assert_eq!(
+            headers
+                .get(reqwest::header::AUTHORIZATION)
+                .and_then(|v| v.to_str().ok()),
+            Some("Bearer sfr_token")
+        );
+        assert_eq!(
+            headers
+                .get(reqwest::header::HOST)
+                .and_then(|v| v.to_str().ok()),
+            Some("theme-kit-access.shopifyapps.com")
+        );
+    }
+
+    #[test]
+    fn standard_events_dev_bundle_is_enabled_for_theme_dev() {
+        assert!(STANDARD_EVENTS_DEV_BUNDLE);
+    }
+
+    #[test]
+    fn render_dev_links_include_keypress_hints() {
+        let urls = theme::dev::DevServerUrls {
+            local: "http://127.0.0.1:9292".into(),
+            preview: "https://shop.myshopify.com?preview_theme_id=1".into(),
+            editor: "https://shop.myshopify.com/admin/themes/1/editor?hr=9292".into(),
+            gift_card: "http://127.0.0.1:9292/gift_cards/[store_id]/preview".into(),
+        };
+        let lines = theme::dev::render_dev_links(&urls);
+        assert!(lines.iter().any(|line| line.contains("(t)")));
+        assert!(lines.iter().any(|line| line.contains("(p)")));
+        assert!(lines.iter().any(|line| line.contains("(e)")));
+        assert!(lines.iter().any(|line| line.contains("(g)")));
     }
 }

@@ -230,4 +230,179 @@ mod tests {
 
         assert_eq!(result, Err(SelectorError::PromptRequired));
     }
+
+    #[test]
+    fn theme_filter_identifiers_combines_theme_and_themes() {
+        let filter = ThemeFilter {
+            theme: Some("1".into()),
+            themes: vec!["2".into(), "3".into()],
+            ..Default::default()
+        };
+        assert_eq!(filter.identifiers(), vec!["1", "2", "3"]);
+    }
+
+    #[test]
+    fn theme_filter_identifiers_filters_empty_strings() {
+        let filter = ThemeFilter {
+            theme: Some("".into()),
+            themes: vec!["2".into()],
+            ..Default::default()
+        };
+        assert_eq!(filter.identifiers(), vec!["2"]);
+    }
+
+    #[test]
+    fn theme_filter_role_returns_correct_role() {
+        assert_eq!(
+            ThemeFilter {
+                live: true,
+                ..Default::default()
+            }
+            .role(),
+            Some("live")
+        );
+        assert_eq!(
+            ThemeFilter {
+                unpublished: true,
+                ..Default::default()
+            }
+            .role(),
+            Some("unpublished")
+        );
+        assert_eq!(
+            ThemeFilter {
+                development: true,
+                ..Default::default()
+            }
+            .role(),
+            Some("development")
+        );
+        assert_eq!(ThemeFilter::default().role(), None);
+    }
+
+    #[test]
+    fn theme_filter_any_returns_true_for_any_active_filter() {
+        assert!(ThemeFilter {
+            theme: Some("1".into()),
+            ..Default::default()
+        }
+        .any());
+        assert!(ThemeFilter {
+            themes: vec!["1".into()],
+            ..Default::default()
+        }
+        .any());
+        assert!(ThemeFilter {
+            development: true,
+            ..Default::default()
+        }
+        .any());
+        assert!(ThemeFilter {
+            live: true,
+            ..Default::default()
+        }
+        .any());
+        assert!(ThemeFilter {
+            unpublished: true,
+            ..Default::default()
+        }
+        .any());
+    }
+
+    #[test]
+    fn theme_filter_any_returns_false_when_empty() {
+        assert!(!ThemeFilter::default().any());
+        assert!(!ThemeFilter {
+            themes: vec![],
+            ..Default::default()
+        }
+        .any());
+    }
+
+    #[test]
+    fn filters_by_multiple_identifiers() {
+        let themes = vec![theme(1, "live"), theme(2, "live"), theme(3, "live")];
+        let filtered = filter_themes(
+            "shop.myshopify.com",
+            &themes,
+            &ThemeFilter {
+                themes: vec!["theme (1)".into(), "theme (3)".into()],
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        assert_eq!(filtered.len(), 2);
+        assert_eq!(filtered[0].id, 1);
+        assert_eq!(filtered[1].id, 3);
+    }
+
+    #[test]
+    fn filter_themes_returns_error_when_role_has_no_match() {
+        let result = filter_themes(
+            "shop.myshopify.com",
+            &[theme(1, "live")],
+            &ThemeFilter {
+                development: true,
+                ..Default::default()
+            },
+        );
+
+        assert!(matches!(result, Err(SelectorError::NoRoleMatch { .. })));
+    }
+
+    #[test]
+    fn filter_themes_returns_error_when_identifier_has_no_match() {
+        let result = filter_themes(
+            "shop.myshopify.com",
+            &[theme(1, "live")],
+            &ThemeFilter {
+                theme: Some("nonexistent".into()),
+                ..Default::default()
+            },
+        );
+
+        assert!(matches!(result, Err(SelectorError::NoThemeMatch { .. })));
+    }
+
+    #[test]
+    fn partial_match_middle_wildcard() {
+        assert!(partial_match("theme (7)", "*eme (7*"));
+        assert!(!partial_match("theme (1)", "*eme (7*"));
+    }
+
+    #[test]
+    fn partial_match_prefix_wildcard() {
+        assert!(partial_match("theme (7)", "theme (7*"));
+        assert!(!partial_match("other (7)", "theme (7*"));
+    }
+
+    #[test]
+    fn partial_match_suffix_wildcard() {
+        assert!(partial_match("theme (7)", "*me (7)"));
+        assert!(!partial_match("theme (1)", "*me (7)"));
+    }
+
+    #[test]
+    fn partial_match_no_wildcard_returns_false() {
+        assert!(!partial_match("theme (7)", "theme(7)"));
+    }
+
+    #[test]
+    fn allowed_store_themes_errors_on_empty() {
+        let result = allowed_store_themes("shop.myshopify.com", vec![]);
+        assert!(matches!(result, Err(SelectorError::NoThemes(_))));
+    }
+
+    #[test]
+    fn allowed_store_themes_filters_disallowed_roles() {
+        let themes = allowed_store_themes(
+            "shop.myshopify.com",
+            vec![theme(1, "demo"), theme(2, "live")],
+        )
+        .unwrap();
+
+        assert_eq!(themes.len(), 1);
+        assert_eq!(themes[0].id, 2);
+    }
 }

@@ -29,6 +29,7 @@ pub struct DuplicateResult {
 #[async_trait]
 pub trait ThemeAdmin {
     async fn fetch_themes(&self) -> Result<Vec<Theme>, ThemeServiceError>;
+    async fn create_theme(&self, name: String, role: String) -> Result<Theme, ThemeServiceError>;
     async fn delete_theme(&self, id: i64) -> Result<(), ThemeServiceError>;
     async fn duplicate_theme(
         &self,
@@ -211,6 +212,21 @@ mod tests {
             Ok(self.themes.clone())
         }
 
+        async fn create_theme(
+            &self,
+            name: String,
+            role: String,
+        ) -> Result<Theme, ThemeServiceError> {
+            Ok(Theme {
+                id: 999,
+                name,
+                role,
+                created_at_runtime: true,
+                processing: false,
+                src: None,
+            })
+        }
+
         async fn delete_theme(&self, _id: i64) -> Result<(), ThemeServiceError> {
             Ok(())
         }
@@ -321,5 +337,204 @@ mod tests {
         .unwrap();
 
         assert_eq!(renamed.id, 2);
+    }
+
+    #[tokio::test]
+    async fn list_themes_filters_by_name() {
+        let api = Api {
+            themes: vec![theme(1, "live"), theme(2, "live")],
+        };
+        let themes = list_themes(
+            &api,
+            "shop.myshopify.com",
+            &ListOptions {
+                role: None,
+                name: Some("theme (2)".into()),
+                id: None,
+            },
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(themes.len(), 1);
+        assert_eq!(themes[0].id, 2);
+    }
+
+    #[tokio::test]
+    async fn list_themes_filters_by_id() {
+        let api = Api {
+            themes: vec![theme(1, "live"), theme(2, "live")],
+        };
+        let themes = list_themes(
+            &api,
+            "shop.myshopify.com",
+            &ListOptions {
+                role: None,
+                name: None,
+                id: Some(1),
+            },
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(themes.len(), 1);
+        assert_eq!(themes[0].id, 1);
+    }
+
+    #[tokio::test]
+    async fn list_themes_returns_all_when_no_filter() {
+        let api = Api {
+            themes: vec![theme(1, "live"), theme(2, "unpublished")],
+        };
+        let themes = list_themes(
+            &api,
+            "shop.myshopify.com",
+            &ListOptions {
+                role: None,
+                name: None,
+                id: None,
+            },
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(themes.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn select_theme_returns_matching_theme() {
+        let api = Api {
+            themes: vec![theme(1, "live"), theme(2, "development")],
+        };
+        let theme = select_theme(
+            &api,
+            "shop.myshopify.com",
+            &ThemeFilter {
+                theme: Some("2".into()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(theme.id, 2);
+    }
+
+    #[tokio::test]
+    async fn delete_themes_requires_filter() {
+        let api = Api {
+            themes: vec![theme(1, "live")],
+        };
+        let result = delete_themes(&api, "shop.myshopify.com", &ThemeFilter::default()).await;
+
+        assert!(matches!(
+            result,
+            Err(ThemeServiceError::Selector(SelectorError::PromptRequired))
+        ));
+    }
+
+    #[tokio::test]
+    async fn delete_themes_deletes_all_matching() {
+        let api = Api {
+            themes: vec![theme(1, "live"), theme(2, "live"), theme(3, "development")],
+        };
+        let deleted = delete_themes(
+            &api,
+            "shop.myshopify.com",
+            &ThemeFilter {
+                live: true,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(deleted.len(), 2);
+        assert_eq!(deleted[0].id, 1);
+        assert_eq!(deleted[1].id, 2);
+    }
+
+    #[tokio::test]
+    async fn duplicate_theme_returns_user_error_for_missing_theme() {
+        let api = Api {
+            themes: vec![theme(1, "live")],
+        };
+        let result = duplicate_theme(&api, "shop.myshopify.com", Some("999".into()), None).await;
+
+        assert!(
+            matches!(result, Err(ThemeServiceError::User(message)) if message.contains("No theme with ID 999 could be found"))
+        );
+    }
+
+    #[tokio::test]
+    async fn publish_theme_publishes_selected_theme() {
+        let api = Api {
+            themes: vec![theme(1, "unpublished")],
+        };
+        let result = publish_theme(&api, "shop.myshopify.com", Some("1".into()))
+            .await
+            .unwrap();
+
+        assert_eq!(result.id, 1);
+    }
+
+    #[tokio::test]
+    async fn theme_info_json_serializes_correctly() {
+        let theme = Theme {
+            id: 1,
+            name: " Dawn ".into(),
+            created_at_runtime: false,
+            processing: false,
+            role: LIVE_THEME_ROLE.into(),
+            src: None,
+        };
+        let info = theme_info_json(&theme, "shop.myshopify.com");
+        let json = to_pretty_json(&info);
+        assert!(json.contains("\"id\": 1"));
+        assert!(json.contains("\"name\": \" Dawn \""));
+        assert!(json.contains("\"shop\": \"shop.myshopify.com\""));
+    }
+
+    #[test]
+    fn duplicate_json_nests_theme_without_urls() {
+        let theme = Theme {
+            id: 7,
+            name: "Copy of Dawn".into(),
+            created_at_runtime: false,
+            processing: false,
+            role: "unpublished".into(),
+            src: None,
+        };
+        let json = to_pretty_json(&duplicate_json(&theme, "shop.myshopify.com"));
+        let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(value["theme"]["id"], 7);
+        assert_eq!(value["theme"]["name"], "Copy of Dawn");
+        assert_eq!(value["theme"]["role"], "unpublished");
+        assert_eq!(value["theme"]["shop"], "shop.myshopify.com");
+        assert!(value["theme"].get("editor_url").is_none());
+        assert!(value["theme"].get("preview_url").is_none());
+    }
+
+    #[test]
+    fn publish_success_payload_matches_theme_info_nesting() {
+        // Publish itself has no --json flag; success payloads that nest theme info
+        // (e.g. push) reuse theme_info_json with editor/preview URLs.
+        let theme = Theme {
+            id: 3,
+            name: "Live".into(),
+            created_at_runtime: false,
+            processing: false,
+            role: LIVE_THEME_ROLE.into(),
+            src: None,
+        };
+        let value: serde_json::Value =
+            serde_json::from_str(&to_pretty_json(&theme_info_json(&theme, "shop.myshopify.com")))
+                .unwrap();
+        assert_eq!(value["theme"]["role"], "live");
+        assert_eq!(value["theme"]["preview_url"], "https://shop.myshopify.com");
+        assert!(value["theme"]["editor_url"]
+            .as_str()
+            .unwrap()
+            .ends_with("/admin/themes/3/editor"));
     }
 }

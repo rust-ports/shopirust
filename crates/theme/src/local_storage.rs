@@ -37,7 +37,9 @@ struct StoreData {
 pub struct ThemeLocalStorage {
     theme_store_path: PathBuf,
     development_theme_path: PathBuf,
+    repl_theme_path: PathBuf,
     host_theme_path: PathBuf,
+    storefront_password_path: PathBuf,
 }
 
 impl Default for ThemeLocalStorage {
@@ -55,7 +57,12 @@ impl ThemeLocalStorage {
                 &config_dir,
                 "shopify-cli-development-theme-config",
             ),
+            repl_theme_path: local_storage_path(&config_dir, "shopify-cli-repl-theme-config"),
             host_theme_path: local_storage_path(&config_dir, "shopify-cli-host-theme-conf"),
+            storefront_password_path: local_storage_path(
+                &config_dir,
+                "shopify-cli-theme-store-password",
+            ),
         }
     }
 
@@ -64,7 +71,9 @@ impl ThemeLocalStorage {
         Self {
             theme_store_path: path.join("shopify-cli-theme-conf.json"),
             development_theme_path: path.join("shopify-cli-development-theme-config.json"),
+            repl_theme_path: path.join("shopify-cli-repl-theme-config.json"),
             host_theme_path: path.join("shopify-cli-host-theme-conf.json"),
+            storefront_password_path: path.join("shopify-cli-theme-store-password.json"),
         }
     }
 
@@ -127,6 +136,22 @@ impl ThemeLocalStorage {
         remove(&self.development_theme_path, store)
     }
 
+    pub fn repl_theme_id_for_store(&self, store: &str) -> Result<Option<i64>, LocalStorageError> {
+        get_string_i64(&self.repl_theme_path, store)
+    }
+
+    pub fn store_repl_theme_id_for_store(
+        &self,
+        store: &str,
+        theme_id: i64,
+    ) -> Result<(), LocalStorageError> {
+        set(&self.repl_theme_path, store, &theme_id.to_string())
+    }
+
+    pub fn remove_repl_theme_id_for_store(&self, store: &str) -> Result<(), LocalStorageError> {
+        remove(&self.repl_theme_path, store)
+    }
+
     pub fn host_theme_id(&self, store: &str) -> Result<Option<i64>, LocalStorageError> {
         get_string_i64(&self.host_theme_path, store)
     }
@@ -137,6 +162,49 @@ impl ThemeLocalStorage {
 
     pub fn remove_host_theme_id(&self, store: &str) -> Result<(), LocalStorageError> {
         remove(&self.host_theme_path, store)
+    }
+
+    pub fn storefront_password(&self) -> Result<Option<String>, LocalStorageError> {
+        let Some(store) = self.current_theme_store()? else {
+            return Ok(None);
+        };
+        self.storefront_password_for_store(&store)
+    }
+
+    pub fn storefront_password_for_store(
+        &self,
+        store: &str,
+    ) -> Result<Option<String>, LocalStorageError> {
+        get(&self.storefront_password_path, store)
+    }
+
+    pub fn store_storefront_password(&self, password: &str) -> Result<(), LocalStorageError> {
+        let Some(store) = self.current_theme_store()? else {
+            return Ok(());
+        };
+        self.store_storefront_password_for_store(&store, password)
+    }
+
+    pub fn store_storefront_password_for_store(
+        &self,
+        store: &str,
+        password: &str,
+    ) -> Result<(), LocalStorageError> {
+        set(&self.storefront_password_path, store, &password.to_string())
+    }
+
+    pub fn remove_storefront_password(&self) -> Result<(), LocalStorageError> {
+        let Some(store) = self.current_theme_store()? else {
+            return Ok(());
+        };
+        self.remove_storefront_password_for_store(&store)
+    }
+
+    pub fn remove_storefront_password_for_store(
+        &self,
+        store: &str,
+    ) -> Result<(), LocalStorageError> {
+        remove(&self.storefront_password_path, store)
     }
 }
 
@@ -251,6 +319,21 @@ pub fn remove_development_theme_id_for_store(store: &str) {
     let _ = ThemeLocalStorage::new().remove_development_theme_id_for_store(store);
 }
 
+pub fn repl_theme_id_for_store(store: &str) -> Option<i64> {
+    ThemeLocalStorage::new()
+        .repl_theme_id_for_store(store)
+        .ok()
+        .flatten()
+}
+
+pub fn store_repl_theme_id_for_store(store: &str, theme_id: i64) {
+    let _ = ThemeLocalStorage::new().store_repl_theme_id_for_store(store, theme_id);
+}
+
+pub fn remove_repl_theme_id_for_store(store: &str) {
+    let _ = ThemeLocalStorage::new().remove_repl_theme_id_for_store(store);
+}
+
 pub fn host_theme_id(store: &str) -> Option<i64> {
     ThemeLocalStorage::new().host_theme_id(store).ok().flatten()
 }
@@ -261,6 +344,21 @@ pub fn store_host_theme_id(store: &str, theme_id: i64) {
 
 pub fn remove_host_theme_id(store: &str) {
     let _ = ThemeLocalStorage::new().remove_host_theme_id(store);
+}
+
+pub fn storefront_password_for_store(store: &str) -> Option<String> {
+    ThemeLocalStorage::new()
+        .storefront_password_for_store(store)
+        .ok()
+        .flatten()
+}
+
+pub fn store_storefront_password_for_store(store: &str, password: &str) {
+    let _ = ThemeLocalStorage::new().store_storefront_password_for_store(store, password);
+}
+
+pub fn remove_storefront_password_for_store(store: &str) {
+    let _ = ThemeLocalStorage::new().remove_storefront_password_for_store(store);
 }
 
 #[cfg(test)]
@@ -306,6 +404,48 @@ mod tests {
     }
 
     #[test]
+    fn repl_theme_storage_does_not_conflict_with_development_theme_storage() {
+        let temp = tempfile::tempdir().unwrap();
+        let storage = ThemeLocalStorage::with_path(temp.path());
+
+        storage
+            .store_development_theme_id_for_store("shop.myshopify.com", 123)
+            .unwrap();
+        storage
+            .store_repl_theme_id_for_store("shop.myshopify.com", 234)
+            .unwrap();
+
+        assert_eq!(
+            storage
+                .development_theme_id_for_store("shop.myshopify.com")
+                .unwrap(),
+            Some(123)
+        );
+        assert_eq!(
+            storage
+                .repl_theme_id_for_store("shop.myshopify.com")
+                .unwrap(),
+            Some(234)
+        );
+
+        storage
+            .remove_repl_theme_id_for_store("shop.myshopify.com")
+            .unwrap();
+        assert_eq!(
+            storage
+                .development_theme_id_for_store("shop.myshopify.com")
+                .unwrap(),
+            Some(123)
+        );
+        assert_eq!(
+            storage
+                .repl_theme_id_for_store("shop.myshopify.com")
+                .unwrap(),
+            None
+        );
+    }
+
+    #[test]
     fn stores_host_theme_ids_by_store() {
         let temp = tempfile::tempdir().unwrap();
         let storage = ThemeLocalStorage::with_path(temp.path());
@@ -331,6 +471,60 @@ mod tests {
         assert_eq!(
             storage.host_theme_id("two.myshopify.com").unwrap(),
             Some(222)
+        );
+    }
+
+    #[test]
+    fn stores_reads_and_removes_storefront_password() {
+        let temp = tempfile::tempdir().unwrap();
+        let storage = ThemeLocalStorage::with_path(temp.path());
+
+        storage
+            .store_current_theme_store("shop.myshopify.com")
+            .unwrap();
+        storage.store_storefront_password("secret").unwrap();
+
+        assert_eq!(
+            storage.storefront_password().unwrap().as_deref(),
+            Some("secret")
+        );
+        assert_eq!(
+            storage
+                .storefront_password_for_store("shop.myshopify.com")
+                .unwrap()
+                .as_deref(),
+            Some("secret")
+        );
+
+        storage.remove_storefront_password().unwrap();
+        assert_eq!(storage.storefront_password().unwrap(), None);
+    }
+
+    #[test]
+    fn storefront_password_storage_is_scoped_by_store() {
+        let temp = tempfile::tempdir().unwrap();
+        let storage = ThemeLocalStorage::with_path(temp.path());
+
+        storage
+            .store_storefront_password_for_store("one.myshopify.com", "one")
+            .unwrap();
+        storage
+            .store_storefront_password_for_store("two.myshopify.com", "two")
+            .unwrap();
+
+        assert_eq!(
+            storage
+                .storefront_password_for_store("one.myshopify.com")
+                .unwrap()
+                .as_deref(),
+            Some("one")
+        );
+        assert_eq!(
+            storage
+                .storefront_password_for_store("two.myshopify.com")
+                .unwrap()
+                .as_deref(),
+            Some("two")
         );
     }
 }
