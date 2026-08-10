@@ -181,6 +181,28 @@ Numeric bulk IDs are normalized to `gid://shopify/BulkOperation/<id>`.
 - Full Partners parity for release / signed upload / versions (App Management is the primary path)
 - Full function Wasm toolchain polish
 
+## Regenerate GraphQL
+
+Rust GraphQL modules under `crates/cli-kit/src/api/generated/graphql/` are produced from an upstream [Shopify/cli](https://github.com/Shopify/cli) checkout (`.graphql` + `generated/*.ts` + `types.d.ts`). Refresh them with the root Makefile:
+
+```bash
+make help
+
+# Point at your local Shopify/cli clone
+make codegen UPSTREAM_CLI=/path/to/shopify/cli
+
+# Same, then verify cli-kit still compiles
+make codegen-check UPSTREAM_CLI=/path/to/shopify/cli
+
+# App surfaces or admin only
+make codegen-app UPSTREAM_CLI=/path/to/shopify/cli
+make codegen-admin UPSTREAM_CLI=/path/to/shopify/cli
+```
+
+Defaults assume a sibling checkout at `../gitCloned/cli`. Override with `UPSTREAM_CLI`, or set `UPSTREAM_APP_GRAPHQL` / `UPSTREAM_ADMIN_GRAPHQL` directly.
+
+If upstream TypeScript artifacts are stale, run Shopify/cli’s own GraphQL codegen first, then re-run `make codegen`.
+
 ## Workspace layout
 
 | Crate | Role |

@@ -2,16 +2,36 @@
 //!
 //! Usage:
 //!   cargo run -p graphql-codegen --example gen_app_surfaces
+//!   make codegen-app UPSTREAM_CLI=/path/to/shopify/cli
 //!
 //! Upstream path can be overridden with UPSTREAM_APP_GRAPHQL env var.
 
 use graphql_codegen::orchestrator::{run_codegen, CodegenConfig};
 use std::path::PathBuf;
 
+fn default_upstream_app_graphql() -> PathBuf {
+    // crates/graphql-codegen → repo root → ../gitCloned/cli/...
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(
+        "../../../gitCloned/cli/packages/app/src/cli/api/graphql",
+    )
+}
+
 fn main() {
-    let upstream_root = std::env::var("UPSTREAM_APP_GRAPHQL").unwrap_or_else(|_| {
-        "/home/mohammed-niri/projects/gitCloned/cli/packages/app/src/cli/api/graphql".into()
-    });
+    let upstream_root = std::env::var("UPSTREAM_APP_GRAPHQL")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| default_upstream_app_graphql());
+
+    if !upstream_root.exists() {
+        eprintln!(
+            "error: upstream app GraphQL dir not found: {}",
+            upstream_root.display()
+        );
+        eprintln!(
+            "hint: set UPSTREAM_APP_GRAPHQL or run: make codegen-app UPSTREAM_CLI=/path/to/shopify/cli"
+        );
+        std::process::exit(1);
+    }
+
     let out_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../cli-kit/src/api/generated/graphql");
 
@@ -26,7 +46,7 @@ fn main() {
 
     let mut failures = Vec::new();
     for surface in surfaces {
-        let base_dir = PathBuf::from(&upstream_root).join(surface);
+        let base_dir = upstream_root.join(surface);
         let module_name = surface.replace('-', "_");
         let out_dir = out_root.join(&module_name);
         eprintln!("=== codegen {surface} → {} ===", out_dir.display());

@@ -3,6 +3,7 @@ name = "codegen"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
+license.workspace = true
 description = "Workspace scaffold for generated GraphQL / schema artifacts"
 
 [dependencies]

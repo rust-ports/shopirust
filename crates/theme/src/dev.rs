@@ -4559,7 +4559,7 @@ mod tests {
 
     #[tokio::test]
     async fn section_render_includes_matching_json_templates_in_replace_templates() {
-        let mut state = state_with_files(BTreeMap::from([
+        let state = state_with_files(BTreeMap::from([
             (
                 "sections/header.liquid".into(),
                 value_asset("sections/header.liquid", "<header></header>"),
