@@ -6,8 +6,10 @@ rust-version.workspace = true
 
 [dependencies]
 cli-core = { path = "../cli-core" }
+cli-api = { path = "../cli-api" }
 clap = { version = "4", features = ["derive", "env"] }
 theme = { path = "../theme" }
+app = { path = "../app" }
 async-trait = "0.1"
 tokio.workspace = true
 reqwest.workspace = true
