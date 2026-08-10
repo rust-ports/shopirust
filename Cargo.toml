@@ -4,6 +4,7 @@ members = [
     "crates/cli-kit",
     "crates/cli-core",
     "crates/cli-api",
+    "crates/app",
     "crates/codegen",
     "crates/graphql-codegen",
     "crates/theme",

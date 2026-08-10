@@ -1,0 +1,26 @@
+[package]
+name = "app"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Shopify app development domain: models, config, and services"
+
+[dependencies]
+cli-api = { path = "../cli-api" }
+cli-core = { path = "../cli-core" }
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+toml.workspace = true
+dirs.workspace = true
+regex-lite = "0.1"
+async-trait = "0.1"
+tokio.workspace = true
+reqwest = { workspace = true, features = ["multipart"] }
+zip = "2"
+brotli = "7"
+
+[dev-dependencies]
+tempfile = "3"
+tokio = { workspace = true, features = ["macros", "rt"] }
+wiremock = "0.6"
