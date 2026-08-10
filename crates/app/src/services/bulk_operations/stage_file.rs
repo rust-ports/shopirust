@@ -37,7 +37,9 @@ pub fn resolve_mutation_jsonl(
 }
 
 /// Extract the staged upload path (key) from a `stagedUploadsCreate` response.
-pub fn staged_upload_path_from_response(response: &Value) -> Result<(String, String, Vec<(String, String)>), AppError> {
+pub type StagedUploadTarget = (String, String, Vec<(String, String)>);
+
+pub fn staged_upload_path_from_response(response: &Value) -> Result<StagedUploadTarget, AppError> {
     let target = response
         .pointer("/stagedUploadsCreate/stagedTargets/0")
         .or_else(|| response.pointer("/data/stagedUploadsCreate/stagedTargets/0"))

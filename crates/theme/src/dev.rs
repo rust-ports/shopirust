@@ -143,9 +143,8 @@ pub struct DevServerTheme {
 }
 
 /// Re-authenticates the dev server session on demand (theme-ID mismatch recovery).
-pub type DevServerRefresh = Arc<
-    dyn Fn() -> BoxFuture<'static, Result<DevServerSession, String>> + Send + Sync,
->;
+pub type DevServerRefresh =
+    Arc<dyn Fn() -> BoxFuture<'static, Result<DevServerSession, String>> + Send + Sync>;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DevServerUrls {
@@ -538,7 +537,14 @@ where
                 }
             }
             let payload = hot_reload_payload_for_state(state, &event.key, Some(&asset));
-            emit_reload(ctx, &state.reload_tx, &event.key, false, "local", payload.clone());
+            emit_reload(
+                ctx,
+                &state.reload_tx,
+                &event.key,
+                false,
+                "local",
+                payload.clone(),
+            );
             let results = api
                 .upload_assets(ctx.theme.id, vec![asset.clone()])
                 .await
@@ -1101,6 +1107,8 @@ fn start_terminal_controls(
     })
 }
 
+type SectionNamesByFile = Arc<Mutex<BTreeMap<String, Vec<(String, String)>>>>;
+
 #[derive(Clone)]
 struct AppState {
     ctx: Arc<DevServerContext>,
@@ -1112,7 +1120,7 @@ struct AppState {
     client: reqwest::Client,
     refresh: Option<DevServerRefresh>,
     theme_id_mismatch_redirects: Arc<AtomicUsize>,
-    section_names_by_file: Arc<Mutex<BTreeMap<String, Vec<(String, String)>>>>,
+    section_names_by_file: SectionNamesByFile,
     file_details_cache: Arc<Mutex<BTreeMap<String, FileDetailsEntry>>>,
     extension_files: Arc<Mutex<BTreeMap<String, ThemeAsset>>>,
     extension_unsynced: Arc<Mutex<BTreeSet<String>>>,
@@ -1138,7 +1146,10 @@ fn router(state: AppState) -> Router {
         .route("/compiled_assets/*path", get(compiled_asset_or_proxy))
         .route("/cdn/*path", get(cdn_asset_or_proxy))
         .route("/ext/cdn/*path", get(ext_cdn_asset_or_proxy))
-        .route(LOCAL_HOT_RELOAD_SCRIPT_ENDPOINT, get(local_hot_reload_script))
+        .route(
+            LOCAL_HOT_RELOAD_SCRIPT_ENDPOINT,
+            get(local_hot_reload_script),
+        )
         .fallback(any(proxy_or_render))
         .layer(cors)
         .with_state(state)
@@ -1273,10 +1284,7 @@ fn serve_asset(state: &AppState, key: &str) -> Response {
 
 fn local_asset_response(state: &AppState, key: &str) -> Option<Response> {
     let files = state.files.lock().expect("file state poisoned");
-    let extension_files = state
-        .extension_files
-        .lock()
-        .expect("ext files poisoned");
+    let extension_files = state.extension_files.lock().expect("ext files poisoned");
     let asset = files.get(key)?;
     asset_to_local_response(
         asset,
@@ -1290,10 +1298,7 @@ fn local_asset_response(state: &AppState, key: &str) -> Option<Response> {
 
 fn local_extension_asset_response(state: &AppState, key: &str) -> Option<Response> {
     let files = state.files.lock().expect("file state poisoned");
-    let extension_files = state
-        .extension_files
-        .lock()
-        .expect("ext files poisoned");
+    let extension_files = state.extension_files.lock().expect("ext files poisoned");
     let asset = extension_files.get(key)?;
     asset_to_local_response(
         asset,
@@ -1549,10 +1554,7 @@ fn local_interface_addresses() -> Vec<IpAddr> {
         }
     }
     if let Ok(socket) = std::net::UdpSocket::bind("[::]:0") {
-        if socket
-            .connect("[2001:4860:4860::8888]:80")
-            .is_ok()
-        {
+        if socket.connect("[2001:4860:4860::8888]:80").is_ok() {
             if let Ok(local) = socket.local_addr() {
                 addresses.insert(local.ip());
             }
@@ -1637,9 +1639,7 @@ fn build_section_replace_templates(
 
     let section_template = {
         let files = state.files.lock().expect("file state poisoned");
-        files
-            .get(section_key)
-            .and_then(|asset| asset.value.clone())
+        files.get(section_key).and_then(|asset| asset.value.clone())
     };
     if unsynced.contains(section_key) {
         let section_template = section_template?;
@@ -1663,10 +1663,7 @@ fn build_section_replace_templates(
         };
         for (_section_type, name) in entries {
             if section_id.ends_with(&format!("__{name}")) {
-                if let Some(content) = files
-                    .get(file_key)
-                    .and_then(|asset| asset.value.clone())
-                {
+                if let Some(content) = files.get(file_key).and_then(|asset| asset.value.clone()) {
                     if !content.is_empty() {
                         replace_templates.insert(file_key.clone(), content);
                     }
@@ -1793,10 +1790,7 @@ async fn render_section(
 /// Patches a single-section rendering response by proxying CDN URLs and
 /// rewriting base URL attributes, without injecting the HTML body patchers used
 /// for full-page renders (mirrors upstream `patchRenderingResponse`).
-async fn patch_section_response(
-    state: AppState,
-    response: reqwest::Response,
-) -> Response {
+async fn patch_section_response(state: AppState, response: reqwest::Response) -> Response {
     let status_code = response.status();
     let mut headers = response.headers().clone();
     update_session_cookies_from_headers(&state, &headers);
@@ -1918,15 +1912,13 @@ async fn render_storefront(
             .iter()
             .filter(|(key, _)| unsynced.contains(*key))
             .filter_map(|(key, asset)| {
-                let content = asset
-                    .value
-                    .clone()
-                    .or_else(|| asset.attachment.clone())?;
+                let content = asset.value.clone().or_else(|| asset.attachment.clone())?;
                 Some((key.clone(), content))
             })
             .collect::<BTreeMap<_, _>>()
     };
-    let (method, body, headers) = if replace_templates.is_empty() && replace_extension_templates.is_empty()
+    let (method, body, headers) = if replace_templates.is_empty()
+        && replace_extension_templates.is_empty()
     {
         (original_method.clone(), None, original_headers.clone())
     } else {
@@ -1947,9 +1939,7 @@ async fn render_storefront(
         Ok(response) => {
             let status = response.status().as_u16();
             if (400..500).contains(&status) && !is_known_rendering_request(&query) {
-                eprintln!(
-                    "Render failed for {path} with {status}, trying proxy..."
-                );
+                eprintln!("Render failed for {path} with {status}, trying proxy...");
                 let proxy_response = remote_request(
                     &state,
                     original_method.clone(),
@@ -1977,15 +1967,8 @@ async fn render_storefront(
                             .get(CONTENT_TYPE)
                             .and_then(|value| value.to_str().ok())
                             .is_some_and(|value| value.contains("text/html"));
-                        let patch_html = is_html
-                            && state.ctx.options.standard_events_inspector;
-                        return patch_response(
-                            state,
-                            Ok(proxy),
-                            patch_html,
-                            Some(browser),
-                        )
-                        .await;
+                        let patch_html = is_html && state.ctx.options.standard_events_inspector;
+                        return patch_response(state, Ok(proxy), patch_html, Some(browser)).await;
                     }
                     Ok(proxy) => {
                         eprintln!(
@@ -2236,10 +2219,7 @@ fn proxy_storefront_headers(headers: &HeaderMap, client_ip: Option<&str>) -> Hea
     out
 }
 
-fn upload_error_page(
-    ctx: &DevServerContext,
-    errors: &BTreeMap<String, Vec<String>>,
-) -> Response {
+fn upload_error_page(ctx: &DevServerContext, errors: &BTreeMap<String, Vec<String>>) -> Response {
     let page_errors = errors
         .iter()
         .map(|(key, errors)| ErrorPageError {
@@ -2382,12 +2362,7 @@ fn escape_html(value: &str) -> String {
 /// Extracts the theme ID embedded in a rendered storefront's `Shopify.theme` object.
 fn theme_id_from_html(html: &str) -> Option<i64> {
     let regex = Regex::new(r#"Shopify\.theme\s*=\s*\{[^}]*"id":\s*"?(\d+)"?(}|,)"#).ok()?;
-    regex
-        .captures(html)?
-        .get(1)?
-        .as_str()
-        .parse::<i64>()
-        .ok()
+    regex.captures(html)?.get(1)?.as_str().parse::<i64>().ok()
 }
 
 /// Recovers from a rendered theme ID mismatch by refreshing the dev session and
@@ -2398,16 +2373,17 @@ async fn handle_theme_id_mismatch(
     browser: Option<&str>,
 ) -> Response {
     let expected_theme_id = state.ctx.theme.id;
-    let redirects = state.theme_id_mismatch_redirects.fetch_add(1, Ordering::SeqCst) + 1;
+    let redirects = state
+        .theme_id_mismatch_redirects
+        .fetch_add(1, Ordering::SeqCst)
+        + 1;
     if redirects > MAX_THEME_ID_MISMATCH_REDIRECTS {
         eprintln!(
             "Theme ID mismatch: expected {expected_theme_id} but got {actual_theme_id}. Aborting dev server after {MAX_THEME_ID_MISMATCH_REDIRECTS} consecutive mismatches."
         );
         return (
             StatusCode::INTERNAL_SERVER_ERROR,
-            format!(
-                "Theme ID mismatch: expected {expected_theme_id} but got {actual_theme_id}."
-            ),
+            format!("Theme ID mismatch: expected {expected_theme_id} but got {actual_theme_id}."),
         )
             .into_response();
     }
@@ -2460,7 +2436,10 @@ fn mismatch_location(browser: &str) -> String {
 pub fn should_log_request(path: &str) -> bool {
     const IGNORED_PREFIXES: [&str; 4] = ["/ext/cdn/", "/cdn/", "/checkouts", "/payments"];
     const IGNORED_EXTENSIONS: [&str; 4] = [".js", ".css", ".json", ".map"];
-    if IGNORED_PREFIXES.iter().any(|prefix| path.starts_with(prefix)) {
+    if IGNORED_PREFIXES
+        .iter()
+        .any(|prefix| path.starts_with(prefix))
+    {
         return false;
     }
     let pathname = path.split('?').next().unwrap_or(path);
@@ -2580,8 +2559,10 @@ pub fn get_in_memory_templates(
     let locale_re = Regex::new(r"^locales/.+\.json$").ok();
     let has_locale = locale.is_some()
         && (files.contains_key(&format!("locales/{}.json", locale.unwrap_or_default()))
-            || files
-                .contains_key(&format!("locales/{}.default.json", locale.unwrap_or_default())));
+            || files.contains_key(&format!(
+                "locales/{}.default.json",
+                locale.unwrap_or_default()
+            )));
     let mut in_memory = BTreeMap::new();
     for key in unsynced {
         if !needs_template_update(key) {
@@ -2657,7 +2638,8 @@ fn find_section_names_to_reload(
     if key.ends_with(".json") {
         if let Some(content) = files.get(key).and_then(|asset| asset.value.as_deref()) {
             if let Ok(json) = serde_json::from_str::<serde_json::Value>(content) {
-                if let Some(sections_map) = json.get("sections").and_then(|value| value.as_object()) {
+                if let Some(sections_map) = json.get("sections").and_then(|value| value.as_object())
+                {
                     sections.extend(sections_map.keys().cloned());
                 }
             }
@@ -2785,9 +2767,7 @@ async fn patch_response(
                 return handle_theme_id_mismatch(state, actual_theme_id, browser.as_deref()).await;
             }
         }
-        state
-            .theme_id_mismatch_redirects
-            .store(0, Ordering::SeqCst);
+        state.theme_id_mismatch_redirects.store(0, Ordering::SeqCst);
         let body = patch_html(
             &body,
             &state.ctx,
@@ -3223,7 +3203,9 @@ mod tests {
         assert!(wildcard.contains("0.0.0.0:9292"));
         assert!(wildcard.contains("127.0.0.1:9292"));
         assert!(wildcard.contains("localhost:9292"));
-        assert!(wildcard.iter().any(|host| host.ends_with(":9292") && host != "0.0.0.0:9292"));
+        assert!(wildcard
+            .iter()
+            .any(|host| host.ends_with(":9292") && host != "0.0.0.0:9292"));
     }
 
     #[test]
@@ -3421,7 +3403,13 @@ mod tests {
             },
         );
         let html = r#"https://example.myshopify.com/cdn/theme/assets/app.js //cdn.shopify.com/s/files/1/assets/app.js //cdn.shopify.com/s/files/1/assets/logo.png"#;
-        let patched = inject_cdn_proxy(html, "example.myshopify.com", &files, &BTreeMap::new(), false);
+        let patched = inject_cdn_proxy(
+            html,
+            "example.myshopify.com",
+            &files,
+            &BTreeMap::new(),
+            false,
+        );
         assert!(patched.contains("/cdn/theme/assets/app.js"));
         assert!(patched.contains("/cdn/s/files/1/assets/app.js"));
         assert!(patched.contains("//cdn.shopify.com/s/files/1/assets/logo.png"));
@@ -3446,7 +3434,13 @@ mod tests {
             <https://example.myshopify.com/cdn/shop/t/10/assets/app.js?v=1>; as="script"; rel="preload"
             <div data-shs-beacon-endpoint='https://example.myshopify.com/api/collect'></div>
         "#;
-        let patched = inject_cdn_proxy(content, "example.myshopify.com", &files, &BTreeMap::new(), false);
+        let patched = inject_cdn_proxy(
+            content,
+            "example.myshopify.com",
+            &files,
+            &BTreeMap::new(),
+            false,
+        );
 
         assert!(patched.contains("console.log('/cdn/path/to/assets/app.js');"));
         assert!(patched.contains("\"/cdn/path/to/assets/app.js#hash\""));
@@ -3459,9 +3453,20 @@ mod tests {
         let content =
             format!(r#""{STANDARD_EVENTS_RUNTIME_URL}" import("{STANDARD_EVENTS_RUNTIME_URL}")"#);
 
-        let unchanged =
-            inject_cdn_proxy(&content, "example.myshopify.com", &BTreeMap::new(), &BTreeMap::new(), false);
-        let rewritten = inject_cdn_proxy(&content, "example.myshopify.com", &BTreeMap::new(), &BTreeMap::new(), true);
+        let unchanged = inject_cdn_proxy(
+            &content,
+            "example.myshopify.com",
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            false,
+        );
+        let rewritten = inject_cdn_proxy(
+            &content,
+            "example.myshopify.com",
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            true,
+        );
 
         assert!(unchanged.contains(STANDARD_EVENTS_RUNTIME_URL));
         assert!(!rewritten.contains(STANDARD_EVENTS_RUNTIME_URL));
@@ -3605,7 +3610,9 @@ mod tests {
     #[test]
     fn should_send_storefront_bearer_only_for_theme_servers() {
         assert!(should_send_storefront_bearer(DevServerKind::Theme));
-        assert!(!should_send_storefront_bearer(DevServerKind::ThemeExtension));
+        assert!(!should_send_storefront_bearer(
+            DevServerKind::ThemeExtension
+        ));
     }
 
     #[tokio::test]
@@ -4054,11 +4061,9 @@ mod tests {
         }];
 
         let error = abort_if_multiple_sources_changed(&filesystem, &changed).unwrap_err();
-        assert!(
-            error
-                .to_string()
-                .contains("on both local and remote sources. Aborting...")
-        );
+        assert!(error
+            .to_string()
+            .contains("on both local and remote sources. Aborting..."));
         assert!(error.to_string().contains("templates/asset.json"));
     }
 
@@ -4336,10 +4341,7 @@ mod tests {
             "/ext/cdn/extensions/1a/assets/file.css",
             "5678"
         ));
-        assert!(!is_stale_asset_query(
-            "/cdn/shop/t/img/assets/file4.js",
-            ""
-        ));
+        assert!(!is_stale_asset_query("/cdn/shop/t/img/assets/file4.js", ""));
         assert!(!is_stale_asset_query(
             "/cdn/shop/t/img/assets/file4.js",
             "v=123"
@@ -4425,14 +4427,38 @@ mod tests {
     fn in_memory_templates_filter_by_route_and_locale() {
         let content = "{}";
         let files = BTreeMap::from([
-            ("templates/index.json".into(), value_asset("templates/index.json", content)),
-            ("templates/search.json".into(), value_asset("templates/search.json", content)),
-            ("locales/en.default.json".into(), value_asset("locales/en.default.json", content)),
-            ("locales/en.default.schema.json".into(), value_asset("locales/en.default.schema.json", content)),
-            ("locales/es.json".into(), value_asset("locales/es.json", content)),
-            ("locales/es.schema.json".into(), value_asset("locales/es.schema.json", content)),
-            ("sections/header.liquid".into(), value_asset("sections/header.liquid", "markup")),
-            ("assets/app.css".into(), value_asset("assets/app.css", "css")),
+            (
+                "templates/index.json".into(),
+                value_asset("templates/index.json", content),
+            ),
+            (
+                "templates/search.json".into(),
+                value_asset("templates/search.json", content),
+            ),
+            (
+                "locales/en.default.json".into(),
+                value_asset("locales/en.default.json", content),
+            ),
+            (
+                "locales/en.default.schema.json".into(),
+                value_asset("locales/en.default.schema.json", content),
+            ),
+            (
+                "locales/es.json".into(),
+                value_asset("locales/es.json", content),
+            ),
+            (
+                "locales/es.schema.json".into(),
+                value_asset("locales/es.schema.json", content),
+            ),
+            (
+                "sections/header.liquid".into(),
+                value_asset("sections/header.liquid", "markup"),
+            ),
+            (
+                "assets/app.css".into(),
+                value_asset("assets/app.css", "css"),
+            ),
         ]);
         let unsynced: BTreeSet<String> = files.keys().cloned().collect();
 
@@ -4501,15 +4527,22 @@ mod tests {
         );
 
         let files = BTreeMap::from([
-            ("sections/header.liquid".into(), value_asset("sections/header.liquid", "")),
-            ("templates/index.json".into(), value_asset("templates/index.json", template)),
+            (
+                "sections/header.liquid".into(),
+                value_asset("sections/header.liquid", ""),
+            ),
+            (
+                "templates/index.json".into(),
+                value_asset("templates/index.json", template),
+            ),
         ]);
         assert_eq!(
             find_section_names_to_reload("sections/header.liquid", &files, &section_names),
             vec!["first".to_string(), "second".to_string()]
         );
         assert!(
-            find_section_names_to_reload("sections/footer.liquid", &files, &section_names).is_empty()
+            find_section_names_to_reload("sections/footer.liquid", &files, &section_names)
+                .is_empty()
         );
     }
 
@@ -4529,10 +4562,7 @@ mod tests {
     #[tokio::test]
     async fn section_render_returns_no_content_without_ids() {
         let state = state_with_files(BTreeMap::new());
-        let request = Request::builder()
-            .uri("/")
-            .body(Body::empty())
-            .unwrap();
+        let request = Request::builder().uri("/").body(Body::empty()).unwrap();
         let response = render_section(state, request, BTreeMap::new()).await;
         assert_eq!(response.status(), StatusCode::NO_CONTENT);
     }
@@ -4572,8 +4602,10 @@ mod tests {
                 ),
             ),
         ]));
-        let unsynced: BTreeSet<String> =
-            ["sections/header.liquid", "templates/index.json"].into_iter().map(String::from).collect();
+        let unsynced: BTreeSet<String> = ["sections/header.liquid", "templates/index.json"]
+            .into_iter()
+            .map(String::from)
+            .collect();
         save_sections_from_json(
             &mut state.section_names_by_file.lock().unwrap(),
             "templates/index.json",
@@ -4587,7 +4619,10 @@ mod tests {
             &unsynced,
         )
         .unwrap();
-        assert_eq!(replace_templates.get("sections/header.liquid").unwrap(), "<header></header>");
+        assert_eq!(
+            replace_templates.get("sections/header.liquid").unwrap(),
+            "<header></header>"
+        );
         assert!(replace_templates.contains_key("templates/index.json"));
 
         // A section id not matching any cached name omits the JSON file:
@@ -4602,18 +4637,29 @@ mod tests {
         assert!(!replace_templates.contains_key("templates/index.json"));
 
         // Unsynced section rendered twice, matching name yields the JSON file:
-        assert!(
-            build_section_replace_templates(&state, "sections/header.liquid", "123__first", &unsynced)
-                .is_some()
-        );
+        assert!(build_section_replace_templates(
+            &state,
+            "sections/header.liquid",
+            "123__first",
+            &unsynced
+        )
+        .is_some());
     }
 
     #[test]
     fn section_render_returns_none_when_template_removed() {
         let state = state_with_files(BTreeMap::new());
-        let unsynced: BTreeSet<String> = ["sections/header.liquid"].into_iter().map(String::from).collect();
+        let unsynced: BTreeSet<String> = ["sections/header.liquid"]
+            .into_iter()
+            .map(String::from)
+            .collect();
         assert_eq!(
-            build_section_replace_templates(&state, "sections/header.liquid", "123__first", &unsynced),
+            build_section_replace_templates(
+                &state,
+                "sections/header.liquid",
+                "123__first",
+                &unsynced
+            ),
             None
         );
     }

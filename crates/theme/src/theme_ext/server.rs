@@ -250,9 +250,7 @@ fn should_ignore(path: &str) -> bool {
 }
 
 fn decode_path(path: &str) -> String {
-    percent_decode_str(path)
-        .decode_utf8_lossy()
-        .into_owned()
+    percent_decode_str(path).decode_utf8_lossy().into_owned()
 }
 
 #[cfg(test)]
@@ -297,7 +295,11 @@ mod tests {
     #[test]
     fn rejects_attacker_hosts_and_missing_host() {
         let ctx = context_at(9293);
-        for host in ["attacker.com:9293", "poc.mzero.cloud:9293", "localhost:1234"] {
+        for host in [
+            "attacker.com:9293",
+            "poc.mzero.cloud:9293",
+            "localhost:1234",
+        ] {
             assert!(
                 !valid_extension_host(&ctx, &host_headers(Some(host))),
                 "host={host}"

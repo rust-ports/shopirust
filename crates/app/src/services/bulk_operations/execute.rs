@@ -1,7 +1,5 @@
 use crate::error::AppError;
-use crate::services::bulk_operations::status::{
-    get_bulk_operation_status, BulkOperationStatus,
-};
+use crate::services::bulk_operations::status::{get_bulk_operation_status, BulkOperationStatus};
 use crate::services::bulk_operations::watch::watch_bulk_operation;
 use crate::services::execute_operation::{execute_operation, ExecuteOperationOptions};
 use serde_json::Value;
@@ -40,32 +38,33 @@ pub async fn execute_bulk_operation(
         ));
     };
 
-    let is_mutation = query_text.trim_start().to_lowercase().starts_with("mutation");
+    let is_mutation = query_text
+        .trim_start()
+        .to_lowercase()
+        .starts_with("mutation");
 
     let wrapped = if is_mutation {
         // Mutations go through staged uploads in full upstream; for T3 we run
         // bulkOperationRunMutation with the query string directly when no JSONL file.
-        format!(
-            r#"
-            mutation RunBulkMutation($mutation: String!) {{
-              bulkOperationRunMutation(mutation: $mutation) {{
-                bulkOperation {{ id status url }}
-                userErrors {{ field message }}
-              }}
-            }}
+        r#"
+            mutation RunBulkMutation($mutation: String!) {
+              bulkOperationRunMutation(mutation: $mutation) {
+                bulkOperation { id status url }
+                userErrors { field message }
+              }
+            }
             "#
-        )
+        .to_string()
     } else {
-        format!(
-            r#"
-            mutation RunBulkQuery($query: String!) {{
-              bulkOperationRunQuery(query: $query) {{
-                bulkOperation {{ id status url }}
-                userErrors {{ field message }}
-              }}
-            }}
+        r#"
+            mutation RunBulkQuery($query: String!) {
+              bulkOperationRunQuery(query: $query) {
+                bulkOperation { id status url }
+                userErrors { field message }
+              }
+            }
             "#
-        )
+        .to_string()
     };
 
     let variables = if is_mutation {
@@ -95,7 +94,11 @@ pub async fn execute_bulk_operation(
     let op_id = result
         .data
         .pointer("/bulkOperationRunQuery/bulkOperation/id")
-        .or_else(|| result.data.pointer("/bulkOperationRunMutation/bulkOperation/id"))
+        .or_else(|| {
+            result
+                .data
+                .pointer("/bulkOperationRunMutation/bulkOperation/id")
+        })
         .and_then(|v| v.as_str())
         .map(str::to_string);
 

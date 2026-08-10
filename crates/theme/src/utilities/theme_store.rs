@@ -8,7 +8,7 @@ pub enum ThemeStoreError {
 }
 
 pub fn ensure_theme_store(flags: &ThemeStoreFlags) -> Result<String, ThemeStoreError> {
-    let store = flags.store.clone().or_else(|| get_theme_store());
+    let store = flags.store.clone().or_else(get_theme_store);
     match store {
         Some(store) => {
             set_theme_store(&store);

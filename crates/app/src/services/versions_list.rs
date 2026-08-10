@@ -78,7 +78,9 @@ pub async fn version_list(
             ));
         }
         lines.push(String::new());
-        lines.push(format!("View all {total_results} app versions in the Developer Dashboard"));
+        lines.push(format!(
+            "View all {total_results} app versions in the Developer Dashboard"
+        ));
     }
 
     Ok(VersionListResult {
@@ -108,19 +110,16 @@ fn parse_versions_value(raw: &Value) -> Result<Vec<AppVersionLine>, AppError> {
         .and_then(|v| v.as_array())
     {
         arr.clone()
-    } else if let Some(arr) = raw
-        .pointer("/versions/edges")
-        .and_then(|v| v.as_array())
-        .map(|edges| {
-            edges
-                .iter()
-                .filter_map(|e| e.get("node").cloned())
-                .collect::<Vec<_>>()
-        })
-    {
-        arr
     } else {
-        vec![]
+        raw.pointer("/versions/edges")
+            .and_then(|v| v.as_array())
+            .map(|edges| {
+                edges
+                    .iter()
+                    .filter_map(|e| e.get("node").cloned())
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default()
     };
 
     let mut versions = Vec::new();
@@ -165,10 +164,7 @@ fn parse_versions_value(raw: &Value) -> Result<Vec<AppVersionLine>, AppError> {
             })
             .unwrap_or("")
             .to_string();
-        let id = node
-            .get("id")
-            .and_then(|v| v.as_str())
-            .map(str::to_string);
+        let id = node.get("id").and_then(|v| v.as_str()).map(str::to_string);
 
         versions.push(AppVersionLine {
             created_at,

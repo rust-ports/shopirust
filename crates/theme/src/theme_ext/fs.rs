@@ -55,11 +55,7 @@ impl std::fmt::Debug for ThemeExtensionFileSystem {
             .field("files", &self.files.lock().map(|g| g.len()).unwrap_or(0))
             .field(
                 "unsynced_file_keys",
-                &self
-                    .unsynced_file_keys
-                    .lock()
-                    .map(|g| g.len())
-                    .unwrap_or(0),
+                &self.unsynced_file_keys.lock().map(|g| g.len()).unwrap_or(0),
             )
             .finish()
     }
@@ -139,12 +135,10 @@ impl ThemeExtensionFileSystem {
 
         let content = match self.read(&file_key) {
             Ok(Some(FileContent::Text(text))) => Some(text),
-            Ok(Some(FileContent::Binary(bytes))) => {
-                Some(base64::Engine::encode(
-                    &base64::engine::general_purpose::STANDARD,
-                    bytes,
-                ))
-            }
+            Ok(Some(FileContent::Binary(bytes))) => Some(base64::Engine::encode(
+                &base64::engine::general_purpose::STANDARD,
+                bytes,
+            )),
             _ => None,
         };
 
@@ -158,13 +152,7 @@ impl ThemeExtensionFileSystem {
         self.schedule_unsynced_clear(file_key.clone());
 
         if content.as_ref().is_some_and(|value| !value.is_empty()) {
-            self.emit(
-                event_name,
-                ThemeExtFsEventPayload {
-                    file_key,
-                    content,
-                },
-            );
+            self.emit(event_name, ThemeExtFsEventPayload { file_key, content });
         }
     }
 
@@ -454,14 +442,11 @@ fn content_from_asset(asset: &ThemeAsset) -> Result<FileContent, ThemeFsError> {
         return Ok(FileContent::Text(value.clone()));
     }
     if let Some(attachment) = &asset.attachment {
-        let bytes = base64::Engine::decode(
-            &base64::engine::general_purpose::STANDARD,
-            attachment,
-        )
-        .map_err(|source| ThemeFsError::Attachment {
-            key: asset.key.clone(),
-            source,
-        })?;
+        let bytes = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, attachment)
+            .map_err(|source| ThemeFsError::Attachment {
+                key: asset.key.clone(),
+                source,
+            })?;
         return Ok(FileContent::Binary(bytes));
     }
     Ok(FileContent::Text(String::new()))
@@ -487,8 +472,14 @@ mod tests {
         assert!(theme_fs.unsynced_file_keys().is_empty());
 
         let expected = [
-            ("blocks/star_rating.liquid", "d8ceb73ce5faa4ac22713071d2f0a6bd"),
-            ("locales/en.default.json", "02054e661bbc326a68bf7be83427d7ed"),
+            (
+                "blocks/star_rating.liquid",
+                "d8ceb73ce5faa4ac22713071d2f0a6bd",
+            ),
+            (
+                "locales/en.default.json",
+                "02054e661bbc326a68bf7be83427d7ed",
+            ),
             ("assets/thumbs-up.png", "8a1dd937b2cfe9e669b26e41dc1de5e8"),
             ("snippets/stars.liquid", "28fa42561b59f04fc32e98feb3b994ac"),
         ];
@@ -542,7 +533,7 @@ mod tests {
         let theme_fs = mount_theme_extension_file_system(fixture_root());
         theme_fs.ready();
 
-        assert!(theme_fs.files().get("assets/new_file.css").is_none());
+        assert!(!theme_fs.files().contains_key("assets/new_file.css"));
         theme_fs.write(ThemeAsset {
             key: "assets/new_file.css".into(),
             checksum: "1010".into(),
@@ -551,7 +542,11 @@ mod tests {
             stats: None,
         });
 
-        let file = theme_fs.files().get("assets/new_file.css").cloned().unwrap();
+        let file = theme_fs
+            .files()
+            .get("assets/new_file.css")
+            .cloned()
+            .unwrap();
         assert_eq!(file.key, "assets/new_file.css");
         assert_eq!(file.checksum, "1010");
         assert_eq!(file.value.as_deref(), Some("content"));
@@ -572,7 +567,11 @@ mod tests {
             stats: None,
         });
 
-        let file = theme_fs.files().get("assets/new_image.gif").cloned().unwrap();
+        let file = theme_fs
+            .files()
+            .get("assets/new_image.gif")
+            .cloned()
+            .unwrap();
         assert_eq!(file.key, "assets/new_image.gif");
         assert_eq!(file.checksum, "1010");
         assert_eq!(file.attachment.as_deref(), Some(attachment.as_str()));
@@ -641,9 +640,8 @@ mod tests {
             ("snippets/world.liquid".into(), "World".into()),
         ]);
         let params = replace_extension_templates_params(&templates);
-        assert!(params.contains(
-            "replace_extension_templates%5Bblocks%5D%5Bblocks%2Fhello.liquid%5D=Hello"
-        ));
+        assert!(params
+            .contains("replace_extension_templates%5Bblocks%5D%5Bblocks%2Fhello.liquid%5D=Hello"));
         assert!(params.contains(
             "replace_extension_templates%5Bsnippets%5D%5Bsnippets%2Fworld.liquid%5D=World"
         ));

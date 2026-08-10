@@ -178,6 +178,7 @@ pub struct AppliedFileEvent {
     pub deleted: bool,
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn apply_file_event<A: ThemeFileEventAdmin + Sync>(
     api: &A,
     theme_id: i64,

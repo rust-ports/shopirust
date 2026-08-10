@@ -71,10 +71,7 @@ pub async fn release_version(
                 .unwrap_or_else(|| options.version.clone())
         )
     } else {
-        format!(
-            "Version couldn't be released: {}",
-            user_errors.join(", ")
-        )
+        format!("Version couldn't be released: {}", user_errors.join(", "))
     };
 
     Ok(ReleaseResult {
@@ -132,7 +129,7 @@ fn extract_user_errors(raw: &Value) -> Vec<String> {
         raw.pointer("/appRelease/userErrors"),
         raw.pointer("/release/userErrors"),
         raw.pointer("/userErrors"),
-        raw.get("user_errors").into(),
+        raw.get("user_errors"),
     ];
     for c in candidates.into_iter().flatten() {
         if let Some(arr) = c.as_array() {

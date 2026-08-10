@@ -2015,15 +2015,15 @@ impl Dev {
         let port = theme::dev::resolve_port(&host, self.port)
             .map_err(|error| CliError::abort(error.to_string()))?;
         let root = self.common.path.clone().unwrap_or_else(cwd_path);
-        if !self.force && !recognizable_theme(&root) {
-            if !theme::utilities::theme_ui::ensure_directory_confirmed(
+        if !self.force
+            && !recognizable_theme(&root)
+            && !theme::utilities::theme_ui::ensure_directory_confirmed(
                 self.force, None, None, false,
             )
             .await
             .map_err(|error| CliError::abort(error.to_string()))?
-            {
-                return Ok(());
-            }
+        {
+            return Ok(());
         }
         if self
             .common
@@ -2031,15 +2031,17 @@ impl Dev {
             .as_deref()
             .is_some_and(|password| password.starts_with("shpat_"))
         {
-            output_warn(OutputContent::new().add(Token::Raw(
-                "Admin API token missing features:\n\
+            output_warn(
+                OutputContent::new().add(Token::Raw(
+                    "Admin API token missing features:\n\
                  Directly using an Admin API token will result in some missing features.\n\
                  We recommend generating a password from the Theme Access app.\n\
                  Alternatively, you can authenticate normally by not passing the --password flag.\n\
                  Known limitations: Hot module reloading, Password protected storefronts.\n\
                  Theme Access app: https://shopify.dev/docs/storefronts/themes/tools/theme-access"
-                    .into(),
-            )));
+                        .into(),
+                )),
+            );
         }
         let session = session_for(&self.common).await?;
         let storefront_token = ensure_authenticated_storefront(
@@ -2433,12 +2435,10 @@ fn build_dev_session_refresh(
         let storefront_password = storefront_password.clone();
         let storefront_scopes = storefront_scopes.clone();
         Box::pin(async move {
-            let refreshed_admin = ensure_authenticated_themes(
-                &admin_session.store_fqdn,
-                admin_password.as_deref(),
-            )
-            .await
-            .map_err(|error| error.to_string())?;
+            let refreshed_admin =
+                ensure_authenticated_themes(&admin_session.store_fqdn, admin_password.as_deref())
+                    .await
+                    .map_err(|error| error.to_string())?;
             let storefront_token = ensure_authenticated_storefront(
                 storefront_scopes,
                 admin_password,
@@ -4624,7 +4624,8 @@ theme = "123"
             processing: false,
             src: None,
         };
-        let mut value = serde_json::to_value(theme_info_json(&theme, "shop.myshopify.com")).unwrap();
+        let mut value =
+            serde_json::to_value(theme_info_json(&theme, "shop.myshopify.com")).unwrap();
         let object = value.as_object_mut().unwrap();
         object.insert(
             "warning".into(),
@@ -4660,7 +4661,10 @@ theme = "123"
         let info_value: serde_json::Value = serde_json::from_str(&info).unwrap();
         assert_eq!(info_value["theme"]["id"], 42);
         assert_eq!(info_value["theme"]["shop"], "shop.myshopify.com");
-        assert!(info_value["theme"]["editor_url"].as_str().unwrap().contains("/admin/themes/42/editor"));
+        assert!(info_value["theme"]["editor_url"]
+            .as_str()
+            .unwrap()
+            .contains("/admin/themes/42/editor"));
         assert!(info_value["theme"]["preview_url"]
             .as_str()
             .unwrap()
@@ -4703,10 +4707,7 @@ theme = "123"
         }];
         let result = ThemeCommandRunner::validate(
             environments,
-            &[
-                RequiredFlag::Flag("store"),
-                RequiredFlag::Flag("password"),
-            ],
+            &[RequiredFlag::Flag("store"), RequiredFlag::Flag("password")],
         );
         assert!(result.valid.is_empty());
         assert_eq!(result.invalid[0].environment, "staging");
@@ -4745,7 +4746,11 @@ theme = "123"
             Some("https://evil.example/"),
             "shop.myshopify.com"
         ));
-        assert!(!redirects_to_storefront_location(302, None, "shop.myshopify.com"));
+        assert!(!redirects_to_storefront_location(
+            302,
+            None,
+            "shop.myshopify.com"
+        ));
     }
 
     #[test]
@@ -4784,7 +4789,9 @@ theme = "123"
 
     #[test]
     fn standard_events_dev_bundle_is_enabled_for_theme_dev() {
-        assert!(STANDARD_EVENTS_DEV_BUNDLE);
+        const {
+            assert!(STANDARD_EVENTS_DEV_BUNDLE);
+        }
     }
 
     #[test]
