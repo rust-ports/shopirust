@@ -8,13 +8,12 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum OneOrMany<T> {
-  One(T),
-  Many(Vec<T>),
+    One(T),
+    Many(Vec<T>),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum DevSessionWarningCode {
-  #[serde(rename = "SESSION_TAKEOVER")]
-  SessionTakeover,
+    #[serde(rename = "SESSION_TAKEOVER")]
+    SessionTakeover,
 }
-

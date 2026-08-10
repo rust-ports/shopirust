@@ -527,9 +527,11 @@ mod tests {
             role: LIVE_THEME_ROLE.into(),
             src: None,
         };
-        let value: serde_json::Value =
-            serde_json::from_str(&to_pretty_json(&theme_info_json(&theme, "shop.myshopify.com")))
-                .unwrap();
+        let value: serde_json::Value = serde_json::from_str(&to_pretty_json(&theme_info_json(
+            &theme,
+            "shop.myshopify.com",
+        )))
+        .unwrap();
         assert_eq!(value["theme"]["role"], "live");
         assert_eq!(value["theme"]["preview_url"], "https://shop.myshopify.com");
         assert!(value["theme"]["editor_url"]

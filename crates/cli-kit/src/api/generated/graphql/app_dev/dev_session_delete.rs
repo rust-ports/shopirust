@@ -18,24 +18,23 @@ pub const DEV_SESSION_DELETE_MUTATION: &str = r"mutation DevSessionDelete($appId
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DevSessionDeleteVariables {
-  pub app_id: String,
+    pub app_id: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DevSessionDeleteDevSessionDeleteUserErrors {
-  pub message: String,
+    pub message: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DevSessionDeleteDevSessionDelete {
-  pub user_errors: Vec<DevSessionDeleteDevSessionDeleteUserErrors>,
+    pub user_errors: Vec<DevSessionDeleteDevSessionDeleteUserErrors>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DevSessionDeleteResponse {
-  pub dev_session_delete: Option<DevSessionDeleteDevSessionDelete>,
+    pub dev_session_delete: Option<DevSessionDeleteDevSessionDelete>,
 }
-

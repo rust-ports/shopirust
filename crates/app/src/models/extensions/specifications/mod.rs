@@ -1,6 +1,4 @@
-use crate::models::extensions::specification::{
-    ExtensionExperience, ExtensionSpecification,
-};
+use crate::models::extensions::specification::{ExtensionExperience, ExtensionSpecification};
 
 mod function;
 mod theme;
@@ -19,16 +17,10 @@ pub fn lookup(identifier: &str) -> Option<ExtensionSpecification> {
         "function" | "product_discounts" | "order_discounts" | "shipping_discounts" => {
             Some(function_specification())
         }
-        "app_access" => Some(app_config_spec(
-            "app_access",
-            "App access",
-            "app_access",
-        )),
-        "webhooks" | "app_config_webhook" => Some(app_config_spec(
-            "webhooks",
-            "Webhooks",
-            "webhooks",
-        )),
+        "app_access" => Some(app_config_spec("app_access", "App access", "app_access")),
+        "webhooks" | "app_config_webhook" => {
+            Some(app_config_spec("webhooks", "Webhooks", "webhooks"))
+        }
         "app_proxy" => Some(app_config_spec("app_proxy", "App proxy", "app_proxy")),
         "pos" | "point_of_sale" => Some(app_config_spec("pos", "Point of Sale", "point_of_sale")),
         "branding" => Some(app_config_spec("branding", "Branding", "branding")),

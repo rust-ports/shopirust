@@ -27,31 +27,30 @@ pub const EXTENSION_UPDATE_DRAFT_MUTATION: &str = r"mutation ExtensionUpdateDraf
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ExtensionUpdateDraftVariables {
-  pub api_key: String,
-  pub registration_id: String,
-  pub config: serde_json::Value,
-  #[serde(skip_serializing_if = "Option::is_none")]
-  pub context: Option<String>,
-  #[serde(skip_serializing_if = "Option::is_none")]
-  pub handle: Option<String>,
+    pub api_key: String,
+    pub registration_id: String,
+    pub config: serde_json::Value,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub context: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub handle: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ExtensionUpdateDraftExtensionUpdateDraftUserErrors {
-  pub field: Option<Vec<String>>,
-  pub message: String,
+    pub field: Option<Vec<String>>,
+    pub message: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ExtensionUpdateDraftExtensionUpdateDraft {
-  pub user_errors: Option<Vec<ExtensionUpdateDraftExtensionUpdateDraftUserErrors>>,
+    pub user_errors: Option<Vec<ExtensionUpdateDraftExtensionUpdateDraftUserErrors>>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ExtensionUpdateDraftResponse {
-  pub extension_update_draft: Option<ExtensionUpdateDraftExtensionUpdateDraft>,
+    pub extension_update_draft: Option<ExtensionUpdateDraftExtensionUpdateDraft>,
 }
-

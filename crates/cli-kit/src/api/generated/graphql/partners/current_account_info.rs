@@ -22,27 +22,26 @@ pub const CURRENT_ACCOUNT_INFO_QUERY: &str = r"query currentAccountInfo {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CurrentAccountInfoCurrentAccountInfoServiceAccount {
-  pub org_name: String,
+    pub org_name: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CurrentAccountInfoCurrentAccountInfoUserAccount {
-  pub email: String,
+    pub email: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "__typename")]
 pub enum CurrentAccountInfoCurrentAccountInfo {
-  #[serde(rename = "ServiceAccount")]
-  ServiceAccount(CurrentAccountInfoCurrentAccountInfoServiceAccount),
-  #[serde(rename = "UserAccount")]
-  UserAccount(CurrentAccountInfoCurrentAccountInfoUserAccount),
+    #[serde(rename = "ServiceAccount")]
+    ServiceAccount(CurrentAccountInfoCurrentAccountInfoServiceAccount),
+    #[serde(rename = "UserAccount")]
+    UserAccount(CurrentAccountInfoCurrentAccountInfoUserAccount),
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CurrentAccountInfoResponse {
-  pub current_account_info: CurrentAccountInfoCurrentAccountInfo,
+    pub current_account_info: CurrentAccountInfoCurrentAccountInfo,
 }
-

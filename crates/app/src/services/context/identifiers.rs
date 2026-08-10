@@ -1,10 +1,10 @@
 use crate::error::AppError;
 use crate::local_storage::{set_cached_app_info, CachedAppInfo};
 use crate::models::identifiers::Identifiers;
-use crate::services::context::LinkedAppContext;
 use crate::services::context::breakdown_extensions::{
     extensions_identifiers_deploy_breakdown, ExtensionBreakdown,
 };
+use crate::services::context::LinkedAppContext;
 use cli_api::DeveloperPlatformClient;
 use std::collections::HashMap;
 use std::fs;
@@ -44,7 +44,9 @@ pub async fn ensure_deployment_ids_presence(
     // Already-identified locals
     for ext in &ctx.app.extensions {
         if let Some(ref uid) = ext.uid {
-            extensions.entry(ext.handle.clone()).or_insert_with(|| uid.clone());
+            extensions
+                .entry(ext.handle.clone())
+                .or_insert_with(|| uid.clone());
         } else {
             extensions
                 .entry(ext.handle.clone())

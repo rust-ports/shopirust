@@ -30,53 +30,52 @@ pub const LIST_APPS_QUERY: &str = r"query listApps($query: String) {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ListAppsVariables {
-  #[serde(skip_serializing_if = "Option::is_none")]
-  pub query: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub query: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ListAppsAppsConnectionEdgesNodeActiveReleaseVersion {
-  pub name: String,
+    pub name: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ListAppsAppsConnectionEdgesNodeActiveRelease {
-  pub id: String,
-  pub version: ListAppsAppsConnectionEdgesNodeActiveReleaseVersion,
+    pub id: String,
+    pub version: ListAppsAppsConnectionEdgesNodeActiveReleaseVersion,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ListAppsAppsConnectionEdgesNode {
-  pub id: String,
-  pub key: String,
-  pub active_release: ListAppsAppsConnectionEdgesNodeActiveRelease,
+    pub id: String,
+    pub key: String,
+    pub active_release: ListAppsAppsConnectionEdgesNodeActiveRelease,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ListAppsAppsConnectionEdges {
-  pub node: ListAppsAppsConnectionEdgesNode,
+    pub node: ListAppsAppsConnectionEdgesNode,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ListAppsAppsConnectionPageInfo {
-  pub has_next_page: bool,
+    pub has_next_page: bool,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ListAppsAppsConnection {
-  pub edges: Vec<ListAppsAppsConnectionEdges>,
-  pub page_info: ListAppsAppsConnectionPageInfo,
+    pub edges: Vec<ListAppsAppsConnectionEdges>,
+    pub page_info: ListAppsAppsConnectionPageInfo,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ListAppsResponse {
-  pub apps_connection: Option<ListAppsAppsConnection>,
+    pub apps_connection: Option<ListAppsAppsConnection>,
 }
-

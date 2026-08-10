@@ -9,9 +9,9 @@ use cli_core::error::CliError;
 use std::path::PathBuf;
 
 use crate::api::developer_platform::developer_platform;
+use crate::session::ensure_authenticated;
 use crate::session::store::SessionStore;
 use crate::session::validate::{AppManagementApiOptions, OAuthApplications, PartnersApiOptions};
-use crate::session::ensure_authenticated;
 
 #[derive(Debug)]
 pub struct Link {
@@ -209,11 +209,7 @@ pub struct Validate {
 
 impl Validate {
     pub fn new(path: String, config: Option<String>, json: bool) -> Self {
-        Self {
-            path,
-            config,
-            json,
-        }
+        Self { path, config, json }
     }
 }
 

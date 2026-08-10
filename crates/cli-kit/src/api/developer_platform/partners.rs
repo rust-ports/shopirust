@@ -1,9 +1,9 @@
 use async_trait::async_trait;
 use cli_api::types::{
-    AccountInfo, ApiSecretKey, AppVersion, AppVersionIdentifiers, AppVersionWithContext,
-    AssetUrlSchema, BundleFormat, ClientName, CreateAppOptions, ExtensionTemplatesResult,
-    MinimalAppIdentifiers, MinimalOrganizationApp, Organization, OrganizationApp,
-    OrganizationSource, OrganizationStore, Paginateable, RemoteSpecification, filter_disabled_flags,
+    filter_disabled_flags, AccountInfo, ApiSecretKey, AppVersion, AppVersionIdentifiers,
+    AppVersionWithContext, AssetUrlSchema, BundleFormat, ClientName, CreateAppOptions,
+    ExtensionTemplatesResult, MinimalAppIdentifiers, MinimalOrganizationApp, Organization,
+    OrganizationApp, OrganizationSource, OrganizationStore, Paginateable, RemoteSpecification,
 };
 use cli_api::{CliApiError, DeveloperPlatformClient};
 use serde_json::Value;

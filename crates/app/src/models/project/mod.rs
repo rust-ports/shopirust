@@ -35,7 +35,9 @@ impl Project {
 
     pub fn active_config_file(&self, override_name: Option<&str>) -> Option<PathBuf> {
         if let Some(name) = override_name {
-            let path = self.directory.join(crate::models::config_file_naming::get_app_configuration_file_name(Some(name)));
+            let path = self.directory.join(
+                crate::models::config_file_naming::get_app_configuration_file_name(Some(name)),
+            );
             if path.exists() {
                 return Some(path);
             }

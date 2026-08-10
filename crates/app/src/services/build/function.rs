@@ -13,10 +13,9 @@ pub fn build_function_extension(ext: &ExtensionInstance) -> Result<PathBuf, AppE
     for candidate in [
         ext.directory.join("dist/index.wasm"),
         ext.directory.join("index.wasm"),
-        ext.directory.join("target/wasm32-wasip1/release").join(format!(
-            "{}.wasm",
-            ext.handle.replace('-', "_")
-        )),
+        ext.directory
+            .join("target/wasm32-wasip1/release")
+            .join(format!("{}.wasm", ext.handle.replace('-', "_"))),
     ] {
         if candidate.exists() {
             let dest = dist.join("index.wasm");
@@ -30,12 +29,7 @@ pub fn build_function_extension(ext: &ExtensionInstance) -> Result<PathBuf, AppE
     // Try cargo build if Cargo.toml present
     if ext.directory.join("Cargo.toml").exists() {
         let status = Command::new("cargo")
-            .args([
-                "build",
-                "--release",
-                "--target",
-                "wasm32-wasip1",
-            ])
+            .args(["build", "--release", "--target", "wasm32-wasip1"])
             .current_dir(&ext.directory)
             .status();
         if let Ok(s) = status {

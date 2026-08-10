@@ -251,11 +251,9 @@ impl TopicCommand for AppTopic {
                 path,
                 client_id,
             }) => Self::ConfigPull(config::Pull::new(path, config, client_id)),
-            AppSubcommand::Config(AppConfigSubcommand::Validate {
-                config,
-                path,
-                json,
-            }) => Self::ConfigValidate(config::Validate::new(path, config, json)),
+            AppSubcommand::Config(AppConfigSubcommand::Validate { config, path, json }) => {
+                Self::ConfigValidate(config::Validate::new(path, config, json))
+            }
             AppSubcommand::Build {
                 config,
                 path,

@@ -42,7 +42,8 @@ pub fn get_app_configuration_shorthand(path: &str) -> Option<String> {
         .and_then(|s| s.to_str())
         .unwrap_or(path);
     let caps = app_config_regex().captures(base)?;
-    caps.get(1).map(|m| m.as_str().trim_start_matches('.').to_string())
+    caps.get(1)
+        .map(|m| m.as_str().trim_start_matches('.').to_string())
 }
 
 pub fn is_valid_format_app_configuration_file_name(config_name: &str) -> bool {
@@ -76,10 +77,7 @@ mod tests {
 
     #[test]
     fn shorthand_extraction() {
-        assert_eq!(
-            get_app_configuration_shorthand("shopify.app.toml"),
-            None
-        );
+        assert_eq!(get_app_configuration_shorthand("shopify.app.toml"), None);
         assert_eq!(
             get_app_configuration_shorthand("/tmp/shopify.app.staging.toml"),
             Some("staging".into())
@@ -88,7 +86,9 @@ mod tests {
 
     #[test]
     fn validates_format() {
-        assert!(is_valid_format_app_configuration_file_name("shopify.app.toml"));
+        assert!(is_valid_format_app_configuration_file_name(
+            "shopify.app.toml"
+        ));
         assert!(is_valid_format_app_configuration_file_name(
             "shopify.app.foo-bar.toml"
         ));

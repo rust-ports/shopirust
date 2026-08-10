@@ -11,9 +11,8 @@ use std::path::PathBuf;
 
 fn default_upstream_app_graphql() -> PathBuf {
     // crates/graphql-codegen → repo root → ../gitCloned/cli/...
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(
-        "../../../gitCloned/cli/packages/app/src/cli/api/graphql",
-    )
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../../gitCloned/cli/packages/app/src/cli/api/graphql")
 }
 
 fn main() {
@@ -32,8 +31,8 @@ fn main() {
         std::process::exit(1);
     }
 
-    let out_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../cli-kit/src/api/generated/graphql");
+    let out_root =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../cli-kit/src/api/generated/graphql");
 
     let surfaces = [
         "app-management",

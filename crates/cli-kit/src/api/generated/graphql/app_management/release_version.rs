@@ -31,50 +31,49 @@ pub const RELEASE_VERSION_MUTATION: &str = r"mutation ReleaseVersion($appId: ID!
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ReleaseVersionVariables {
-  pub app_id: String,
-  pub version_id: String,
+    pub app_id: String,
+    pub version_id: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ReleaseVersionAppReleaseCreateReleaseVersionMetadata {
-  pub message: Option<String>,
-  pub version_tag: Option<String>,
+    pub message: Option<String>,
+    pub version_tag: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ReleaseVersionAppReleaseCreateReleaseVersion {
-  pub id: String,
-  pub metadata: ReleaseVersionAppReleaseCreateReleaseVersionMetadata,
+    pub id: String,
+    pub metadata: ReleaseVersionAppReleaseCreateReleaseVersionMetadata,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ReleaseVersionAppReleaseCreateRelease {
-  pub version: ReleaseVersionAppReleaseCreateReleaseVersion,
+    pub version: ReleaseVersionAppReleaseCreateReleaseVersion,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ReleaseVersionAppReleaseCreateUserErrors {
-  pub field: Option<Vec<String>>,
-  pub message: String,
-  pub category: String,
-  pub code: Option<Code>,
-  pub on: serde_json::Value,
+    pub field: Option<Vec<String>>,
+    pub message: String,
+    pub category: String,
+    pub code: Option<Code>,
+    pub on: serde_json::Value,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ReleaseVersionAppReleaseCreate {
-  pub release: Option<ReleaseVersionAppReleaseCreateRelease>,
-  pub user_errors: Vec<ReleaseVersionAppReleaseCreateUserErrors>,
+    pub release: Option<ReleaseVersionAppReleaseCreateRelease>,
+    pub user_errors: Vec<ReleaseVersionAppReleaseCreateUserErrors>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ReleaseVersionResponse {
-  pub app_release_create: ReleaseVersionAppReleaseCreate,
+    pub app_release_create: ReleaseVersionAppReleaseCreate,
 }
-

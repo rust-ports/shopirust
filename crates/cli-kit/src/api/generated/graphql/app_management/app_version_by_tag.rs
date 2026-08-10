@@ -16,48 +16,47 @@ pub const APP_VERSION_BY_TAG_QUERY: &str = r"query AppVersionByTag($versionTag: 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppVersionByTagVariables {
-  pub version_tag: String,
+    pub version_tag: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppVersionByTagVersionByTagMetadata {
-  pub message: Option<String>,
-  pub version_tag: Option<String>,
+    pub message: Option<String>,
+    pub version_tag: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppVersionByTagVersionByTagAppModulesSpecification {
-  pub identifier: String,
-  pub external_identifier: String,
-  pub name: String,
-  pub experience: String,
-  pub management_experience: String,
+    pub identifier: String,
+    pub external_identifier: String,
+    pub name: String,
+    pub experience: String,
+    pub management_experience: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppVersionByTagVersionByTagAppModules {
-  pub uuid: String,
-  pub user_identifier: String,
-  pub handle: String,
-  pub config: serde_json::Value,
-  pub target: Option<String>,
-  pub specification: AppVersionByTagVersionByTagAppModulesSpecification,
+    pub uuid: String,
+    pub user_identifier: String,
+    pub handle: String,
+    pub config: serde_json::Value,
+    pub target: Option<String>,
+    pub specification: AppVersionByTagVersionByTagAppModulesSpecification,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppVersionByTagVersionByTag {
-  pub id: String,
-  pub metadata: AppVersionByTagVersionByTagMetadata,
-  pub app_modules: Vec<AppVersionByTagVersionByTagAppModules>,
+    pub id: String,
+    pub metadata: AppVersionByTagVersionByTagMetadata,
+    pub app_modules: Vec<AppVersionByTagVersionByTagAppModules>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppVersionByTagResponse {
-  pub version_by_tag: AppVersionByTagVersionByTag,
+    pub version_by_tag: AppVersionByTagVersionByTag,
 }
-

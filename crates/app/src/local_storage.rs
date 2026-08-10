@@ -81,10 +81,7 @@ mod tests {
         })
         .unwrap();
         let loaded = get_cached_app_info(dir.path()).unwrap();
-        assert_eq!(
-            loaded.config_file.as_deref(),
-            Some("shopify.app.prod.toml")
-        );
+        assert_eq!(loaded.config_file.as_deref(), Some("shopify.app.prod.toml"));
         clear_current_config_file(dir.path()).unwrap();
         let cleared = get_cached_app_info(dir.path()).unwrap();
         assert!(cleared.config_file.is_none());

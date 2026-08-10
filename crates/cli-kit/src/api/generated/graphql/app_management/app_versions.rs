@@ -36,62 +36,61 @@ pub const APP_VERSIONS_QUERY: &str = r"query AppVersions($appId: ID!) {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppVersionsVariables {
-  pub app_id: String,
+    pub app_id: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppVersionsAppActiveReleaseVersion {
-  pub id: String,
+    pub id: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppVersionsAppActiveRelease {
-  pub id: String,
-  pub version: AppVersionsAppActiveReleaseVersion,
+    pub id: String,
+    pub version: AppVersionsAppActiveReleaseVersion,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppVersionsAppVersionsEdgesNodeMetadata {
-  pub message: Option<String>,
-  pub version_tag: Option<String>,
+    pub message: Option<String>,
+    pub version_tag: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppVersionsAppVersionsEdgesNode {
-  pub id: String,
-  pub created_at: String,
-  pub created_by: Option<String>,
-  pub metadata: AppVersionsAppVersionsEdgesNodeMetadata,
+    pub id: String,
+    pub created_at: String,
+    pub created_by: Option<String>,
+    pub metadata: AppVersionsAppVersionsEdgesNodeMetadata,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppVersionsAppVersionsEdges {
-  pub node: AppVersionsAppVersionsEdgesNode,
+    pub node: AppVersionsAppVersionsEdgesNode,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppVersionsAppVersions {
-  pub edges: Vec<AppVersionsAppVersionsEdges>,
+    pub edges: Vec<AppVersionsAppVersionsEdges>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppVersionsApp {
-  pub id: String,
-  pub versions_count: i64,
-  pub active_release: AppVersionsAppActiveRelease,
-  pub versions: Option<AppVersionsAppVersions>,
+    pub id: String,
+    pub versions_count: i64,
+    pub active_release: AppVersionsAppActiveRelease,
+    pub versions: Option<AppVersionsAppVersions>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppVersionsResponse {
-  pub app: AppVersionsApp,
+    pub app: AppVersionsApp,
 }
-

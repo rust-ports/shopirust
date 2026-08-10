@@ -67,10 +67,7 @@ impl BulkOperationsClient {
             .await
     }
 
-    pub async fn staged_uploads_create(
-        &self,
-        input: Value,
-    ) -> Result<Value, GraphqlRequestError> {
+    pub async fn staged_uploads_create(&self, input: Value) -> Result<Value, GraphqlRequestError> {
         self.graphql
             .query_with_variables(
                 staged_uploads_create::STAGED_UPLOADS_CREATE_MUTATION,

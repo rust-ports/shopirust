@@ -70,10 +70,7 @@ impl ExtensionInstance {
         if let Some(ref out) = self.output_path {
             return out.to_string_lossy().replace('\\', "/");
         }
-        format!(
-            "dist/{}/{}",
-            self.specification.identifier, self.handle
-        )
+        format!("dist/{}/{}", self.specification.identifier, self.handle)
     }
 
     pub fn type_name(&self) -> &str {

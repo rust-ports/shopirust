@@ -49,7 +49,11 @@ fn user_errors(value: &serde_json::Value) -> Vec<String> {
         if let Some(arr) = value.pointer(path).and_then(|v| v.as_array()) {
             let msgs: Vec<String> = arr
                 .iter()
-                .filter_map(|e| e.get("message").and_then(|m| m.as_str()).map(str::to_string))
+                .filter_map(|e| {
+                    e.get("message")
+                        .and_then(|m| m.as_str())
+                        .map(str::to_string)
+                })
                 .collect();
             if !msgs.is_empty() {
                 return msgs;
@@ -220,10 +224,7 @@ impl BaseCommand for BulkExecute {
         if let Some(op) = operation {
             println!("Bulk operation {} status={}", op.id, op.status);
         } else {
-            println!(
-                "{}",
-                serde_json::to_string_pretty(&raw).unwrap_or_default()
-            );
+            println!("{}", serde_json::to_string_pretty(&raw).unwrap_or_default());
         }
         Ok(())
     }
@@ -336,7 +337,10 @@ impl BaseCommand for BulkStatus {
             let list: Vec<BulkOperationStatus> =
                 nodes.iter().map(parse_bulk_operation_status).collect();
             if self.json {
-                println!("{}", serde_json::to_string_pretty(&list).unwrap_or_default());
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&list).unwrap_or_default()
+                );
             } else {
                 for op in list {
                     println!("{}  {}", op.id, op.status);

@@ -40,7 +40,10 @@ impl LoadedApp {
 
 /// Load an app from a project directory (config TOML + extension folders).
 pub fn load_app(options: LoadAppOptions) -> Result<LoadedApp, AppError> {
-    let directory = options.directory.canonicalize().unwrap_or(options.directory);
+    let directory = options
+        .directory
+        .canonicalize()
+        .unwrap_or(options.directory);
     let project = Project::load(&directory)?;
     let config_file = get_app_configuration_file_name(options.config_name.as_deref());
     let configuration_path = directory.join(&config_file);
@@ -175,9 +178,8 @@ fn load_extension_instance(
                 .unwrap_or_else(|| "extension".into())
         });
 
-    let specification = create_extension_specification(type_name).ok_or_else(|| {
-        AppError::message(format!("Unknown extension type '{type_name}'"))
-    })?;
+    let specification = create_extension_specification(type_name)
+        .ok_or_else(|| AppError::message(format!("Unknown extension type '{type_name}'")))?;
 
     let mut instance = ExtensionInstance::new(
         handle,

@@ -24,27 +24,26 @@ pub const GET_BULK_OPERATION_BY_ID_QUERY: &str = r"query GetBulkOperationById($i
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GetBulkOperationByIdVariables {
-  pub id: String,
+    pub id: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GetBulkOperationByIdBulkOperation {
-  #[serde(rename = "type")]
-  pub r#type: BulkOperationType,
-  pub completed_at: Option<serde_json::Value>,
-  pub created_at: serde_json::Value,
-  pub error_code: Option<BulkOperationErrorCode>,
-  pub id: String,
-  pub object_count: serde_json::Value,
-  pub partial_data_url: Option<String>,
-  pub status: BulkOperationStatus,
-  pub url: Option<String>,
+    #[serde(rename = "type")]
+    pub r#type: BulkOperationType,
+    pub completed_at: Option<serde_json::Value>,
+    pub created_at: serde_json::Value,
+    pub error_code: Option<BulkOperationErrorCode>,
+    pub id: String,
+    pub object_count: serde_json::Value,
+    pub partial_data_url: Option<String>,
+    pub status: BulkOperationStatus,
+    pub url: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GetBulkOperationByIdResponse {
-  pub bulk_operation: Option<GetBulkOperationByIdBulkOperation>,
+    pub bulk_operation: Option<GetBulkOperationByIdBulkOperation>,
 }
-

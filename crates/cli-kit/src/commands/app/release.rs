@@ -1,6 +1,4 @@
-use app::services::{
-    linked_app_context, release_version, LinkedAppContextOptions, ReleaseOptions,
-};
+use app::services::{linked_app_context, release_version, LinkedAppContextOptions, ReleaseOptions};
 use cli_core::command::BaseCommand;
 use cli_core::error::CliError;
 use is_terminal::IsTerminal;

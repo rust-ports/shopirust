@@ -19,27 +19,26 @@ pub const CLI_TESTING_MUTATION: &str = r"mutation CliTesting($address: String!, 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CliTestingVariables {
-  pub address: String,
-  #[serde(skip_serializing_if = "Option::is_none")]
-  pub api_key: Option<String>,
-  pub api_version: String,
-  pub delivery_method: String,
-  pub shared_secret: String,
-  pub topic: String,
+    pub address: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub api_key: Option<String>,
+    pub api_version: String,
+    pub delivery_method: String,
+    pub shared_secret: String,
+    pub topic: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CliTestingCliTesting {
-  pub headers: Option<String>,
-  pub sample_payload: Option<String>,
-  pub success: bool,
-  pub errors: Vec<String>,
+    pub headers: Option<String>,
+    pub sample_payload: Option<String>,
+    pub success: bool,
+    pub errors: Vec<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CliTestingResponse {
-  pub cli_testing: Option<CliTestingCliTesting>,
+    pub cli_testing: Option<CliTestingCliTesting>,
 }
-

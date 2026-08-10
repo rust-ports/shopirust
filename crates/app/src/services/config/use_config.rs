@@ -54,7 +54,10 @@ pub fn use_config(options: UseConfigOptions) -> Result<UseConfigResult, AppError
     })
 }
 
-fn resolve_config_file_name(directory: &Path, config_name: Option<&str>) -> Result<String, AppError> {
+fn resolve_config_file_name(
+    directory: &Path,
+    config_name: Option<&str>,
+) -> Result<String, AppError> {
     if let Some(name) = config_name {
         let file = get_app_configuration_file_name(Some(name));
         if directory.join(&file).exists() {
@@ -104,11 +107,7 @@ mod tests {
     #[test]
     fn use_reset_clears() {
         let dir = tempdir().unwrap();
-        fs::write(
-            dir.path().join("shopify.app.toml"),
-            "client_id = \"abc\"\n",
-        )
-        .unwrap();
+        fs::write(dir.path().join("shopify.app.toml"), "client_id = \"abc\"\n").unwrap();
         use_config(UseConfigOptions {
             directory: dir.path().to_path_buf(),
             config_name: None,

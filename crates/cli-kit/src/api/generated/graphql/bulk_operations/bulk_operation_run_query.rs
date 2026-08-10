@@ -33,42 +33,41 @@ pub const BULK_OPERATION_RUN_QUERY_MUTATION: &str = r"mutation BulkOperationRunQ
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BulkOperationRunQueryVariables {
-  pub query: String,
+    pub query: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BulkOperationRunQueryBulkOperationRunQueryBulkOperation {
-  #[serde(rename = "type")]
-  pub r#type: BulkOperationType,
-  pub completed_at: Option<serde_json::Value>,
-  pub created_at: serde_json::Value,
-  pub error_code: Option<BulkOperationErrorCode>,
-  pub id: String,
-  pub object_count: serde_json::Value,
-  pub partial_data_url: Option<String>,
-  pub status: BulkOperationStatus,
-  pub url: Option<String>,
+    #[serde(rename = "type")]
+    pub r#type: BulkOperationType,
+    pub completed_at: Option<serde_json::Value>,
+    pub created_at: serde_json::Value,
+    pub error_code: Option<BulkOperationErrorCode>,
+    pub id: String,
+    pub object_count: serde_json::Value,
+    pub partial_data_url: Option<String>,
+    pub status: BulkOperationStatus,
+    pub url: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BulkOperationRunQueryBulkOperationRunQueryUserErrors {
-  pub code: Option<BulkOperationUserErrorCode>,
-  pub field: Option<Vec<String>>,
-  pub message: String,
+    pub code: Option<BulkOperationUserErrorCode>,
+    pub field: Option<Vec<String>>,
+    pub message: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BulkOperationRunQueryBulkOperationRunQuery {
-  pub bulk_operation: Option<BulkOperationRunQueryBulkOperationRunQueryBulkOperation>,
-  pub user_errors: Vec<BulkOperationRunQueryBulkOperationRunQueryUserErrors>,
+    pub bulk_operation: Option<BulkOperationRunQueryBulkOperationRunQueryBulkOperation>,
+    pub user_errors: Vec<BulkOperationRunQueryBulkOperationRunQueryUserErrors>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BulkOperationRunQueryResponse {
-  pub bulk_operation_run_query: Option<BulkOperationRunQueryBulkOperationRunQuery>,
+    pub bulk_operation_run_query: Option<BulkOperationRunQueryBulkOperationRunQuery>,
 }
-

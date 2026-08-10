@@ -8,53 +8,52 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum OneOrMany<T> {
-  One(T),
-  Many(Vec<T>),
+    One(T),
+    Many(Vec<T>),
 }
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppVersionInput {
-  #[serde(skip_serializing_if = "Option::is_none")]
-  pub source: Option<serde_json::Value>,
-  #[serde(skip_serializing_if = "Option::is_none")]
-  pub source_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Code {
-  #[serde(rename = "ACCESS_DENIED")]
-  AccessDenied,
-  #[serde(rename = "EVENT")]
-  Event,
-  #[serde(rename = "INTERNAL")]
-  Internal,
-  #[serde(rename = "INVALID")]
-  Invalid,
-  #[serde(rename = "NOT_FOUND")]
-  NotFound,
-  #[serde(rename = "PLUGIN")]
-  Plugin,
-  #[serde(rename = "UNKNOWN")]
-  Unknown,
+    #[serde(rename = "ACCESS_DENIED")]
+    AccessDenied,
+    #[serde(rename = "EVENT")]
+    Event,
+    #[serde(rename = "INTERNAL")]
+    Internal,
+    #[serde(rename = "INVALID")]
+    Invalid,
+    #[serde(rename = "NOT_FOUND")]
+    NotFound,
+    #[serde(rename = "PLUGIN")]
+    Plugin,
+    #[serde(rename = "UNKNOWN")]
+    Unknown,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum SourceExtension {
-  #[serde(rename = "BR")]
-  Br,
-  #[serde(rename = "ZIP")]
-  Zip,
+    #[serde(rename = "BR")]
+    Br,
+    #[serde(rename = "ZIP")]
+    Zip,
 }
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct VersionMetadataInput {
-  #[serde(skip_serializing_if = "Option::is_none")]
-  pub message: Option<String>,
-  #[serde(skip_serializing_if = "Option::is_none")]
-  pub source_control_url: Option<String>,
-  #[serde(skip_serializing_if = "Option::is_none")]
-  pub version_tag: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_control_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub version_tag: Option<String>,
 }
-

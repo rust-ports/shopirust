@@ -27,48 +27,47 @@ fragment VersionInfo on Version {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppVersionByIdVariables {
-  pub version_id: String,
+    pub version_id: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppVersionByIdVersionMetadata {
-  pub message: Option<String>,
-  pub version_tag: Option<String>,
+    pub message: Option<String>,
+    pub version_tag: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppVersionByIdVersionAppModulesSpecification {
-  pub identifier: String,
-  pub external_identifier: String,
-  pub name: String,
-  pub experience: String,
-  pub management_experience: String,
+    pub identifier: String,
+    pub external_identifier: String,
+    pub name: String,
+    pub experience: String,
+    pub management_experience: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppVersionByIdVersionAppModules {
-  pub uuid: String,
-  pub user_identifier: String,
-  pub handle: String,
-  pub config: serde_json::Value,
-  pub target: Option<String>,
-  pub specification: AppVersionByIdVersionAppModulesSpecification,
+    pub uuid: String,
+    pub user_identifier: String,
+    pub handle: String,
+    pub config: serde_json::Value,
+    pub target: Option<String>,
+    pub specification: AppVersionByIdVersionAppModulesSpecification,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppVersionByIdVersion {
-  pub id: String,
-  pub metadata: AppVersionByIdVersionMetadata,
-  pub app_modules: Vec<AppVersionByIdVersionAppModules>,
+    pub id: String,
+    pub metadata: AppVersionByIdVersionMetadata,
+    pub app_modules: Vec<AppVersionByIdVersionAppModules>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppVersionByIdResponse {
-  pub version: AppVersionByIdVersion,
+    pub version: AppVersionByIdVersion,
 }
-

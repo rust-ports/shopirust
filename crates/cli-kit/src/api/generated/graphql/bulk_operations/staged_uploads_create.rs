@@ -27,41 +27,40 @@ pub const STAGED_UPLOADS_CREATE_MUTATION: &str = r"mutation StagedUploadsCreate(
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StagedUploadsCreateVariables {
-  pub input: OneOrMany<StagedUploadInput>,
+    pub input: OneOrMany<StagedUploadInput>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StagedUploadsCreateStagedUploadsCreateStagedTargetsParameters {
-  pub name: String,
-  pub value: String,
+    pub name: String,
+    pub value: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StagedUploadsCreateStagedUploadsCreateStagedTargets {
-  pub url: Option<String>,
-  pub resource_url: Option<String>,
-  pub parameters: Vec<StagedUploadsCreateStagedUploadsCreateStagedTargetsParameters>,
+    pub url: Option<String>,
+    pub resource_url: Option<String>,
+    pub parameters: Vec<StagedUploadsCreateStagedUploadsCreateStagedTargetsParameters>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StagedUploadsCreateStagedUploadsCreateUserErrors {
-  pub field: Option<Vec<String>>,
-  pub message: String,
+    pub field: Option<Vec<String>>,
+    pub message: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StagedUploadsCreateStagedUploadsCreate {
-  pub staged_targets: Option<Vec<StagedUploadsCreateStagedUploadsCreateStagedTargets>>,
-  pub user_errors: Vec<StagedUploadsCreateStagedUploadsCreateUserErrors>,
+    pub staged_targets: Option<Vec<StagedUploadsCreateStagedUploadsCreateStagedTargets>>,
+    pub user_errors: Vec<StagedUploadsCreateStagedUploadsCreateUserErrors>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StagedUploadsCreateResponse {
-  pub staged_uploads_create: Option<StagedUploadsCreateStagedUploadsCreate>,
+    pub staged_uploads_create: Option<StagedUploadsCreateStagedUploadsCreate>,
 }
-

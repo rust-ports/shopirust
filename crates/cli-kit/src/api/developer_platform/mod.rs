@@ -12,7 +12,8 @@ use cli_api::{
 };
 
 pub use cli_api::{
-    all_developer_platform_clients as all_clients, select_developer_platform_client as select_client,
+    all_developer_platform_clients as all_clients,
+    select_developer_platform_client as select_client,
     SelectDeveloperPlatformClientOptions as SelectOptions,
 };
 

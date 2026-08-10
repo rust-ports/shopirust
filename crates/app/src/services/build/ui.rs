@@ -58,7 +58,14 @@ fn find_entry(ext: &ExtensionInstance) -> Option<PathBuf> {
             return Some(path);
         }
     }
-    for name in ["src/index.ts", "src/index.tsx", "src/index.js", "src/index.jsx", "index.ts", "index.js"] {
+    for name in [
+        "src/index.ts",
+        "src/index.tsx",
+        "src/index.js",
+        "src/index.jsx",
+        "index.ts",
+        "index.js",
+    ] {
         let path = ext.directory.join(name);
         if path.exists() {
             return Some(path);

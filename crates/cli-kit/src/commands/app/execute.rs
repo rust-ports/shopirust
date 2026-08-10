@@ -1,6 +1,4 @@
-use app::services::{
-    execute_operation, ExecuteOperationOptions,
-};
+use app::services::{execute_operation, ExecuteOperationOptions};
 use cli_core::command::BaseCommand;
 use cli_core::error::CliError;
 use std::path::PathBuf;
@@ -78,7 +76,10 @@ impl BaseCommand for Execute {
         if !result.errors.is_empty() {
             return Err(CliError::abort(result.errors.join("; ")));
         }
-        println!("{}", serde_json::to_string_pretty(&result.data).unwrap_or_default());
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&result.data).unwrap_or_default()
+        );
         Ok(())
     }
 }

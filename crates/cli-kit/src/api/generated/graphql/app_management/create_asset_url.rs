@@ -20,27 +20,26 @@ pub const CREATE_ASSET_U_R_L_MUTATION: &str = r"mutation CreateAssetURL($sourceE
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateAssetURLVariables {
-  pub source_extension: SourceExtension,
-  pub organization_id: String,
+    pub source_extension: SourceExtension,
+    pub organization_id: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateAssetURLAppRequestSourceUploadUrlUserErrors {
-  pub field: Option<Vec<String>>,
-  pub message: String,
+    pub field: Option<Vec<String>>,
+    pub message: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateAssetURLAppRequestSourceUploadUrl {
-  pub source_upload_url: Option<String>,
-  pub user_errors: Vec<CreateAssetURLAppRequestSourceUploadUrlUserErrors>,
+    pub source_upload_url: Option<String>,
+    pub user_errors: Vec<CreateAssetURLAppRequestSourceUploadUrlUserErrors>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateAssetURLResponse {
-  pub app_request_source_upload_url: CreateAssetURLAppRequestSourceUploadUrl,
+    pub app_request_source_upload_url: CreateAssetURLAppRequestSourceUploadUrl,
 }
-

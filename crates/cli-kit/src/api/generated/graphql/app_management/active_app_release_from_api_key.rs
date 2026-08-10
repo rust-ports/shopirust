@@ -16,76 +16,75 @@ pub const ACTIVE_APP_RELEASE_FROM_API_KEY_QUERY: &str = r"query ActiveAppRelease
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ActiveAppReleaseFromApiKeyVariables {
-  pub api_key: String,
+    pub api_key: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ActiveAppReleaseFromApiKeyAppActiveRootClientCredentialsSecrets {
-  pub key: String,
+    pub key: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ActiveAppReleaseFromApiKeyAppActiveRootClientCredentials {
-  pub secrets: Vec<ActiveAppReleaseFromApiKeyAppActiveRootClientCredentialsSecrets>,
+    pub secrets: Vec<ActiveAppReleaseFromApiKeyAppActiveRootClientCredentialsSecrets>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ActiveAppReleaseFromApiKeyAppActiveRoot {
-  pub granted_shopify_approval_scopes: Vec<String>,
-  pub client_credentials: ActiveAppReleaseFromApiKeyAppActiveRootClientCredentials,
+    pub granted_shopify_approval_scopes: Vec<String>,
+    pub client_credentials: ActiveAppReleaseFromApiKeyAppActiveRootClientCredentials,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ActiveAppReleaseFromApiKeyAppActiveReleaseVersionAppModulesSpecification {
-  pub identifier: String,
-  pub external_identifier: String,
-  pub name: String,
-  pub experience: String,
-  pub management_experience: String,
+    pub identifier: String,
+    pub external_identifier: String,
+    pub name: String,
+    pub experience: String,
+    pub management_experience: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ActiveAppReleaseFromApiKeyAppActiveReleaseVersionAppModules {
-  pub uuid: String,
-  pub user_identifier: String,
-  pub handle: String,
-  pub config: serde_json::Value,
-  pub target: Option<String>,
-  pub specification: ActiveAppReleaseFromApiKeyAppActiveReleaseVersionAppModulesSpecification,
+    pub uuid: String,
+    pub user_identifier: String,
+    pub handle: String,
+    pub config: serde_json::Value,
+    pub target: Option<String>,
+    pub specification: ActiveAppReleaseFromApiKeyAppActiveReleaseVersionAppModulesSpecification,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ActiveAppReleaseFromApiKeyAppActiveReleaseVersion {
-  pub name: String,
-  pub app_modules: Vec<ActiveAppReleaseFromApiKeyAppActiveReleaseVersionAppModules>,
+    pub name: String,
+    pub app_modules: Vec<ActiveAppReleaseFromApiKeyAppActiveReleaseVersionAppModules>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ActiveAppReleaseFromApiKeyAppActiveRelease {
-  pub id: String,
-  pub version: ActiveAppReleaseFromApiKeyAppActiveReleaseVersion,
+    pub id: String,
+    pub version: ActiveAppReleaseFromApiKeyAppActiveReleaseVersion,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ActiveAppReleaseFromApiKeyApp {
-  pub id: String,
-  pub key: String,
-  pub organization_id: String,
-  pub active_root: ActiveAppReleaseFromApiKeyAppActiveRoot,
-  pub active_release: ActiveAppReleaseFromApiKeyAppActiveRelease,
+    pub id: String,
+    pub key: String,
+    pub organization_id: String,
+    pub active_root: ActiveAppReleaseFromApiKeyAppActiveRoot,
+    pub active_release: ActiveAppReleaseFromApiKeyAppActiveRelease,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ActiveAppReleaseFromApiKeyResponse {
-  pub app: ActiveAppReleaseFromApiKeyApp,
+    pub app: ActiveAppReleaseFromApiKeyApp,
 }
-

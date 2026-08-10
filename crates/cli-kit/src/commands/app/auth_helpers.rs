@@ -1,19 +1,19 @@
 //! Shared helpers for app topic commands that need Developer Platform auth.
 
-use cli_api::{select_developer_platform_client, DeveloperPlatformClient, SelectDeveloperPlatformClientOptions};
+use cli_api::{
+    select_developer_platform_client, DeveloperPlatformClient, SelectDeveloperPlatformClientOptions,
+};
 use cli_core::error::CliError;
 
-use crate::api::developer_platform::{
-    AppManagementPlatformClient, PartnersPlatformClient,
-};
 use crate::api::app_management::AppManagementClient;
+use crate::api::developer_platform::{AppManagementPlatformClient, PartnersPlatformClient};
 use crate::api::partners::PartnersClient;
 use crate::session::ensure_authenticated;
 use crate::session::store::SessionStore;
 use crate::session::validate::{AppManagementApiOptions, OAuthApplications, PartnersApiOptions};
 
-pub async fn authenticated_developer_platform(
-) -> Result<Box<dyn DeveloperPlatformClient>, CliError> {
+pub async fn authenticated_developer_platform() -> Result<Box<dyn DeveloperPlatformClient>, CliError>
+{
     let store = SessionStore::new();
     let applications = OAuthApplications {
         app_management_api: Some(AppManagementApiOptions { scopes: vec![] }),
@@ -33,9 +33,9 @@ pub async fn authenticated_developer_platform(
         .app_management
         .or(tokens.partners)
         .unwrap_or_default();
-    let app_management = Box::new(AppManagementPlatformClient::new(
-        AppManagementClient::new(am_token, None),
-    )) as Box<dyn DeveloperPlatformClient>;
+    let app_management = Box::new(AppManagementPlatformClient::new(AppManagementClient::new(
+        am_token, None,
+    ))) as Box<dyn DeveloperPlatformClient>;
 
     Ok(select_developer_platform_client(
         SelectDeveloperPlatformClientOptions::default(),

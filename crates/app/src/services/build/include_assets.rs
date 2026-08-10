@@ -50,10 +50,7 @@ mod tests {
         let dir = tempdir().unwrap();
         fs::write(dir.path().join("logo.png"), b"png").unwrap();
         let mut configuration = HashMap::new();
-        configuration.insert(
-            "assets".into(),
-            serde_json::json!(["logo.png"]),
-        );
+        configuration.insert("assets".into(), serde_json::json!(["logo.png"]));
         let ext = ExtensionInstance::new(
             "x",
             dir.path().to_path_buf(),

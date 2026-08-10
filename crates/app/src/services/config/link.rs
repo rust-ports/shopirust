@@ -36,7 +36,10 @@ pub fn link_config(options: LinkConfigOptions) -> Result<LinkConfigResult, AppEr
         doc.push_str(&format!("name = \"{}\"\n", escape_toml_string(&name)));
     }
     if let Some(url) = options.application_url {
-        doc.push_str(&format!("application_url = \"{}\"\n", escape_toml_string(&url)));
+        doc.push_str(&format!(
+            "application_url = \"{}\"\n",
+            escape_toml_string(&url)
+        ));
     } else {
         doc.push_str("application_url = \"https://example.com\"\n");
     }

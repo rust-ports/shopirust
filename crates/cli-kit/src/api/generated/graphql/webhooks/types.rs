@@ -8,7 +8,6 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum OneOrMany<T> {
-  One(T),
-  Many(Vec<T>),
+    One(T),
+    Many(Vec<T>),
 }
-

@@ -1,6 +1,6 @@
+pub mod function;
 pub mod include_assets;
 pub mod theme;
-pub mod function;
 pub mod ui;
 
 use crate::error::AppError;
@@ -92,10 +92,7 @@ fn install_web_dependencies(directory: &Path, result: &mut BuildResult) {
         return;
     }
     let pm = detect_package_manager(&web);
-    let status = Command::new(&pm)
-        .arg("install")
-        .current_dir(&web)
-        .status();
+    let status = Command::new(&pm).arg("install").current_dir(&web).status();
     match status {
         Ok(s) if s.success() => result.built.push(format!("web-deps:{pm}")),
         Ok(_) => result.skipped.push("web-deps (install failed)".into()),
@@ -115,8 +112,12 @@ fn build_webs(directory: &Path, result: &mut BuildResult) {
         .status();
     match status {
         Ok(s) if s.success() => result.built.push("web:build".into()),
-        Ok(_) => result.skipped.push("web:build (script failed or missing)".into()),
-        Err(_) => result.skipped.push("web:build (package manager missing)".into()),
+        Ok(_) => result
+            .skipped
+            .push("web:build (script failed or missing)".into()),
+        Err(_) => result
+            .skipped
+            .push("web:build (package manager missing)".into()),
     }
 }
 
@@ -169,7 +170,11 @@ mod tests {
             "type = \"theme\"\nhandle = \"my-theme\"\n",
         )
         .unwrap();
-        fs::write(ext.join("blocks/star.liquid"), "{% schema %}{}{% endschema %}").unwrap();
+        fs::write(
+            ext.join("blocks/star.liquid"),
+            "{% schema %}{}{% endschema %}",
+        )
+        .unwrap();
 
         let result = build_app(BuildOptions {
             directory: dir.path().to_path_buf(),

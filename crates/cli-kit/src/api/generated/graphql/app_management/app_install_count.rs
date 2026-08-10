@@ -16,18 +16,17 @@ pub const APP_INSTALL_COUNT_QUERY: &str = r"query AppInstallCount($appId: ID!) {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppInstallCountVariables {
-  pub app_id: String,
+    pub app_id: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppInstallCountApp {
-  pub install_count: Option<i64>,
+    pub install_count: Option<i64>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppInstallCountResponse {
-  pub app: AppInstallCountApp,
+    pub app: AppInstallCountApp,
 }
-

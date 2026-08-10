@@ -113,14 +113,22 @@ fn extract_errors(raw: &Value) -> Vec<String> {
         if let Some(arr) = raw.pointer(path).and_then(|v| v.as_array()) {
             return arr
                 .iter()
-                .filter_map(|e| e.get("message").and_then(|m| m.as_str()).map(str::to_string))
+                .filter_map(|e| {
+                    e.get("message")
+                        .and_then(|m| m.as_str())
+                        .map(str::to_string)
+                })
                 .collect();
         }
     }
     if let Some(arr) = raw.get("user_errors").and_then(|v| v.as_array()) {
         return arr
             .iter()
-            .filter_map(|e| e.get("message").and_then(|m| m.as_str()).map(str::to_string))
+            .filter_map(|e| {
+                e.get("message")
+                    .and_then(|m| m.as_str())
+                    .map(str::to_string)
+            })
             .collect();
     }
     Vec::new()

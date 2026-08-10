@@ -50,9 +50,7 @@ pub async fn extensions_identifiers_deploy_breakdown(
             continue;
         }
         if let Some((_, uuid)) = remote.iter().find(|(title, _)| title == &ext.handle) {
-            breakdown
-                .matched
-                .insert(ext.handle.clone(), uuid.clone());
+            breakdown.matched.insert(ext.handle.clone(), uuid.clone());
             matched_remote.insert(ext.handle.clone());
         } else {
             breakdown.to_create.push(ext.handle.clone());
@@ -61,11 +59,10 @@ pub async fn extensions_identifiers_deploy_breakdown(
 
     for (title, _) in &remote {
         if !matched_remote.contains(title)
-            && !breakdown.matched.values().any(|u| {
-                remote
-                    .iter()
-                    .any(|(t, id)| t == title && id == u)
-            })
+            && !breakdown
+                .matched
+                .values()
+                .any(|u| remote.iter().any(|(t, id)| t == title && id == u))
             && !breakdown.to_create.contains(title)
             && !ctx.app.extensions.iter().any(|e| &e.handle == title)
         {

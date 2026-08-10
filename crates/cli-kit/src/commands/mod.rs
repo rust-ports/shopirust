@@ -1,10 +1,10 @@
-mod auth;
 mod app;
+mod auth;
 mod organization;
 mod theme;
 
-use auth::{AuthSubcommand, AuthTopic, AuthTopicArgs};
 use app::{AppSubcommand, AppTopic, AppTopicArgs};
+use auth::{AuthSubcommand, AuthTopic, AuthTopicArgs};
 use organization::{OrganizationSubcommand, OrganizationTopic, OrganizationTopicArgs};
 use theme::{ThemeSubcommand, ThemeTopic, ThemeTopicArgs};
 

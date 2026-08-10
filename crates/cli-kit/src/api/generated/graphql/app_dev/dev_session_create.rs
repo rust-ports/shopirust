@@ -37,62 +37,61 @@ pub const DEV_SESSION_CREATE_MUTATION: &str = r"mutation DevSessionCreate($appId
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DevSessionCreateVariables {
-  pub app_id: String,
-  pub assets_url: String,
-  #[serde(skip_serializing_if = "Option::is_none")]
-  pub websocket_url: Option<String>,
+    pub app_id: String,
+    pub assets_url: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub websocket_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DevSessionCreateDevSessionCreateDevSessionUser {
-  pub id: String,
-  pub email: Option<String>,
+    pub id: String,
+    pub email: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DevSessionCreateDevSessionCreateDevSessionApp {
-  pub id: String,
-  pub key: String,
+    pub id: String,
+    pub key: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DevSessionCreateDevSessionCreateDevSession {
-  pub websocket_url: Option<String>,
-  pub updated_at: serde_json::Value,
-  pub user: Option<DevSessionCreateDevSessionCreateDevSessionUser>,
-  pub app: DevSessionCreateDevSessionCreateDevSessionApp,
+    pub websocket_url: Option<String>,
+    pub updated_at: serde_json::Value,
+    pub user: Option<DevSessionCreateDevSessionCreateDevSessionUser>,
+    pub app: DevSessionCreateDevSessionCreateDevSessionApp,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DevSessionCreateDevSessionCreateWarnings {
-  pub message: String,
-  pub code: DevSessionWarningCode,
+    pub message: String,
+    pub code: DevSessionWarningCode,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DevSessionCreateDevSessionCreateUserErrors {
-  pub message: String,
-  pub on: serde_json::Value,
-  pub field: Option<Vec<String>>,
-  pub category: String,
+    pub message: String,
+    pub on: serde_json::Value,
+    pub field: Option<Vec<String>>,
+    pub category: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DevSessionCreateDevSessionCreate {
-  pub dev_session: Option<DevSessionCreateDevSessionCreateDevSession>,
-  pub warnings: Option<Vec<DevSessionCreateDevSessionCreateWarnings>>,
-  pub user_errors: Vec<DevSessionCreateDevSessionCreateUserErrors>,
+    pub dev_session: Option<DevSessionCreateDevSessionCreateDevSession>,
+    pub warnings: Option<Vec<DevSessionCreateDevSessionCreateWarnings>>,
+    pub user_errors: Vec<DevSessionCreateDevSessionCreateUserErrors>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DevSessionCreateResponse {
-  pub dev_session_create: Option<DevSessionCreateDevSessionCreate>,
+    pub dev_session_create: Option<DevSessionCreateDevSessionCreate>,
 }
-

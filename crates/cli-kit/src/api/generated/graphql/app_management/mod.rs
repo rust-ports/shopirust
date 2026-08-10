@@ -1,14 +1,14 @@
-pub mod types;
-pub mod active_app_release_from_api_key;
 pub mod active_app_release;
+pub mod active_app_release_from_api_key;
 pub mod app_install_count;
 pub mod app_logs_subscribe;
 pub mod app_version_by_id;
 pub mod app_version_by_tag;
 pub mod app_versions;
 pub mod apps;
-pub mod create_app_version;
 pub mod create_app;
+pub mod create_app_version;
 pub mod create_asset_url;
 pub mod release_version;
 pub mod specifications;
+pub mod types;

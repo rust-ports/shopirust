@@ -109,7 +109,10 @@ mod tests {
         })
         .unwrap();
         assert!(!result.valid);
-        assert!(result.issues.iter().any(|i| i.message.contains("client_id")));
+        assert!(result
+            .issues
+            .iter()
+            .any(|i| i.message.contains("client_id")));
     }
 
     #[test]

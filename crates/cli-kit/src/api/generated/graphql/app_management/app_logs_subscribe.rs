@@ -18,21 +18,20 @@ pub const APP_LOGS_SUBSCRIBE_MUTATION: &str = r"mutation AppLogsSubscribe($shopI
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppLogsSubscribeVariables {
-  pub shop_ids: OneOrMany<i64>,
-  pub api_key: String,
+    pub shop_ids: OneOrMany<i64>,
+    pub api_key: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppLogsSubscribeAppLogsSubscribe {
-  pub jwt_token: Option<String>,
-  pub success: Option<bool>,
-  pub errors: Option<Vec<String>>,
+    pub jwt_token: Option<String>,
+    pub success: Option<bool>,
+    pub errors: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppLogsSubscribeResponse {
-  pub app_logs_subscribe: Option<AppLogsSubscribeAppLogsSubscribe>,
+    pub app_logs_subscribe: Option<AppLogsSubscribeAppLogsSubscribe>,
 }
-

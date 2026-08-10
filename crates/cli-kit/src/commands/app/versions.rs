@@ -16,7 +16,12 @@ pub struct VersionsList {
 }
 
 impl VersionsList {
-    pub fn new(path: String, config: Option<String>, client_id: Option<String>, json: bool) -> Self {
+    pub fn new(
+        path: String,
+        config: Option<String>,
+        client_id: Option<String>,
+        json: bool,
+    ) -> Self {
         Self {
             path,
             config,

@@ -1,10 +1,10 @@
 use async_trait::async_trait;
 use cli_api::types::{
-    ApiSecretKey, AppModuleVersion, AppVersion, AppVersionIdentifiers, AppVersionWithContext,
-    AssetUrlSchema, BundleFormat, ClientName, CreateAppOptions, ExtensionTemplate,
-    ExtensionTemplatesResult, MinimalAppIdentifiers, MinimalOrganizationApp, Organization,
-    OrganizationApp, OrganizationSource, OrganizationStore, Paginateable, RemoteSpecification,
-    UserError, filter_disabled_flags, AccountInfo,
+    filter_disabled_flags, AccountInfo, ApiSecretKey, AppModuleVersion, AppVersion,
+    AppVersionIdentifiers, AppVersionWithContext, AssetUrlSchema, BundleFormat, ClientName,
+    CreateAppOptions, ExtensionTemplate, ExtensionTemplatesResult, MinimalAppIdentifiers,
+    MinimalOrganizationApp, Organization, OrganizationApp, OrganizationSource, OrganizationStore,
+    Paginateable, RemoteSpecification, UserError,
 };
 use cli_api::{CliApiError, DeveloperPlatformClient};
 use serde_json::Value;
@@ -358,12 +358,7 @@ impl DeveloperPlatformClient for AppManagementPlatformClient {
             .map_err(Self::map_err)?;
         let match_v = versions
             .into_iter()
-            .find(|v| {
-                v.metadata
-                    .as_ref()
-                    .and_then(|m| m.version_tag.as_deref())
-                    == Some(tag)
-            })
+            .find(|v| v.metadata.as_ref().and_then(|m| m.version_tag.as_deref()) == Some(tag))
             .ok_or_else(|| CliApiError::message(format!("No version with tag {tag}")))?;
         let detail = self
             .inner

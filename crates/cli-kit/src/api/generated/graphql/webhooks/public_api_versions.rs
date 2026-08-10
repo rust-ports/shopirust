@@ -16,12 +16,11 @@ pub const PUBLIC_API_VERSIONS_QUERY: &str = r"query publicApiVersions {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PublicApiVersionsPublicApiVersions {
-  pub handle: String,
+    pub handle: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PublicApiVersionsResponse {
-  pub public_api_versions: Vec<PublicApiVersionsPublicApiVersions>,
+    pub public_api_versions: Vec<PublicApiVersionsPublicApiVersions>,
 }
-

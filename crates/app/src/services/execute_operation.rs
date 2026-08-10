@@ -60,7 +60,11 @@ pub async fn execute_operation(
         .and_then(|e| e.as_array())
         .map(|arr| {
             arr.iter()
-                .filter_map(|e| e.get("message").and_then(|m| m.as_str()).map(str::to_string))
+                .filter_map(|e| {
+                    e.get("message")
+                        .and_then(|m| m.as_str())
+                        .map(str::to_string)
+                })
                 .collect()
         })
         .unwrap_or_default();

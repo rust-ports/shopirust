@@ -28,62 +28,63 @@ pub const FETCH_SPECIFICATIONS_QUERY: &str = r"query fetchSpecifications($organi
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FetchSpecificationsVariables {
-  pub organization_id: String,
+    pub organization_id: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FetchSpecificationsSpecificationsUidStrategyUidStrategiesClientProvided {
-  pub app_module_limit: i64,
-  pub is_client_provided: bool,
+    pub app_module_limit: i64,
+    pub is_client_provided: bool,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FetchSpecificationsSpecificationsUidStrategyUidStrategiesDynamic {
-  pub app_module_limit: i64,
-  pub is_client_provided: bool,
+    pub app_module_limit: i64,
+    pub is_client_provided: bool,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FetchSpecificationsSpecificationsUidStrategyUidStrategiesStatic {
-  pub app_module_limit: i64,
-  pub is_client_provided: bool,
+    pub app_module_limit: i64,
+    pub is_client_provided: bool,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "__typename")]
 pub enum FetchSpecificationsSpecificationsUidStrategy {
-  #[serde(rename = "UidStrategiesClientProvided")]
-  UidStrategiesClientProvided(FetchSpecificationsSpecificationsUidStrategyUidStrategiesClientProvided),
-  #[serde(rename = "UidStrategiesDynamic")]
-  UidStrategiesDynamic(FetchSpecificationsSpecificationsUidStrategyUidStrategiesDynamic),
-  #[serde(rename = "UidStrategiesStatic")]
-  UidStrategiesStatic(FetchSpecificationsSpecificationsUidStrategyUidStrategiesStatic),
+    #[serde(rename = "UidStrategiesClientProvided")]
+    UidStrategiesClientProvided(
+        FetchSpecificationsSpecificationsUidStrategyUidStrategiesClientProvided,
+    ),
+    #[serde(rename = "UidStrategiesDynamic")]
+    UidStrategiesDynamic(FetchSpecificationsSpecificationsUidStrategyUidStrategiesDynamic),
+    #[serde(rename = "UidStrategiesStatic")]
+    UidStrategiesStatic(FetchSpecificationsSpecificationsUidStrategyUidStrategiesStatic),
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FetchSpecificationsSpecificationsValidationSchema {
-  pub json_schema: String,
+    pub json_schema: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FetchSpecificationsSpecifications {
-  pub name: String,
-  pub identifier: String,
-  pub external_identifier: String,
-  pub experience: String,
-  pub features: Vec<String>,
-  pub uid_strategy: FetchSpecificationsSpecificationsUidStrategy,
-  pub validation_schema: Option<FetchSpecificationsSpecificationsValidationSchema>,
+    pub name: String,
+    pub identifier: String,
+    pub external_identifier: String,
+    pub experience: String,
+    pub features: Vec<String>,
+    pub uid_strategy: FetchSpecificationsSpecificationsUidStrategy,
+    pub validation_schema: Option<FetchSpecificationsSpecificationsValidationSchema>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FetchSpecificationsResponse {
-  pub specifications: Vec<FetchSpecificationsSpecifications>,
+    pub specifications: Vec<FetchSpecificationsSpecifications>,
 }
-

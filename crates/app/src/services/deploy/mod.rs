@@ -5,10 +5,10 @@ use crate::models::extensions::ExtensionInstance;
 use crate::services::bundle::{
     compress_bundle, default_bundle_path, write_manifest_to_bundle, AppManifest,
 };
-use crate::services::context::LinkedAppContext;
 use crate::services::context::identifiers::{
     ensure_deployment_ids_presence, persist_identifiers, EnsureIdsOptions,
 };
+use crate::services::context::LinkedAppContext;
 use crate::services::deploy::upload::{upload_extensions_bundle, UploadExtensionsBundleOptions};
 use cli_api::DeveloperPlatformClient;
 use std::fs;

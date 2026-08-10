@@ -50,17 +50,18 @@ fn should_exclude(path: &Path) -> bool {
     BUNDLE_EXCLUSION_SUFFIXES.iter().any(|s| name.ends_with(s))
 }
 
-fn collect_files(dir: &Path, base: &Path, out: &mut Vec<(PathBuf, PathBuf)>) -> Result<(), AppError> {
+fn collect_files(
+    dir: &Path,
+    base: &Path,
+    out: &mut Vec<(PathBuf, PathBuf)>,
+) -> Result<(), AppError> {
     for entry in fs::read_dir(dir)? {
         let entry = entry?;
         let path = entry.path();
         if path.is_dir() {
             collect_files(&path, base, out)?;
         } else if !should_exclude(&path) {
-            let rel = path
-                .strip_prefix(base)
-                .unwrap_or(&path)
-                .to_path_buf();
+            let rel = path.strip_prefix(base).unwrap_or(&path).to_path_buf();
             out.push((path, rel));
         }
     }
@@ -83,8 +84,7 @@ fn compress_zip(input_directory: &Path, output_path: &Path) -> Result<(), AppErr
         f.read_to_end(&mut buf)?;
         zip.write_all(&buf)?;
     }
-    zip.finish()
-        .map_err(|e| AppError::message(e.to_string()))?;
+    zip.finish().map_err(|e| AppError::message(e.to_string()))?;
     Ok(())
 }
 

@@ -31,54 +31,53 @@ pub const CREATE_APP_MUTATION: &str = r"mutation CreateApp($initialVersion: AppV
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateAppVariables {
-  pub initial_version: AppVersionInput,
-  pub organization_id: String,
+    pub initial_version: AppVersionInput,
+    pub organization_id: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateAppAppCreateAppActiveRootClientCredentialsSecrets {
-  pub key: String,
+    pub key: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateAppAppCreateAppActiveRootClientCredentials {
-  pub secrets: Vec<CreateAppAppCreateAppActiveRootClientCredentialsSecrets>,
+    pub secrets: Vec<CreateAppAppCreateAppActiveRootClientCredentialsSecrets>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateAppAppCreateAppActiveRoot {
-  pub client_credentials: CreateAppAppCreateAppActiveRootClientCredentials,
+    pub client_credentials: CreateAppAppCreateAppActiveRootClientCredentials,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateAppAppCreateApp {
-  pub id: String,
-  pub key: String,
-  pub active_root: CreateAppAppCreateAppActiveRoot,
+    pub id: String,
+    pub key: String,
+    pub active_root: CreateAppAppCreateAppActiveRoot,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateAppAppCreateUserErrors {
-  pub category: String,
-  pub message: String,
-  pub on: serde_json::Value,
+    pub category: String,
+    pub message: String,
+    pub on: serde_json::Value,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateAppAppCreate {
-  pub app: Option<CreateAppAppCreateApp>,
-  pub user_errors: Vec<CreateAppAppCreateUserErrors>,
+    pub app: Option<CreateAppAppCreateApp>,
+    pub user_errors: Vec<CreateAppAppCreateUserErrors>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateAppResponse {
-  pub app_create: CreateAppAppCreate,
+    pub app_create: CreateAppAppCreate,
 }
-

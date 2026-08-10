@@ -46,10 +46,7 @@ pub async fn linked_app_context(
         .map_err(|e| AppError::message(e.to_string()))?
         .ok_or_else(|| AppError::message(format!("Invalid API Key: {api_key}")))?;
 
-    let org_id = remote_app
-        .organization_id
-        .clone()
-        .unwrap_or_default();
+    let org_id = remote_app.organization_id.clone().unwrap_or_default();
 
     let organization = if org_id.is_empty() {
         Organization {

@@ -14,12 +14,11 @@ pub const AVAILABLE_TOPICS_QUERY: &str = r"query availableTopics($apiVersion: St
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AvailableTopicsVariables {
-  pub api_version: String,
+    pub api_version: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AvailableTopicsResponse {
-  pub available_topics: Option<Vec<String>>,
+    pub available_topics: Option<Vec<String>>,
 }
-

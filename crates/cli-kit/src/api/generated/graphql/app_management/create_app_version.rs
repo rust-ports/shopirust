@@ -32,68 +32,67 @@ pub const CREATE_APP_VERSION_MUTATION: &str = r"mutation CreateAppVersion($appId
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateAppVersionVariables {
-  pub app_id: String,
-  pub version: AppVersionInput,
-  #[serde(skip_serializing_if = "Option::is_none")]
-  pub metadata: Option<VersionMetadataInput>,
+    pub app_id: String,
+    pub version: AppVersionInput,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<VersionMetadataInput>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateAppVersionAppVersionCreateVersionAppModulesSpecification {
-  pub identifier: String,
-  pub external_identifier: String,
-  pub name: String,
-  pub experience: String,
-  pub management_experience: String,
+    pub identifier: String,
+    pub external_identifier: String,
+    pub name: String,
+    pub experience: String,
+    pub management_experience: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateAppVersionAppVersionCreateVersionAppModules {
-  pub uuid: String,
-  pub user_identifier: String,
-  pub handle: String,
-  pub config: serde_json::Value,
-  pub target: Option<String>,
-  pub specification: CreateAppVersionAppVersionCreateVersionAppModulesSpecification,
+    pub uuid: String,
+    pub user_identifier: String,
+    pub handle: String,
+    pub config: serde_json::Value,
+    pub target: Option<String>,
+    pub specification: CreateAppVersionAppVersionCreateVersionAppModulesSpecification,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateAppVersionAppVersionCreateVersionMetadata {
-  pub version_tag: Option<String>,
-  pub message: Option<String>,
+    pub version_tag: Option<String>,
+    pub message: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateAppVersionAppVersionCreateVersion {
-  pub id: String,
-  pub app_modules: Vec<CreateAppVersionAppVersionCreateVersionAppModules>,
-  pub metadata: CreateAppVersionAppVersionCreateVersionMetadata,
+    pub id: String,
+    pub app_modules: Vec<CreateAppVersionAppVersionCreateVersionAppModules>,
+    pub metadata: CreateAppVersionAppVersionCreateVersionMetadata,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateAppVersionAppVersionCreateUserErrors {
-  pub field: Option<Vec<String>>,
-  pub message: String,
-  pub category: String,
-  pub code: Option<Code>,
-  pub on: serde_json::Value,
+    pub field: Option<Vec<String>>,
+    pub message: String,
+    pub category: String,
+    pub code: Option<Code>,
+    pub on: serde_json::Value,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateAppVersionAppVersionCreate {
-  pub version: Option<CreateAppVersionAppVersionCreateVersion>,
-  pub user_errors: Vec<CreateAppVersionAppVersionCreateUserErrors>,
+    pub version: Option<CreateAppVersionAppVersionCreateVersion>,
+    pub user_errors: Vec<CreateAppVersionAppVersionCreateUserErrors>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateAppVersionResponse {
-  pub app_version_create: CreateAppVersionAppVersionCreate,
+    pub app_version_create: CreateAppVersionAppVersionCreate,
 }
-

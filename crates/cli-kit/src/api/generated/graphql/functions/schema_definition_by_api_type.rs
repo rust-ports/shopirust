@@ -18,26 +18,25 @@ pub const SCHEMA_DEFINITION_BY_API_TYPE_QUERY: &str = r"query SchemaDefinitionBy
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SchemaDefinitionByApiTypeVariables {
-  #[serde(rename = "type")]
-  pub r#type: String,
-  pub version: String,
+    #[serde(rename = "type")]
+    pub r#type: String,
+    pub version: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SchemaDefinitionByApiTypeApiSchema {
-  pub definition: String,
+    pub definition: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SchemaDefinitionByApiTypeApi {
-  pub schema: Option<SchemaDefinitionByApiTypeApiSchema>,
+    pub schema: Option<SchemaDefinitionByApiTypeApiSchema>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SchemaDefinitionByApiTypeResponse {
-  pub api: Option<SchemaDefinitionByApiTypeApi>,
+    pub api: Option<SchemaDefinitionByApiTypeApi>,
 }
-

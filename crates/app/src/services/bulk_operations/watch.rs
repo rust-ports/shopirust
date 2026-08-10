@@ -1,7 +1,5 @@
 use crate::error::AppError;
-use crate::services::bulk_operations::status::{
-    get_bulk_operation_status, BulkOperationStatus,
-};
+use crate::services::bulk_operations::status::{get_bulk_operation_status, BulkOperationStatus};
 use std::time::Duration;
 
 /// Poll a bulk operation until it reaches a terminal status.

@@ -25,34 +25,33 @@ pub const LIST_BULK_OPERATIONS_QUERY: &str = r"query ListBulkOperations($query: 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ListBulkOperationsVariables {
-  #[serde(skip_serializing_if = "Option::is_none")]
-  pub query: Option<String>,
-  pub first: i64,
-  pub sort_key: BulkOperationsSortKeys,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub query: Option<String>,
+    pub first: i64,
+    pub sort_key: BulkOperationsSortKeys,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ListBulkOperationsBulkOperationsNodes {
-  pub id: String,
-  pub status: BulkOperationStatus,
-  pub error_code: Option<BulkOperationErrorCode>,
-  pub object_count: serde_json::Value,
-  pub created_at: serde_json::Value,
-  pub completed_at: Option<serde_json::Value>,
-  pub url: Option<String>,
-  pub partial_data_url: Option<String>,
+    pub id: String,
+    pub status: BulkOperationStatus,
+    pub error_code: Option<BulkOperationErrorCode>,
+    pub object_count: serde_json::Value,
+    pub created_at: serde_json::Value,
+    pub completed_at: Option<serde_json::Value>,
+    pub url: Option<String>,
+    pub partial_data_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ListBulkOperationsBulkOperations {
-  pub nodes: Vec<ListBulkOperationsBulkOperationsNodes>,
+    pub nodes: Vec<ListBulkOperationsBulkOperationsNodes>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ListBulkOperationsResponse {
-  pub bulk_operations: ListBulkOperationsBulkOperations,
+    pub bulk_operations: ListBulkOperationsBulkOperations,
 }
-

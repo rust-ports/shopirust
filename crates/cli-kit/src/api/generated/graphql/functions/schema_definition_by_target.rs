@@ -20,31 +20,30 @@ pub const SCHEMA_DEFINITION_BY_TARGET_QUERY: &str = r"query SchemaDefinitionByTa
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SchemaDefinitionByTargetVariables {
-  pub handle: String,
-  pub version: String,
+    pub handle: String,
+    pub version: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SchemaDefinitionByTargetTargetApiSchema {
-  pub definition: String,
+    pub definition: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SchemaDefinitionByTargetTargetApi {
-  pub schema: Option<SchemaDefinitionByTargetTargetApiSchema>,
+    pub schema: Option<SchemaDefinitionByTargetTargetApiSchema>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SchemaDefinitionByTargetTarget {
-  pub api: SchemaDefinitionByTargetTargetApi,
+    pub api: SchemaDefinitionByTargetTargetApi,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SchemaDefinitionByTargetResponse {
-  pub target: Option<SchemaDefinitionByTargetTarget>,
+    pub target: Option<SchemaDefinitionByTargetTarget>,
 }
-

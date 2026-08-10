@@ -149,10 +149,7 @@ pub fn parse_bulk_operation_status(node: &Value) -> BulkOperationStatus {
                 _ => String::new(),
             })
             .filter(|s| !s.is_empty()),
-        url: node
-            .get("url")
-            .and_then(|v| v.as_str())
-            .map(str::to_string),
+        url: node.get("url").and_then(|v| v.as_str()).map(str::to_string),
         partial_data_url: node
             .get("partialDataUrl")
             .and_then(|v| v.as_str())
