@@ -134,7 +134,7 @@ fn extract_errors(raw: &Value) -> Vec<String> {
     Vec::new()
 }
 
-fn extract_version_id(raw: &Value) -> Option<String> {
+pub(crate) fn extract_version_id(raw: &Value) -> Option<String> {
     raw.pointer("/version/id")
         .or_else(|| raw.pointer("/appVersion/id"))
         .or_else(|| raw.pointer("/appVersionCreate/version/id"))
@@ -152,5 +152,24 @@ mod tests {
             "userErrors": [{ "message": "boom" }]
         });
         assert_eq!(extract_errors(&raw), vec!["boom".to_string()]);
+    }
+
+    #[test]
+    fn extracts_version_id_variants() {
+        assert_eq!(
+            extract_version_id(&serde_json::json!({"version":{"id":"v1"}})).as_deref(),
+            Some("v1")
+        );
+        assert_eq!(
+            extract_version_id(&serde_json::json!({"appVersion":{"id":"v2"}})).as_deref(),
+            Some("v2")
+        );
+        assert_eq!(
+            extract_version_id(&serde_json::json!({
+                "appVersionCreate":{"version":{"id":"v3"}}
+            }))
+            .as_deref(),
+            Some("v3")
+        );
     }
 }

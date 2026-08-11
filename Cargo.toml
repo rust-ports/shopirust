@@ -60,6 +60,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # hashing
 sha2 = "0.10"
 hex = "0.4"
+hmac = "0.12"
 
 # randomness
 rand = "0.8"

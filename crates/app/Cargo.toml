@@ -17,11 +17,28 @@ dirs.workspace = true
 regex-lite = "0.1"
 async-trait = "0.1"
 tokio.workspace = true
+tokio-util = { version = "0.7", features = ["rt"] }
 reqwest = { workspace = true, features = ["multipart"] }
 zip = "2"
 brotli = "7"
+flate2 = "1"
+tempfile = "3"
+is-terminal = "0.4"
+axum.workspace = true
+tower-http.workspace = true
+mime_guess.workspace = true
+notify.workspace = true
+url.workspace = true
+uuid.workspace = true
+chrono.workspace = true
+futures = "0.3"
+base64.workspace = true
+sha2.workspace = true
+hmac.workspace = true
+tracing.workspace = true
 
 [dev-dependencies]
-tempfile = "3"
 tokio = { workspace = true, features = ["macros", "rt"] }
+tower = { version = "0.5", features = ["util"] }
 wiremock = "0.6"
+http-body-util = "0.1"

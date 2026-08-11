@@ -176,4 +176,18 @@ mod tests {
             "gid://shopify/BulkOperation/9"
         );
     }
+
+    #[test]
+    fn parses_numeric_object_count_and_file_size() {
+        let status = parse_bulk_operation_status(&serde_json::json!({
+            "id": "gid://shopify/BulkOperation/1",
+            "status": "COMPLETED",
+            "objectCount": 42,
+            "fileSize": 1024,
+            "type": "MUTATION"
+        }));
+        assert_eq!(status.object_count.as_deref(), Some("42"));
+        assert_eq!(status.file_size.as_deref(), Some("1024"));
+        assert_eq!(status.type_name.as_deref(), Some("MUTATION"));
+    }
 }

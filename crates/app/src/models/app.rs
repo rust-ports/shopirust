@@ -19,7 +19,7 @@ pub struct AppHiddenConfig {
 /// Parsed app configuration from `shopify.app*.toml`.
 ///
 /// Extra keys are retained in `extra` so module/config patches survive round-trips.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 pub struct AppConfiguration {
     pub client_id: Option<String>,
     pub name: Option<String>,

@@ -6,10 +6,10 @@ pub mod ui;
 use crate::error::AppError;
 use crate::models::extensions::ExtensionFeature;
 use crate::models::loader::{load_app, LoadAppOptions, LoadedApp};
-use crate::services::build::function::build_function_extension;
 use crate::services::build::include_assets::include_assets_step;
 use crate::services::build::theme::build_theme_extension;
 use crate::services::build::ui::build_ui_extension;
+use crate::services::function::{build_function_extension, FunctionBuildOptions};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -31,7 +31,8 @@ pub async fn build_app(options: BuildOptions) -> Result<BuildResult, AppError> {
     let app = load_app(LoadAppOptions {
         directory: options.directory.clone(),
         config_name: options.config_name,
-    })?;
+                ignore_unknown_extensions: false,
+        })?;
 
     let mut result = BuildResult {
         built: vec![],
@@ -75,7 +76,13 @@ async fn build_extension(
             .features
             .contains(&ExtensionFeature::Function)
     {
-        build_function_extension(ext)?;
+        build_function_extension(
+            ext,
+            FunctionBuildOptions {
+                use_tasks: false,
+            },
+        )
+        .await?;
         return Ok(format!("function:{}", ext.handle));
     }
     if ext.is_ui_extension() {
@@ -121,7 +128,7 @@ fn build_webs(directory: &Path, result: &mut BuildResult) {
     }
 }
 
-fn detect_package_manager(web: &Path) -> String {
+pub(crate) fn detect_package_manager(web: &Path) -> String {
     if web.join("pnpm-lock.yaml").exists() {
         "pnpm".into()
     } else if web.join("yarn.lock").exists() {
@@ -139,7 +146,13 @@ pub async fn bundle_and_build_extensions(app: &mut LoadedApp) -> Result<(), AppE
             let out = build_theme_extension(ext)?;
             ext.output_path = Some(out);
         } else if ext.is_function_extension() {
-            let out = build_function_extension(ext)?;
+            let out = build_function_extension(
+                ext,
+                FunctionBuildOptions {
+                    use_tasks: false,
+                },
+            )
+            .await?;
             ext.output_path = Some(out);
         } else if ext.is_ui_extension() {
             let out = build_ui_extension(ext)?;
@@ -185,5 +198,15 @@ mod tests {
         .unwrap();
         assert!(result.built.iter().any(|b| b.contains("my-theme")));
         assert!(ext.join("dist").exists() || ext.join("blocks/star.liquid").exists());
+    }
+
+    #[test]
+    fn detect_package_manager_prefers_pnpm_then_yarn() {
+        let dir = tempdir().unwrap();
+        assert_eq!(detect_package_manager(dir.path()), "npm");
+        fs::write(dir.path().join("yarn.lock"), "").unwrap();
+        assert_eq!(detect_package_manager(dir.path()), "yarn");
+        fs::write(dir.path().join("pnpm-lock.yaml"), "").unwrap();
+        assert_eq!(detect_package_manager(dir.path()), "pnpm");
     }
 }

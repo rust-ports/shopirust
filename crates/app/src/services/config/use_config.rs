@@ -31,7 +31,8 @@ pub fn use_config(options: UseConfigOptions) -> Result<UseConfigResult, AppError
     let loaded = load_app(LoadAppOptions {
         directory: directory.clone(),
         config_name: Some(config_file.clone()),
-    })?;
+                ignore_unknown_extensions: false,
+        })?;
 
     if !loaded.is_linked() {
         return Err(AppError::message(format!(

@@ -27,7 +27,8 @@ pub fn pull_config(options: PullConfigOptions) -> Result<PullConfigResult, AppEr
     let loaded = load_app(LoadAppOptions {
         directory: options.directory.clone(),
         config_name: options.config_name.clone(),
-    })?;
+                ignore_unknown_extensions: false,
+        })?;
 
     let mut updated = false;
     let mut cfg = loaded.configuration.clone();

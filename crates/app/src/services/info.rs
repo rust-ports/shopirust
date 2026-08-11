@@ -47,7 +47,8 @@ pub fn app_info(options: AppInfoOptions) -> Result<AppInfoResult, AppError> {
     let app = load_app(LoadAppOptions {
         directory: options.directory,
         config_name: options.config_name,
-    })?;
+                ignore_unknown_extensions: false,
+        })?;
     let json = to_json(&app);
     if options.format == AppInfoFormat::Json {
         return Ok(AppInfoResult::Json(json));

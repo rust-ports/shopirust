@@ -40,7 +40,8 @@ pub fn validate_config(options: ValidateConfigOptions) -> Result<ValidateConfigR
     match load_app(LoadAppOptions {
         directory: options.directory,
         config_name: options.config_name,
-    }) {
+                ignore_unknown_extensions: false,
+        }) {
         Ok(app) => {
             if !app.is_linked() {
                 issues.push(ValidationIssue {

@@ -58,18 +58,28 @@ pub async fn deploy(
         &AppManifest {
             name: ctx.app.name.clone(),
             handle: None,
-            modules: ctx
-                .app
-                .extensions
-                .iter()
-                .map(|e| {
-                    serde_json::json!({
+            modules: {
+                let mut modules = Vec::new();
+                let app_config_json = serde_json::to_value(&ctx.app.configuration)
+                    .unwrap_or(serde_json::json!({}));
+                for e in &ctx.app.extensions {
+                    e.validate()?;
+                    let deploy_ctx = crate::models::extensions::DeployConfigContext {
+                        app_configuration: Some(app_config_json.clone()),
+                        api_key: ctx.remote_app.api_key.clone(),
+                        module_id: ids.extensions.get(&e.handle).cloned(),
+                    };
+                    let config = e.deploy_config(&deploy_ctx).await?.unwrap_or_default();
+                    modules.push(serde_json::json!({
                         "uuid": ids.extensions.get(&e.handle).cloned().unwrap_or_default(),
                         "handle": e.handle,
                         "type": e.type_name(),
-                    })
-                })
-                .collect(),
+                        "uid": e.uid.clone().unwrap_or_default(),
+                        "config": config,
+                    }));
+                }
+                modules
+            },
         },
         &bundle_dir,
     )?;

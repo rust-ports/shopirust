@@ -1,5 +1,10 @@
 pub mod breakdown_extensions;
+pub mod id_matching;
 pub mod identifiers;
+
+pub use id_matching::{
+    automatic_matchmaking, LocalSource, MatchResult, RemoteSource as MatchRemoteSource,
+};
 
 use crate::error::AppError;
 use crate::models::loader::{load_app, LoadAppOptions, LoadedApp};
@@ -28,7 +33,8 @@ pub async fn linked_app_context(
     let app = load_app(LoadAppOptions {
         directory: options.directory,
         config_name: options.config_name,
-    })?;
+                ignore_unknown_extensions: false,
+        })?;
 
     let api_key = options
         .client_id
@@ -240,6 +246,30 @@ mod tests {
         }
         async fn app_deep_link(&self, app: &MinimalAppIdentifiers) -> Result<String, CliApiError> {
             Ok(format!("https://example.com/{}", app.id))
+        }
+        fn app_logs_poll_base_url(&self, organization_id: &str) -> String {
+            format!("https://example.com/orgs/{organization_id}/app_logs/poll")
+        }
+        async fn subscribe_to_app_logs(
+            &self,
+            _: &cli_api::AppLogsSubscribeVariables,
+            _: &str,
+        ) -> Result<String, CliApiError> {
+            Ok("test-jwt".into())
+        }
+        async fn fetch_app_logs(
+            &self,
+            _: &str,
+            _: &str,
+            _: Option<&str>,
+            _: Option<&std::collections::HashMap<String, String>>,
+        ) -> Result<cli_api::AppLogsFetchResult, CliApiError> {
+            Ok(cli_api::AppLogsFetchResult {
+                status: 200,
+                app_logs: vec![],
+                cursor: None,
+                errors: vec![],
+            })
         }
     }
 

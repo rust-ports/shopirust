@@ -119,6 +119,7 @@ mod tests {
         let _ = load_app(LoadAppOptions {
             directory: dir.path().to_path_buf(),
             config_name: None,
+                    ignore_unknown_extensions: false,
         });
     }
 }

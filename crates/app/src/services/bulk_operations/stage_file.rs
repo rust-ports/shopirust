@@ -151,4 +151,33 @@ mod tests {
         assert_eq!(url, "https://example.com/upload");
         assert_eq!(form.len(), 2);
     }
+
+    #[test]
+    fn wraps_json_array_as_multiline_jsonl() {
+        let bytes =
+            resolve_mutation_jsonl(Some(r#"[{"id":"1"},{"id":"2"}]"#), None).unwrap();
+        let text = String::from_utf8(bytes).unwrap();
+        let lines: Vec<_> = text.lines().collect();
+        assert_eq!(lines.len(), 2);
+        assert!(lines[0].contains("\"id\":\"1\""));
+        assert!(lines[1].contains("\"id\":\"2\""));
+    }
+
+    #[test]
+    fn extracts_staged_path_under_data_pointer() {
+        let resp = serde_json::json!({
+            "data": {
+                "stagedUploadsCreate": {
+                    "stagedTargets": [{
+                        "url": "https://example.com/upload",
+                        "parameters": [
+                            {"name": "key", "value": "tmp/bulk/xyz"}
+                        ]
+                    }]
+                }
+            }
+        });
+        let (path, _, _) = staged_upload_path_from_response(&resp).unwrap();
+        assert_eq!(path, "tmp/bulk/xyz");
+    }
 }
