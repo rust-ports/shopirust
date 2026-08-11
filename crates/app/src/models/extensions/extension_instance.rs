@@ -1,8 +1,18 @@
+use crate::error::AppError;
+use crate::models::extensions::deploy::DeployConfigContext;
 use crate::models::extensions::specification::{ExtensionFeature, ExtensionSpecification};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+
+/// A single function targeting entry from extension TOML.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FunctionTargeting {
+    pub target: String,
+    pub input_query: Option<String>,
+    pub export: Option<String>,
+}
 
 /// A loaded extension instance (local filesystem + typed config).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -65,6 +75,97 @@ impl ExtensionInstance {
             .contains(&ExtensionFeature::UiPreview)
     }
 
+    /// Upstream `isPreviewable` — UI extensions served by the extension preview server.
+    pub fn is_previewable(&self) -> bool {
+        self.is_ui_extension()
+    }
+
+    pub fn surface(&self) -> &str {
+        &self.specification.surface
+    }
+
+    pub fn external_type(&self) -> &str {
+        &self.specification.external_identifier
+    }
+
+    /// Ensure `dev_uuid` is set (`dev-{uid}` or a fresh uuid). Returns the uuid.
+    pub fn ensure_dev_uuid(&mut self) -> &str {
+        if self.dev_uuid.is_none() {
+            let base = self
+                .uid
+                .clone()
+                .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+            self.dev_uuid = Some(format!("dev-{base}"));
+        }
+        self.dev_uuid.as_deref().unwrap()
+    }
+
+    pub fn should_fetch_cart_url(&self) -> bool {
+        self.specification
+            .features
+            .contains(&ExtensionFeature::CartUrl)
+    }
+
+    /// JS output filename for UI extensions (handle.js).
+    pub fn output_file_name(&self) -> String {
+        format!("{}.js", self.handle)
+    }
+
+    /// Absolute output path inside a bundle directory (dev-bundle or deploy bundle).
+    pub fn get_output_path_for_directory(&self, bundle_directory: &Path) -> PathBuf {
+        if let Some(ref out) = self.output_path {
+            if out.is_absolute() {
+                return out.clone();
+            }
+            return bundle_directory.join(out);
+        }
+        if self.is_function_extension() {
+            return bundle_directory
+                .join(&self.handle)
+                .join(self.output_relative_path());
+        }
+        bundle_directory
+            .join(&self.handle)
+            .join(self.output_file_name())
+    }
+
+    /// Whether this extension declares the given extension-point target.
+    pub fn has_extension_point_target(&self, target: &str) -> bool {
+        if self.type_name() == "checkout_post_purchase" {
+            return target == "purchase.post.render";
+        }
+        self.extension_point_targets()
+            .iter()
+            .any(|t| t == target)
+    }
+
+    /// Targets from `extension_points` or `targeting` config arrays.
+    pub fn extension_point_targets(&self) -> Vec<String> {
+        let points = self
+            .configuration
+            .get("extension_points")
+            .or_else(|| self.configuration.get("targeting"));
+        let Some(Value::Array(items)) = points else {
+            return vec![];
+        };
+        items
+            .iter()
+            .filter_map(|item| item.get("target").and_then(|t| t.as_str()).map(str::to_string))
+            .collect()
+    }
+
+    /// Files to watch for hot-reload (extension directory contents, excluding common noise).
+    pub fn watched_files(&self) -> Vec<PathBuf> {
+        let mut files = vec![self.configuration_path.clone()];
+        if let Some(ref entry) = self.entry_path {
+            files.push(entry.clone());
+        }
+        collect_watch_files(&self.directory, &mut files);
+        files.sort();
+        files.dedup();
+        files
+    }
+
     /// Upstream `bundleURL`-style relative output path for the extension.
     pub fn bundle_url(&self) -> String {
         if let Some(ref out) = self.output_path {
@@ -78,6 +179,178 @@ impl ExtensionInstance {
             .get("type")
             .and_then(|v| v.as_str())
             .unwrap_or(&self.specification.identifier)
+    }
+
+    /// Display name from TOML `name`, falling back to handle.
+    pub fn name(&self) -> String {
+        self.configuration
+            .get("name")
+            .and_then(|v| v.as_str())
+            .map(str::to_string)
+            .unwrap_or_else(|| self.handle.clone())
+    }
+
+    pub fn api_version(&self) -> Option<&str> {
+        self.configuration
+            .get("api_version")
+            .and_then(|v| v.as_str())
+    }
+
+    /// True when the function entrypoint looks like JavaScript/TypeScript.
+    pub fn is_javascript(&self) -> bool {
+        if let Some(ref entry) = self.entry_path {
+            if matches!(
+                entry
+                    .extension()
+                    .and_then(|e| e.to_str())
+                    .map(|e| e.to_ascii_lowercase())
+                    .as_deref(),
+                Some("js" | "jsx" | "ts" | "tsx" | "mjs" | "cjs")
+            ) {
+                return true;
+            }
+        }
+        self.directory.join("package.json").exists()
+            && (self.directory.join("src/index.js").exists()
+                || self.directory.join("src/index.ts").exists()
+                || self.directory.join("src/index.jsx").exists()
+                || self.directory.join("src/index.tsx").exists())
+    }
+
+    pub fn build_command(&self) -> Option<String> {
+        self.configuration
+            .get("build")
+            .and_then(|v| v.get("command"))
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.trim().is_empty())
+            .map(str::to_string)
+    }
+
+    pub fn typegen_command(&self) -> Option<String> {
+        self.configuration
+            .get("build")
+            .and_then(|v| v.get("typegen_command"))
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.trim().is_empty())
+            .map(str::to_string)
+    }
+
+    /// Relative wasm path from `[build].path`, else `dist/index.wasm`.
+    pub fn output_relative_path(&self) -> String {
+        self.configuration
+            .get("build")
+            .and_then(|v| v.get("path"))
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
+            .map(str::to_string)
+            .unwrap_or_else(|| "dist/index.wasm".into())
+    }
+
+    /// Absolute wasm output path for this function extension.
+    pub fn function_output_path(&self) -> PathBuf {
+        if let Some(ref out) = self.output_path {
+            return out.clone();
+        }
+        self.directory.join(self.output_relative_path())
+    }
+
+    /// Whether wasm-opt should run (defaults to true when unset).
+    pub fn wasm_opt_enabled(&self) -> bool {
+        self.configuration
+            .get("build")
+            .and_then(|v| v.get("wasm_opt"))
+            .and_then(|v| v.as_bool())
+            .unwrap_or(true)
+    }
+
+    pub fn targeting(&self) -> Vec<FunctionTargeting> {
+        let Some(Value::Array(items)) = self.configuration.get("targeting") else {
+            return vec![];
+        };
+        items
+            .iter()
+            .filter_map(|item| {
+                let target = item.get("target")?.as_str()?.to_string();
+                Some(FunctionTargeting {
+                    target,
+                    input_query: item
+                        .get("input_query")
+                        .and_then(|v| v.as_str())
+                        .map(str::to_string),
+                    export: item
+                        .get("export")
+                        .and_then(|v| v.as_str())
+                        .map(str::to_string),
+                })
+            })
+            .collect()
+    }
+
+    /// Find `node_modules/@shopify/shopify_function/package.json` walking up from the extension.
+    pub fn shopify_function_package_json(&self) -> Option<PathBuf> {
+        find_up(
+            &self.directory,
+            Path::new("node_modules/@shopify/shopify_function/package.json"),
+        )
+    }
+
+    /// Validate this extension's configuration against its specification.
+    pub fn validate(&self) -> Result<(), AppError> {
+        self.specification
+            .validate(&self.configuration, &self.directory)
+    }
+
+    /// Build the platform deploy payload for this extension.
+    pub async fn deploy_config(
+        &self,
+        ctx: &DeployConfigContext,
+    ) -> Result<Option<Value>, AppError> {
+        self.specification
+            .deploy_config(&self.configuration, &self.directory, ctx)
+            .await
+    }
+
+    /// Transform local app-config content using this specification.
+    pub fn transform_local_to_remote(&self, app_configuration: Option<&Value>) -> Value {
+        let local = Value::Object(
+            self.configuration
+                .iter()
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect(),
+        );
+        self.specification
+            .transform_local_to_remote(&local, app_configuration)
+    }
+}
+
+fn find_up(start: &Path, relative: &Path) -> Option<PathBuf> {
+    let mut dir = Some(start);
+    while let Some(current) = dir {
+        let candidate = current.join(relative);
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+        dir = current.parent();
+    }
+    None
+}
+
+fn collect_watch_files(dir: &Path, out: &mut Vec<PathBuf>) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        if name == "node_modules" || name == ".git" || name == "dist" || name.starts_with('.') {
+            continue;
+        }
+        if path.is_dir() {
+            collect_watch_files(&path, out);
+        } else if path.is_file() {
+            out.push(path);
+        }
     }
 }
 
