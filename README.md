@@ -132,6 +132,19 @@ cargo run -p cli-kit -- app release --path ./my-app --version <VERSION_TAG> --al
 
 Non-interactive / CI: pass `--allow-updates` (and `--allow-deletes` when the diff removes extensions). Interactive TTY can confirm prompts.
 
+### Functions
+
+Run from the app root or a function extension directory (`--path`). Toolchain binaries (function-runner, javy, trampoline, wasm-opt) download into the CLI cache on first use.
+
+```bash
+cargo run -p cli-kit -- app function build --path ./extensions/my-function
+cargo run -p cli-kit -- app function info --path ./extensions/my-function --json
+cargo run -p cli-kit -- app function typegen --path ./extensions/my-function
+cargo run -p cli-kit -- app function schema --path ./extensions/my-function
+cargo run -p cli-kit -- app function run --path ./extensions/my-function --input ./input.json
+cargo run -p cli-kit -- app function replay --path ./extensions/my-function --log <id> --watch=false
+```
+
 ### Admin GraphQL: execute + bulk
 
 Requires store auth (`--store` / `SHOPIFY_FLAG_STORE`). Bulk API version defaults to `2026-01` (minimum).
@@ -172,15 +185,41 @@ Numeric bulk IDs are normalized to `gid://shopify/BulkOperation/<id>`.
 3. App: `app config link` → `app info` → `app versions list`.
 4. App: `app deploy --no-build --allow-updates` (App Management) creates a version.
 5. App: `app execute --query '{ shop { name } }'` against a store.
-6. `cargo test -p app --lib` and `cargo test -p theme --lib` (unit / wiremock).
+6. App: `app function build` / `app function info --json` for a function extension.
+7. App: `app env show` / `app webhook trigger --help` / `app logs sources`.
+8. App: `app dev --use-localhost --store <store>` (requires linked app; `cloudflared` for auto tunnel).
+9. `cargo test -p app --lib` and `cargo test -p theme --lib` (unit / wiremock).
+
+See [APP_PARITY_GAPS.md](APP_PARITY_GAPS.md) for remaining depth vs upstream Vitest.
+
+### App liveloop / env / logs (ready to test)
+
+```bash
+cargo run -p cli-kit -- app env show --path ./my-app
+cargo run -p cli-kit -- app env pull --path ./my-app
+
+cargo run -p cli-kit -- app webhook trigger \
+  --topic products/create \
+  --api-version 2025-01 \
+  --address http://127.0.0.1:3000/webhooks
+
+cargo run -p cli-kit -- app logs sources --path ./my-app
+cargo run -p cli-kit -- app logs --store my-store.myshopify.com --path ./my-app
+
+# Localhost tunnel mode (no cloudflared)
+cargo run -p cli-kit -- app dev --use-localhost \
+  --path ./my-app --store my-store.myshopify.com
+
+cargo run -p cli-kit -- app dev clean --path ./my-app --store my-store.myshopify.com
+```
 
 ## Not ready / out of scope (do not expect parity yet)
 
-- `app dev` (local app development session)
+- Full Polaris `ui-extensions-dev-console` static asset bundle (dev console is a functional HTML/WS stub)
 - Store / Hydrogen surfaces
+- CLI meta (`upgrade`, `cache`, notifications, did-you-mean)
 - Full Partners parity for release / signed upload / versions (App Management is the primary path)
-- Full function Wasm toolchain polish
-
+- Playwright-class E2E suite
 ## Regenerate GraphQL
 
 Rust GraphQL modules under `crates/cli-kit/src/api/generated/graphql/` are produced from an upstream [Shopify/cli](https://github.com/Shopify/cli) checkout (`.graphql` + `generated/*.ts` + `types.d.ts`). Refresh them with the root Makefile:
