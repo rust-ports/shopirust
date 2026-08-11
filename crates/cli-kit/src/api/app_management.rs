@@ -30,6 +30,64 @@ pub fn app_management_app_logs_url(
     add_cursor_and_filters_to_app_logs_url(&base, cursor, filters)
 }
 
+/// GET the app-logs poll endpoint and parse the JSON body.
+pub async fn fetch_app_logs_http(
+    url: &str,
+    jwt_token: &str,
+) -> Result<cli_api::AppLogsFetchResult, String> {
+    let client = crate::http::build_client(None).map_err(|e| e.to_string())?;
+    let headers = app_management_headers(jwt_token);
+    let response = client
+        .get(url)
+        .headers(headers)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    let status = response.status().as_u16();
+    let body: serde_json::Value = response.json().await.map_err(|e| e.to_string())?;
+
+    let errors = body
+        .get("errors")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|e| e.as_str().map(str::to_string))
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+
+    if status != 200 {
+        let errors = if errors.is_empty() {
+            vec![format!("Request failed with status {status}")]
+        } else {
+            errors
+        };
+        return Ok(cli_api::AppLogsFetchResult {
+            status,
+            app_logs: vec![],
+            cursor: None,
+            errors,
+        });
+    }
+
+    let app_logs = body
+        .get("app_logs")
+        .cloned()
+        .map(|v| serde_json::from_value(v).unwrap_or_default())
+        .unwrap_or_default();
+    let cursor = body
+        .get("cursor")
+        .and_then(|v| v.as_str())
+        .map(str::to_string);
+
+    Ok(cli_api::AppLogsFetchResult {
+        status,
+        app_logs,
+        cursor,
+        errors,
+    })
+}
+
 // ===== GraphQL Query/Mutation Constants =====
 
 const ORGANIZATIONS_QUERY: &str = r#"
@@ -1116,6 +1174,62 @@ impl AppManagementClient {
             .request(RELEASE_VERSION_MUTATION, Some(vars), None, None)
             .await?;
         Ok(resp.app_release_create)
+    }
+
+    /// Subscribe to app logs; returns the JWT token used for polling.
+    pub async fn subscribe_to_app_logs(
+        &self,
+        shop_ids: &[i64],
+        api_key: &str,
+    ) -> Result<String, GraphqlRequestError> {
+        use crate::api::generated::graphql::app_management::app_logs_subscribe::APP_LOGS_SUBSCRIBE_MUTATION;
+
+        let vars = serde_json::json!({
+            "shopIds": shop_ids,
+            "apiKey": api_key,
+        });
+        let resp: serde_json::Value = self
+            .request(APP_LOGS_SUBSCRIBE_MUTATION, Some(vars), None, None)
+            .await?;
+        let payload = resp
+            .get("appLogsSubscribe")
+            .ok_or_else(|| {
+                GraphqlRequestError::ApiError(
+                    "Failed to subscribe to app logs: No response received".into(),
+                    500,
+                )
+            })?;
+        if let Some(errors) = payload.get("errors").and_then(|e| e.as_array()) {
+            let msgs: Vec<String> = errors
+                .iter()
+                .filter_map(|e| e.as_str().map(str::to_string))
+                .collect();
+            if !msgs.is_empty() {
+                return Err(GraphqlRequestError::ApiError(msgs.join(", "), 400));
+            }
+        }
+        payload
+            .get("jwtToken")
+            .and_then(|v| v.as_str())
+            .map(str::to_string)
+            .ok_or_else(|| {
+                GraphqlRequestError::ApiError(
+                    "Failed to subscribe to app logs: No JWT token received".into(),
+                    500,
+                )
+            })
+    }
+
+    /// Poll the App Management app-logs HTTP endpoint.
+    pub async fn fetch_app_logs(
+        &self,
+        organization_id: &str,
+        jwt_token: &str,
+        cursor: Option<&str>,
+        filters: Option<HashMap<String, String>>,
+    ) -> Result<cli_api::AppLogsFetchResult, String> {
+        let url = app_management_app_logs_url(organization_id, cursor, filters);
+        fetch_app_logs_http(&url, jwt_token).await
     }
 
     /// Generate a signed upload URL for an app bundle.

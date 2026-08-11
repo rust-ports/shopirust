@@ -195,3 +195,36 @@ pub fn filter_disabled_flags(disabled_flags: &[String]) -> Vec<String> {
         .cloned()
         .collect()
 }
+
+/// Input for `appLogsSubscribe`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AppLogsSubscribeVariables {
+    pub shop_ids: Vec<i64>,
+    pub api_key: String,
+}
+
+/// Result of an app-logs poll HTTP request (before client-side filtering).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AppLogsFetchResult {
+    pub status: u16,
+    #[serde(default)]
+    pub app_logs: Vec<AppLogData>,
+    pub cursor: Option<String>,
+    #[serde(default)]
+    pub errors: Vec<String>,
+}
+
+/// A single app log entry from the poll endpoint.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AppLogData {
+    pub shop_id: i64,
+    pub api_client_id: i64,
+    pub payload: String,
+    pub log_type: String,
+    pub source: String,
+    pub source_namespace: String,
+    pub cursor: String,
+    pub status: String,
+    pub log_timestamp: String,
+}

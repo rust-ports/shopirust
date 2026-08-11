@@ -656,6 +656,59 @@ impl PartnersClient {
         let url = format!("https://{fqdn}/app_logs/poll");
         add_cursor_and_filters_to_app_logs_url(&url, cursor, filters)
     }
+
+    /// Base Partners app-logs poll URL (no query string).
+    pub fn app_logs_poll_base_url() -> String {
+        let fqdn = partners_fqdn(None);
+        format!("https://{fqdn}/app_logs/poll")
+    }
+
+    /// Subscribe to app logs; returns the JWT token used for polling.
+    pub async fn subscribe_to_app_logs(
+        &self,
+        shop_ids: &[i64],
+        api_key: &str,
+    ) -> Result<String, GraphqlRequestError> {
+        use crate::api::generated::graphql::app_management::app_logs_subscribe::{
+            AppLogsSubscribeResponse, AppLogsSubscribeVariables, APP_LOGS_SUBSCRIBE_MUTATION,
+        };
+        use crate::api::generated::graphql::app_management::types::OneOrMany;
+
+        let vars = AppLogsSubscribeVariables {
+            shop_ids: OneOrMany::Many(shop_ids.to_vec()),
+            api_key: api_key.to_string(),
+        };
+        let resp: AppLogsSubscribeResponse = self
+            .graphql
+            .query_with_variables(APP_LOGS_SUBSCRIBE_MUTATION, Some(vars))
+            .await?;
+        let payload = resp.app_logs_subscribe.ok_or_else(|| {
+            GraphqlRequestError::ApiError(
+                "Failed to subscribe to app logs: No response received".into(),
+                500,
+            )
+        })?;
+        if let Some(errors) = payload.errors.filter(|e| !e.is_empty()) {
+            return Err(GraphqlRequestError::ApiError(errors.join(", "), 400));
+        }
+        payload.jwt_token.ok_or_else(|| {
+            GraphqlRequestError::ApiError(
+                "Failed to subscribe to app logs: No JWT token received".into(),
+                500,
+            )
+        })
+    }
+
+    /// Poll the Partners app-logs HTTP endpoint.
+    pub async fn fetch_app_logs(
+        &self,
+        jwt_token: &str,
+        cursor: Option<&str>,
+        filters: Option<std::collections::HashMap<String, String>>,
+    ) -> Result<cli_api::AppLogsFetchResult, String> {
+        let url = Self::generate_fetch_app_log_url(cursor, filters);
+        crate::api::app_management::fetch_app_logs_http(&url, jwt_token).await
+    }
 }
 
 /// Summary of an organization with its apps and pagination info.

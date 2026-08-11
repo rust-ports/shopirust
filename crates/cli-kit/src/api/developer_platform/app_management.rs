@@ -1,13 +1,14 @@
 use async_trait::async_trait;
 use cli_api::types::{
-    filter_disabled_flags, AccountInfo, ApiSecretKey, AppModuleVersion, AppVersion,
-    AppVersionIdentifiers, AppVersionWithContext, AssetUrlSchema, BundleFormat, ClientName,
-    CreateAppOptions, ExtensionTemplate, ExtensionTemplatesResult, MinimalAppIdentifiers,
-    MinimalOrganizationApp, Organization, OrganizationApp, OrganizationSource, OrganizationStore,
-    Paginateable, RemoteSpecification, UserError,
+    filter_disabled_flags, AccountInfo, ApiSecretKey, AppLogsFetchResult, AppLogsSubscribeVariables,
+    AppModuleVersion, AppVersion, AppVersionIdentifiers, AppVersionWithContext, AssetUrlSchema,
+    BundleFormat, ClientName, CreateAppOptions, ExtensionTemplate, ExtensionTemplatesResult,
+    MinimalAppIdentifiers, MinimalOrganizationApp, Organization, OrganizationApp,
+    OrganizationSource, OrganizationStore, Paginateable, RemoteSpecification, UserError,
 };
 use cli_api::{CliApiError, DeveloperPlatformClient};
 use serde_json::Value;
+use std::collections::HashMap;
 
 use crate::api::app_management::{
     AppManagementClient, OrganizationApp as KitOrganizationApp, Specification,
@@ -501,5 +502,38 @@ impl DeveloperPlatformClient for AppManagementPlatformClient {
             "https://dev.shopify.com/dashboard/{}/apps/{}",
             app.organization_id, app.id
         ))
+    }
+
+    fn app_logs_poll_base_url(&self, organization_id: &str) -> String {
+        crate::api::app_management::app_management_app_logs_url(organization_id, None, None)
+    }
+
+    async fn subscribe_to_app_logs(
+        &self,
+        variables: &AppLogsSubscribeVariables,
+        _organization_id: &str,
+    ) -> Result<String, CliApiError> {
+        self.inner
+            .subscribe_to_app_logs(&variables.shop_ids, &variables.api_key)
+            .await
+            .map_err(Self::map_err)
+    }
+
+    async fn fetch_app_logs(
+        &self,
+        organization_id: &str,
+        jwt_token: &str,
+        cursor: Option<&str>,
+        filters: Option<&HashMap<String, String>>,
+    ) -> Result<AppLogsFetchResult, CliApiError> {
+        self.inner
+            .fetch_app_logs(
+                organization_id,
+                jwt_token,
+                cursor,
+                filters.cloned(),
+            )
+            .await
+            .map_err(CliApiError::message)
     }
 }

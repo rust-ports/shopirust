@@ -3,11 +3,12 @@ use serde_json::Value;
 
 use crate::error::CliApiError;
 use crate::types::{
-    AccountInfo, AppVersion, AppVersionIdentifiers, AppVersionWithContext, AssetUrlSchema,
-    BundleFormat, ClientName, CreateAppOptions, ExtensionTemplatesResult, MinimalAppIdentifiers,
-    MinimalOrganizationApp, Organization, OrganizationApp, OrganizationSource, OrganizationStore,
-    Paginateable, RemoteSpecification,
+    AccountInfo, AppLogsFetchResult, AppLogsSubscribeVariables, AppVersion, AppVersionIdentifiers,
+    AppVersionWithContext, AssetUrlSchema, BundleFormat, ClientName, CreateAppOptions,
+    ExtensionTemplatesResult, MinimalAppIdentifiers, MinimalOrganizationApp, Organization,
+    OrganizationApp, OrganizationSource, OrganizationStore, Paginateable, RemoteSpecification,
 };
+use std::collections::HashMap;
 
 /// Unified interface over Partners and App Management developer-platform APIs.
 #[async_trait]
@@ -87,6 +88,25 @@ pub trait DeveloperPlatformClient: Send + Sync {
     ) -> Result<Paginateable<Vec<OrganizationStore>>, CliApiError>;
     fn to_extension_graphql_type(&self, input: &str) -> String;
     async fn app_deep_link(&self, app: &MinimalAppIdentifiers) -> Result<String, CliApiError>;
+
+    /// Base URL for the app-logs poll HTTP endpoint (no query string).
+    fn app_logs_poll_base_url(&self, organization_id: &str) -> String;
+
+    /// Subscribe to app logs; returns a JWT used to poll the HTTP endpoint.
+    async fn subscribe_to_app_logs(
+        &self,
+        variables: &AppLogsSubscribeVariables,
+        organization_id: &str,
+    ) -> Result<String, CliApiError>;
+
+    /// Poll the app-logs HTTP endpoint.
+    async fn fetch_app_logs(
+        &self,
+        organization_id: &str,
+        jwt_token: &str,
+        cursor: Option<&str>,
+        filters: Option<&HashMap<String, String>>,
+    ) -> Result<AppLogsFetchResult, CliApiError>;
 }
 
 /// Options for selecting which developer-platform client to use.
@@ -295,6 +315,30 @@ mod tests {
         }
         async fn app_deep_link(&self, app: &MinimalAppIdentifiers) -> Result<String, CliApiError> {
             Ok(format!("https://example.com/{}", app.id))
+        }
+        fn app_logs_poll_base_url(&self, organization_id: &str) -> String {
+            format!("https://example.com/orgs/{organization_id}/app_logs/poll")
+        }
+        async fn subscribe_to_app_logs(
+            &self,
+            _: &AppLogsSubscribeVariables,
+            _: &str,
+        ) -> Result<String, CliApiError> {
+            Ok("stub-jwt".into())
+        }
+        async fn fetch_app_logs(
+            &self,
+            _: &str,
+            _: &str,
+            _: Option<&str>,
+            _: Option<&HashMap<String, String>>,
+        ) -> Result<AppLogsFetchResult, CliApiError> {
+            Ok(AppLogsFetchResult {
+                status: 200,
+                app_logs: vec![],
+                cursor: None,
+                errors: vec![],
+            })
         }
     }
 

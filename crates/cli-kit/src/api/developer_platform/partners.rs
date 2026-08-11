@@ -1,12 +1,14 @@
 use async_trait::async_trait;
 use cli_api::types::{
-    filter_disabled_flags, AccountInfo, ApiSecretKey, AppVersion, AppVersionIdentifiers,
-    AppVersionWithContext, AssetUrlSchema, BundleFormat, ClientName, CreateAppOptions,
-    ExtensionTemplatesResult, MinimalAppIdentifiers, MinimalOrganizationApp, Organization,
-    OrganizationApp, OrganizationSource, OrganizationStore, Paginateable, RemoteSpecification,
+    filter_disabled_flags, AccountInfo, ApiSecretKey, AppLogsFetchResult, AppLogsSubscribeVariables,
+    AppVersion, AppVersionIdentifiers, AppVersionWithContext, AssetUrlSchema, BundleFormat,
+    ClientName, CreateAppOptions, ExtensionTemplatesResult, MinimalAppIdentifiers,
+    MinimalOrganizationApp, Organization, OrganizationApp, OrganizationSource, OrganizationStore,
+    Paginateable, RemoteSpecification,
 };
 use cli_api::{CliApiError, DeveloperPlatformClient};
 use serde_json::Value;
+use std::collections::HashMap;
 
 use crate::api::partners::{OrganizationApp as KitOrganizationApp, PartnersClient};
 
@@ -407,5 +409,33 @@ impl DeveloperPlatformClient for PartnersPlatformClient {
             "https://partners.shopify.com/{}/apps/{}",
             app.organization_id, app.id
         ))
+    }
+
+    fn app_logs_poll_base_url(&self, _organization_id: &str) -> String {
+        crate::api::partners::PartnersClient::app_logs_poll_base_url()
+    }
+
+    async fn subscribe_to_app_logs(
+        &self,
+        variables: &AppLogsSubscribeVariables,
+        _organization_id: &str,
+    ) -> Result<String, CliApiError> {
+        self.inner
+            .subscribe_to_app_logs(&variables.shop_ids, &variables.api_key)
+            .await
+            .map_err(Self::map_err)
+    }
+
+    async fn fetch_app_logs(
+        &self,
+        _organization_id: &str,
+        jwt_token: &str,
+        cursor: Option<&str>,
+        filters: Option<&HashMap<String, String>>,
+    ) -> Result<AppLogsFetchResult, CliApiError> {
+        self.inner
+            .fetch_app_logs(jwt_token, cursor, filters.cloned())
+            .await
+            .map_err(CliApiError::message)
     }
 }
