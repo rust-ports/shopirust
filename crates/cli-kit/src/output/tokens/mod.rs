@@ -66,7 +66,6 @@ mod tests {
 
     #[test]
     fn test_token_style_display_sizes() {
-        // Verify that the enum has the expected set of variants
         let styles = vec![
             TokenStyle::Raw,
             TokenStyle::Command,

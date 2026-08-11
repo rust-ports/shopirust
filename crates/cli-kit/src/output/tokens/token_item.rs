@@ -278,6 +278,7 @@ fn supports_hyperlinks() -> bool {
 }
 
 /// Convert from old-style `Token` to `TokenItem`.
+#[allow(deprecated)]
 impl From<crate::output::Token> for TokenItem {
     fn from(t: crate::output::Token) -> Self {
         use crate::output::Token;

@@ -1,3 +1,5 @@
+// Legacy token module — still used by OutputContent and internal components.
+// New code should use the `tokens` module instead.
 mod token;
 // strip_ansi lives in tokens module; re-exported here for backward compat
 pub use token::{render_tokens_plain, render_tokens_styled, Token};

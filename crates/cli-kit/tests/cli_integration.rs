@@ -129,3 +129,71 @@ fn test_unknown_auth_command() {
         .failure()
         .stderr(predicate::str::contains("error"));
 }
+
+#[test]
+fn test_app_help_lists_new_commands() {
+    cli()
+        .args(["app", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("dev"))
+        .stdout(predicate::str::contains("env"))
+        .stdout(predicate::str::contains("webhook"))
+        .stdout(predicate::str::contains("logs"));
+}
+
+#[test]
+fn test_app_dev_help() {
+    cli()
+        .args(["app", "dev", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("use-localhost"))
+        .stdout(predicate::str::contains("tunnel-url"));
+}
+
+#[test]
+fn test_app_dev_clean_help() {
+    cli()
+        .args(["app", "dev", "clean", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("clean").or(predicate::str::contains("Clean")));
+}
+
+#[test]
+fn test_app_env_help() {
+    cli()
+        .args(["app", "env", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("pull"))
+        .stdout(predicate::str::contains("show"));
+}
+
+#[test]
+fn test_app_webhook_trigger_help() {
+    cli()
+        .args(["app", "webhook", "trigger", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("topic"))
+        .stdout(predicate::str::contains("address"));
+}
+
+#[test]
+fn test_app_logs_help() {
+    cli()
+        .args(["app", "logs", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("store").or(predicate::str::contains("sources")));
+}
+
+#[test]
+fn test_app_logs_sources_help() {
+    cli()
+        .args(["app", "logs", "sources", "--help"])
+        .assert()
+        .success();
+}
