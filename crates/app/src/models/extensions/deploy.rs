@@ -31,7 +31,12 @@ pub async fn build_deploy_config(
     directory: &Path,
     ctx: &DeployConfigContext,
 ) -> Result<Option<Value>, AppError> {
-    let config = Value::Object(configuration.iter().map(|(k, v)| (k.clone(), v.clone())).collect());
+    let config = Value::Object(
+        configuration
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect(),
+    );
     match spec.identifier.as_str() {
         // Config modules use transform, not deployConfig — still expose as deploy payload.
         "branding" => Ok(Some(app_config_transform(
@@ -59,12 +64,10 @@ pub async fn build_deploy_config(
             Ok(Some(transform_app_proxy_forward(&config, &app_url)))
         }
         "webhooks" => Ok(Some(transform_webhooks_forward(&config))),
-        "webhook_subscription" => Ok(Some(transform_webhook_subscription_forward(
-            &config, ctx,
-        ))),
-        "privacy_compliance_webhooks" => Ok(Some(transform_privacy_compliance_forward(
-            &config, ctx,
-        ))),
+        "webhook_subscription" => Ok(Some(transform_webhook_subscription_forward(&config, ctx))),
+        "privacy_compliance_webhooks" => {
+            Ok(Some(transform_privacy_compliance_forward(&config, ctx)))
+        }
         "events" => Ok(Some(transform_events_forward(&config, ctx))),
         "function" => deploy_function(&config, directory, ctx).await,
         "theme" => Ok(Some(json!({ "theme_extension": { "files": {} } }))),
@@ -160,8 +163,10 @@ pub fn validate_configuration(
         spec.identifier.as_str(),
         "flow_action" | "flow_trigger" | "flow_template"
     );
-    if !matches!(spec.experience, crate::models::extensions::specification::ExtensionExperience::Configuration)
-        || require_handle
+    if !matches!(
+        spec.experience,
+        crate::models::extensions::specification::ExtensionExperience::Configuration
+    ) || require_handle
     {
         validate_base_fields(&config, require_handle)?;
     }
@@ -205,9 +210,7 @@ pub fn validate_configuration(
         "branding" => {
             let name = require_string(&config, "name")?;
             if name.len() > 30 {
-                return Err(AppError::message(
-                    "String must be less than 30 characters",
-                ));
+                return Err(AppError::message("String must be less than 30 characters"));
             }
         }
         "app_home" => {
@@ -216,10 +219,8 @@ pub fn validate_configuration(
                 return Err(AppError::message("embedded is required"));
             }
         }
-        "app_access" => {
-            if config.pointer("/auth/redirect_urls").is_none() {
-                return Err(AppError::message("auth.redirect_urls is required"));
-            }
+        "app_access" if config.pointer("/auth/redirect_urls").is_none() => {
+            return Err(AppError::message("auth.redirect_urls is required"));
         }
         "theme" => validate_theme_extension(directory)?,
         _ => {}
@@ -236,10 +237,7 @@ pub fn patch_with_app_dev_urls(
     match spec.identifier.as_str() {
         "app_access" => {
             if let Some(ref whitelist) = urls.redirect_url_whitelist {
-                configuration.insert(
-                    "auth".into(),
-                    json!({ "redirect_urls": whitelist }),
-                );
+                configuration.insert("auth".into(), json!({ "redirect_urls": whitelist }));
             }
         }
         "app_home" => {
@@ -269,10 +267,8 @@ pub fn patch_with_app_dev_urls(
                 if let Some(Value::String(url)) = configuration.get(key) {
                     if url.starts_with('/') {
                         if let Some(ref app_url) = urls.application_url {
-                            configuration.insert(
-                                key.into(),
-                                json!(prepend_application_url(url, app_url)),
-                            );
+                            configuration
+                                .insert(key.into(), json!(prepend_application_url(url, app_url)));
                         }
                     }
                 }
@@ -484,9 +480,9 @@ async fn deploy_function(
         .and_then(|v| v.as_bool())
         .unwrap_or(true);
 
-    let input_query_variables = config.pointer("/input/variables").map(|vars| {
-        json!({ "single_json_metafield": vars })
-    });
+    let input_query_variables = config
+        .pointer("/input/variables")
+        .map(|vars| json!({ "single_json_metafield": vars }));
 
     let localization = load_locales_config(directory, "function")?;
 
@@ -533,7 +529,10 @@ async fn deploy_ui_extension(config: &Value, directory: &Path) -> Result<Option<
                 }
             }
         });
-        if let Some(sr) = targeting.pointer("/should_render/module").and_then(|v| v.as_str()) {
+        if let Some(sr) = targeting
+            .pointer("/should_render/module")
+            .and_then(|v| v.as_str())
+        {
             build_manifest["assets"]["should_render"] = json!({
                 "filepath": format!("{handle}-conditions.js"),
                 "module": sr,
@@ -560,7 +559,10 @@ async fn deploy_ui_extension(config: &Value, directory: &Path) -> Result<Option<
 
     let localization = load_locales_config(
         directory,
-        config.get("type").and_then(|v| v.as_str()).unwrap_or("ui_extension"),
+        config
+            .get("type")
+            .and_then(|v| v.as_str())
+            .unwrap_or("ui_extension"),
     )?;
 
     Ok(Some(json!({
@@ -635,9 +637,10 @@ async fn deploy_flow_action(
 ) -> Result<Option<Value>, AppError> {
     let app_url = application_url(ctx);
     let resolve = |key: &str| -> Option<String> {
-        config.get(key).and_then(|v| v.as_str()).map(|u| {
-            prepend_application_url(u, &app_url)
-        })
+        config
+            .get(key)
+            .and_then(|v| v.as_str())
+            .map(|u| prepend_application_url(u, &app_url))
     };
     let schema_patch = load_schema_patch(directory, config.get("schema"))?;
     let fields = serialize_flow_fields(config.pointer("/settings/fields"));
@@ -831,7 +834,11 @@ fn dependency_version(directory: &Path, package: &str) -> Option<String> {
             .and_then(|d| d.get(package))
             .and_then(|v| v.as_str())
         {
-            return Some(v.trim_start_matches('^').trim_start_matches('~').to_string());
+            return Some(
+                v.trim_start_matches('^')
+                    .trim_start_matches('~')
+                    .to_string(),
+            );
         }
     }
     None
@@ -859,9 +866,7 @@ fn validate_ui_modules(config: &Value, directory: &Path) -> Result<(), AppError>
         if let Some(module) = point.get("module").and_then(|v| v.as_str()) {
             let path = directory.join(module);
             if !path.is_file() {
-                return Err(AppError::message(format!(
-                    "Couldn't find {module}",
-                )));
+                return Err(AppError::message(format!("Couldn't find {module}",)));
             }
         }
     }
@@ -872,7 +877,12 @@ fn validate_theme_extension(directory: &Path) -> Result<(), AppError> {
     const BUNDLE_LIMIT: u64 = 10 * 1024 * 1024;
     const LIQUID_LIMIT: u64 = 500 * 1024;
     let supported = [
-        ("assets", &[".jpg", ".jpeg", ".json", ".js", ".css", ".png", ".svg", ".wasm"][..]),
+        (
+            "assets",
+            &[
+                ".jpg", ".jpeg", ".json", ".js", ".css", ".png", ".svg", ".wasm",
+            ][..],
+        ),
         ("blocks", &[".liquid"][..]),
         ("locales", &[".json"][..]),
         ("snippets", &[".liquid"][..]),
@@ -1024,7 +1034,10 @@ mod tests {
         .await
         .unwrap()
         .unwrap();
-        assert_eq!(out.get("app_handle").and_then(|v| v.as_str()), Some("my-app"));
+        assert_eq!(
+            out.get("app_handle").and_then(|v| v.as_str()),
+            Some("my-app")
+        );
     }
 
     #[tokio::test]

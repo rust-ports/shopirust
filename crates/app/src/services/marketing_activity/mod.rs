@@ -169,7 +169,8 @@ mod tests {
             Some("mae-test-123")
         );
         assert_eq!(
-            got.pointer("/extensions/0/api_path").and_then(|v| v.as_str()),
+            got.pointer("/extensions/0/api_path")
+                .and_then(|v| v.as_str()),
             Some("/api/v1")
         );
         assert_eq!(
@@ -182,9 +183,7 @@ mod tests {
                 .and_then(|v| v.as_str()),
             Some("facebook.com")
         );
-        assert!(got
-            .pointer("/extensions/0/fields/0/id")
-            .is_none());
+        assert!(got.pointer("/extensions/0/fields/0/id").is_none());
     }
 
     #[test]

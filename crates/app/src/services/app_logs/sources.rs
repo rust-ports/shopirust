@@ -31,7 +31,9 @@ pub fn format_sources_output(app: &LoadedApp) -> String {
 
     let mut out = String::new();
     for (namespace, list) in by_namespace {
-        out.push_str(&format!("╭─ {namespace} ───────────────────────────────────────\n"));
+        out.push_str(&format!(
+            "╭─ {namespace} ───────────────────────────────────────\n"
+        ));
         for s in list {
             out.push_str(&s);
             out.push('\n');

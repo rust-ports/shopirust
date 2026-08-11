@@ -52,9 +52,11 @@ pub async fn replay(ext: &ExtensionInstance, options: ReplayOptions) -> Result<(
         get_run_from_selector(&function_runs_dir, &ext.handle)?
     };
 
-    let input = selected.payload.input.clone().ok_or_else(|| {
-        AppError::message("Selected log has no input payload to replay.")
-    })?;
+    let input = selected
+        .payload
+        .input
+        .clone()
+        .ok_or_else(|| AppError::message("Selected log has no input payload to replay."))?;
     let run_export = selected.payload.export.clone();
 
     if options.watch {
@@ -158,10 +160,7 @@ fn get_run_from_selector(
 ) -> Result<FunctionRunData, AppError> {
     let runs = get_function_run_data(function_runs_dir, function_handle)?;
     runs.into_iter().next().ok_or_else(|| {
-        AppError::message(format!(
-            "No logs found in {}",
-            function_runs_dir.display()
-        ))
+        AppError::message(format!("No logs found in {}", function_runs_dir.display()))
     })
 }
 

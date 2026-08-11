@@ -1,6 +1,4 @@
-use app::services::{
-    generate_extension, GenerateExtensionOptions,
-};
+use app::services::{generate_extension, GenerateExtensionOptions};
 use app::{load_app, LoadAppOptions};
 use cli_core::command::BaseCommand;
 use cli_core::error::CliError;
@@ -19,6 +17,7 @@ pub struct GenerateExtension {
 }
 
 impl GenerateExtension {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         path: String,
         config: Option<String>,

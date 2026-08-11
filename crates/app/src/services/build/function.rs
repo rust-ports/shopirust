@@ -12,10 +12,5 @@ pub fn build_function_extension(ext: &ExtensionInstance) -> Result<PathBuf, AppE
         .enable_all()
         .build()
         .map_err(|e| AppError::message(e.to_string()))?;
-    rt.block_on(build_fn(
-        ext,
-        FunctionBuildOptions {
-            use_tasks: false,
-        },
-    ))
+    rt.block_on(build_fn(ext, FunctionBuildOptions { use_tasks: false }))
 }

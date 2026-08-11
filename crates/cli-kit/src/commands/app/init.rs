@@ -51,10 +51,7 @@ impl BaseCommand for Init {
             local_template: self.local,
         })
         .map_err(|e| CliError::abort(e.to_string()))?;
-        println!(
-            "Initialized app at {}",
-            result.output_directory.display()
-        );
+        println!("Initialized app at {}", result.output_directory.display());
         Ok(())
     }
 }

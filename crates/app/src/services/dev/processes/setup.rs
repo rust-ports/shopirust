@@ -3,9 +3,7 @@
 use super::app_logs_polling::{setup_app_logs_polling_process, AppLogsPollingOptions};
 use super::app_watcher::setup_app_watcher_process;
 use super::dev_session::{setup_dev_session_process, DevSessionClient, DevSessionProcessOptions};
-use super::draftable_extension::{
-    setup_draftable_extensions_process, DraftableExtensionOptions,
-};
+use super::draftable_extension::{setup_draftable_extensions_process, DraftableExtensionOptions};
 use super::graphiql::{setup_graphiql_server_process, GraphiqlOptions};
 use super::previewable_extension::{
     setup_previewable_extensions_process, PreviewableExtensionOptions,
@@ -14,9 +12,7 @@ use super::theme_app_extension::{
     setup_preview_theme_app_extensions_process, ThemeAppExtensionOptions,
 };
 use super::types::{DevProcess, DevProcessKind};
-use super::uninstall_webhook::{
-    setup_send_uninstall_webhook_process, UninstallWebhookOptions,
-};
+use super::uninstall_webhook::{setup_send_uninstall_webhook_process, UninstallWebhookOptions};
 use super::utils::DevNetworkOptions;
 use super::web::setup_web_processes;
 use crate::models::loader::LoadedApp;
@@ -70,19 +66,17 @@ pub async fn setup_dev_processes(
 
     let any_previewable = local_app.extensions.iter().any(|e| e.is_previewable());
     let dev_console_url = format!("{}/extensions/dev-console", network.proxy_url);
-    let app_preview_url = format!(
-        "https://{}/admin/apps/{}",
-        store_fqdn, api_key
-    );
+    let app_preview_url = format!("https://{}/admin/apps/{}", store_fqdn, api_key);
     let preview_url = if any_previewable {
         dev_console_url.clone()
     } else {
         app_preview_url.clone()
     };
 
-    let graphiql_key = flags.graphiql_key.clone().unwrap_or_else(|| {
-        format!("{}:{}", api_secret, store_fqdn)
-    });
+    let graphiql_key = flags
+        .graphiql_key
+        .clone()
+        .unwrap_or_else(|| format!("{}:{}", api_secret, store_fqdn));
     let graphiql_url = if flags.enable_graphiql {
         Some(format!(
             "http://localhost:{}/graphiql?key={}",
@@ -115,9 +109,7 @@ pub async fn setup_dev_processes(
         }));
     }
 
-    let ext_port = get_available_tcp_port(None)
-        .await
-        .unwrap_or(9293);
+    let ext_port = get_available_tcp_port(None).await.unwrap_or(9293);
     if let Some(p) = setup_previewable_extensions_process(
         PreviewableExtensionOptions {
             extensions: local_app.extensions.clone(),

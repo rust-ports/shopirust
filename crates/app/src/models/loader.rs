@@ -89,17 +89,15 @@ fn resolve_configuration_path(
         return Ok(path);
     }
 
-    project
-        .active_config_file(None)
-        .ok_or_else(|| {
-            AppError::message(format!(
-                "Couldn't find an app toml file at {}",
-                project
-                    .directory
-                    .join(get_app_configuration_file_name(None))
-                    .display()
-            ))
-        })
+    project.active_config_file(None).ok_or_else(|| {
+        AppError::message(format!(
+            "Couldn't find an app toml file at {}",
+            project
+                .directory
+                .join(get_app_configuration_file_name(None))
+                .display()
+        ))
+    })
 }
 
 fn load_from_config_path(
@@ -386,9 +384,8 @@ fn build_extension_instance(
         .and_then(|v| v.as_str())
         .unwrap_or("ui_extension");
 
-    let specification = create_extension_specification(type_name).ok_or_else(|| {
-        AppError::message(format!("Unknown extension type '{type_name}'"))
-    })?;
+    let specification = create_extension_specification(type_name)
+        .ok_or_else(|| AppError::message(format!("Unknown extension type '{type_name}'")))?;
 
     let mut instance = ExtensionInstance::new(
         handle,
@@ -590,9 +587,10 @@ fn webhook_subscription_instance(
     idx: usize,
     topic: Option<&str>,
 ) -> Result<ExtensionInstance, AppError> {
-    let specification = create_extension_specification("webhook_subscription").ok_or_else(|| {
-        AppError::message("Missing webhook_subscription specification".to_string())
-    })?;
+    let specification =
+        create_extension_specification("webhook_subscription").ok_or_else(|| {
+            AppError::message("Missing webhook_subscription specification".to_string())
+        })?;
     let json = toml_value_to_json(sub);
     let mut obj = match json {
         Value::Object(map) => map.into_iter().collect::<HashMap<_, _>>(),
@@ -601,10 +599,7 @@ fn webhook_subscription_instance(
     if let Some(topic) = topic {
         obj.insert("topic".into(), Value::String(topic.to_string()));
     }
-    obj.insert(
-        "type".into(),
-        Value::String("webhook_subscription".into()),
-    );
+    obj.insert("type".into(), Value::String("webhook_subscription".into()));
     let handle = topic
         .map(|t| format!("webhook-{}", t.replace('/', "-").to_lowercase()))
         .unwrap_or_else(|| format!("webhook-subscription-{idx}"));
@@ -656,7 +651,7 @@ fn collect_webs(dir: &Path, out: &mut Vec<WebInstance>) -> Result<(), AppError> 
     }
     let candidate = dir.join("shopify.web.toml");
     if candidate.exists() {
-        if let Ok(web) = parse_web(&dir.to_path_buf(), &candidate) {
+        if let Ok(web) = parse_web(dir, &candidate) {
             out.push(web);
         }
     }
@@ -680,7 +675,7 @@ fn collect_webs(dir: &Path, out: &mut Vec<WebInstance>) -> Result<(), AppError> 
     Ok(())
 }
 
-fn parse_web(directory: &PathBuf, configuration_path: &Path) -> Result<WebInstance, AppError> {
+fn parse_web(directory: &Path, configuration_path: &Path) -> Result<WebInstance, AppError> {
     let raw = fs::read_to_string(configuration_path)?;
     let value: toml::Value = toml::from_str(&raw)?;
     let roles = value
@@ -703,7 +698,7 @@ fn parse_web(directory: &PathBuf, configuration_path: &Path) -> Result<WebInstan
         .and_then(|v| v.as_str())
         .map(str::to_string);
     Ok(WebInstance {
-        directory: directory.clone(),
+        directory: directory.to_path_buf(),
         configuration_path: configuration_path.to_path_buf(),
         roles,
         name,
@@ -948,7 +943,10 @@ foo = 1
     #[test]
     fn unified_extensions_array_merges_globals() {
         let dir = tempdir().unwrap();
-        write_app(dir.path(), "name = \"Demo\"\napplication_url = \"https://e.com\"\n");
+        write_app(
+            dir.path(),
+            "name = \"Demo\"\napplication_url = \"https://e.com\"\n",
+        );
         let ext_dir = dir.path().join("extensions/multi");
         fs::create_dir_all(&ext_dir).unwrap();
         fs::write(
@@ -983,7 +981,10 @@ description = "override"
             .collect();
         assert_eq!(themes.len(), 2);
         assert_eq!(
-            themes[0].configuration.get("api_version").and_then(|v| v.as_str()),
+            themes[0]
+                .configuration
+                .get("api_version")
+                .and_then(|v| v.as_str()),
             Some("2024-10")
         );
         assert_eq!(
@@ -1056,7 +1057,10 @@ extension_directories = ["custom_extensions"]
     #[test]
     fn duplicate_handles_soft_error() {
         let dir = tempdir().unwrap();
-        write_app(dir.path(), "name = \"Demo\"\napplication_url = \"https://e.com\"\n");
+        write_app(
+            dir.path(),
+            "name = \"Demo\"\napplication_url = \"https://e.com\"\n",
+        );
         for name in ["a", "b"] {
             let ext = dir.path().join("extensions").join(name);
             fs::create_dir_all(&ext).unwrap();
@@ -1072,13 +1076,19 @@ extension_directories = ["custom_extensions"]
             ignore_unknown_extensions: true,
         })
         .unwrap();
-        assert!(app.errors.iter().any(|e| e.contains("Duplicate extension handle")));
+        assert!(app
+            .errors
+            .iter()
+            .any(|e| e.contains("Duplicate extension handle")));
     }
 
     #[test]
     fn loads_web_and_detects_role_conflict() {
         let dir = tempdir().unwrap();
-        write_app(dir.path(), "name = \"Demo\"\napplication_url = \"https://e.com\"\n");
+        write_app(
+            dir.path(),
+            "name = \"Demo\"\napplication_url = \"https://e.com\"\n",
+        );
         for name in ["web1", "web2"] {
             let web = dir.path().join(name);
             fs::create_dir_all(&web).unwrap();

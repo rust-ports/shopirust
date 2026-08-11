@@ -107,7 +107,9 @@ fn json_to_toml_string(value: &Value) -> Result<String, AppError> {
 fn json_to_toml(value: &Value) -> Result<toml::Value, AppError> {
     Ok(match value {
         Value::Null => {
-            return Err(AppError::message("json→toml: null values are not supported in TOML"))
+            return Err(AppError::message(
+                "json→toml: null values are not supported in TOML",
+            ))
         }
         Value::Bool(b) => toml::Value::Boolean(*b),
         Value::Number(n) => {
@@ -162,9 +164,9 @@ pub fn build_extension_toml(
 ) -> Result<String, AppError> {
     let type_name = ext.type_name.to_lowercase();
     let specialized = match type_name.as_str() {
-        "flow_action_definition"
-        | "flow_trigger_definition"
-        | "flow_trigger_discovery_webhook" => Some(flow::build_extension_config(ext)?),
+        "flow_action_definition" | "flow_trigger_definition" | "flow_trigger_discovery_webhook" => {
+            Some(flow::build_extension_config(ext)?)
+        }
         "payments_app"
         | "payments_app_credit_card"
         | "payments_app_custom_credit_card"
@@ -262,10 +264,7 @@ pub fn import_extensions(
         fs::create_dir_all(&directory)?;
         let toml = build_extension_toml(&ext, &all_extensions, options.app_embedded)?;
         fs::write(directory.join("shopify.extension.toml"), toml)?;
-        let env_key = format!(
-            "SHOPIFY_{}_ID",
-            handle.to_uppercase().replace('-', "_")
-        );
+        let env_key = format!("SHOPIFY_{}_ID", handle.to_uppercase().replace('-', "_"));
         env_updates.insert(env_key, ext.uuid.clone());
         imported.push(ImportedExtension {
             uuid: ext.uuid,

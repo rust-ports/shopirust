@@ -10,7 +10,6 @@ use serde_json::json;
 
 /// Minimal GraphQL helpers for Next-Gen Dev Sessions (app_dev API).
 /// Full orchestration listens to the app watcher; this module exposes the mutations.
-
 const DEV_SESSION_CREATE: &str = r#"
 mutation DevSessionCreate($appId: String!, $assetsUrl: String!, $websocketUrl: String) {
   devSessionCreate(appId: $appId, assetsUrl: $assetsUrl, websocketUrl: $websocketUrl) {
@@ -65,7 +64,11 @@ struct UserError {
 }
 
 impl DevSessionClient {
-    pub fn new(shop_fqdn: impl Into<String>, token: impl Into<String>, graphql_url: impl Into<String>) -> Self {
+    pub fn new(
+        shop_fqdn: impl Into<String>,
+        token: impl Into<String>,
+        graphql_url: impl Into<String>,
+    ) -> Self {
         Self {
             shop_fqdn: shop_fqdn.into(),
             token: token.into(),

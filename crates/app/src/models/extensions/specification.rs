@@ -133,10 +133,7 @@ mod tests {
         assert_eq!(spec.identifier, "theme");
         assert!(spec.features.contains(&ExtensionFeature::Theme));
         assert!(!spec.is_app_config());
-        assert_eq!(
-            spec.partners_web_identifier.as_str(),
-            "theme_app_extension"
-        );
+        assert_eq!(spec.partners_web_identifier.as_str(), "theme_app_extension");
     }
 
     #[test]

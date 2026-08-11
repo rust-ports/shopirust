@@ -64,8 +64,8 @@ pub fn add_uid_to_extension_toml(path: &Path, uid: &str) -> Result<(), AppError>
 }
 
 fn apply_json_patch(config: &mut AppConfiguration, patch: &Value) -> Result<(), AppError> {
-    let mut current = serde_json::to_value(&*config)
-        .map_err(|e| AppError::message(e.to_string()))?;
+    let mut current =
+        serde_json::to_value(&*config).map_err(|e| AppError::message(e.to_string()))?;
     if let (Some(cur), Some(p)) = (current.as_object_mut(), patch.as_object()) {
         for (k, v) in p {
             cur.insert(k.clone(), v.clone());
@@ -79,7 +79,9 @@ fn apply_json_patch(config: &mut AppConfiguration, patch: &Value) -> Result<(), 
 fn json_to_toml(value: &Value) -> Result<toml::Value, AppError> {
     Ok(match value {
         Value::Null => {
-            return Err(AppError::message("json→toml: null values are not supported in TOML"))
+            return Err(AppError::message(
+                "json→toml: null values are not supported in TOML",
+            ))
         }
         Value::Bool(b) => toml::Value::Boolean(*b),
         Value::Number(n) => {
@@ -124,9 +126,11 @@ mod tests {
     fn write_and_patch_roundtrip() {
         let dir = tempdir().unwrap();
         let path = dir.path().join("shopify.app.toml");
-        let mut cfg = AppConfiguration::default();
-        cfg.name = Some("Demo".into());
-        cfg.client_id = Some("abc".into());
+        let cfg = AppConfiguration {
+            name: Some("Demo".into()),
+            client_id: Some("abc".into()),
+            ..Default::default()
+        };
         write_app_configuration_file(&path, &cfg).unwrap();
 
         patch_app_configuration_file(

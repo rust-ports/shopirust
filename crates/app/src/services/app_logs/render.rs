@@ -5,8 +5,7 @@ use serde_json::Value;
 
 pub const ONE_MILLION: f64 = 1_000_000.0;
 pub const LOG_TYPE_FUNCTION_RUN: &str = "function_run";
-pub const LOG_TYPE_RESPONSE_FROM_CACHE: &str =
-    "function_network_access.response_from_cache";
+pub const LOG_TYPE_RESPONSE_FROM_CACHE: &str = "function_network_access.response_from_cache";
 pub const LOG_TYPE_REQUEST_EXECUTION_IN_BACKGROUND: &str =
     "function_network_access.request_execution_in_background";
 pub const LOG_TYPE_REQUEST_EXECUTION: &str = "function_network_access.request_execution";
@@ -73,7 +72,10 @@ pub fn to_formatted_app_log_json(
         "logTimestamp".into(),
         Value::String(app_log.log_timestamp.clone()),
     );
-    obj.insert("localTime".into(), Value::String(format_local_date(&app_log.log_timestamp)));
+    obj.insert(
+        "localTime".into(),
+        Value::String(format_local_date(&app_log.log_timestamp)),
+    );
     obj.insert("storeName".into(), Value::String(store_name.to_string()));
 
     let mut payload = camelcase_keys(app_log_payload.clone());
@@ -171,7 +173,10 @@ pub fn format_log_text(app_log: &AppLogData, store_name: &str) -> String {
             ));
             if let Some(resp) = payload.get("http_response") {
                 if !resp.is_null() {
-                    out.push_str(&format!("    HTTP response:\n      {}\n", pretty_json(resp)));
+                    out.push_str(&format!(
+                        "    HTTP response:\n      {}\n",
+                        pretty_json(resp)
+                    ));
                 }
             }
             if let Some(err) = payload.get("error").and_then(|v| v.as_str()) {
@@ -200,9 +205,7 @@ fn description_for_log(app_log: &AppLogData, payload: &Value) -> String {
                 / ONE_MILLION;
             format!("export \"{export}\" executed in {fuel:.4}M instructions")
         }
-        LOG_TYPE_RESPONSE_FROM_CACHE => {
-            "network access response retrieved from cache".into()
-        }
+        LOG_TYPE_RESPONSE_FROM_CACHE => "network access response retrieved from cache".into(),
         LOG_TYPE_REQUEST_EXECUTION_IN_BACKGROUND => {
             "network access request executing in background".into()
         }

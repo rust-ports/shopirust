@@ -118,15 +118,11 @@ pub async fn resolve_primary_store(
         )));
     }
 
-    stores
-        .data
-        .into_iter()
-        .next()
-        .ok_or_else(|| {
-            AppError::message(
-                "No development stores found. Pass --store with a development store FQDN.",
-            )
-        })
+    stores.data.into_iter().next().ok_or_else(|| {
+        AppError::message(
+            "No development stores found. Pass --store with a development store FQDN.",
+        )
+    })
 }
 
 /// Stream app logs (subscribe + poll loop).
@@ -231,7 +227,6 @@ pub async fn logs(
             options.max_iterations,
             options.sleep_between,
             || {
-                let client = client;
                 let shop_ids = shop_ids_for_resub.clone();
                 let api_key = api_key_for_resub.clone();
                 let org = org_for_resub.clone();

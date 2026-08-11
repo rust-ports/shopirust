@@ -19,8 +19,12 @@ pub struct ApplicationUrls {
 
 #[derive(Debug, Clone)]
 pub enum FrontendUrlOptions {
-    Localhost { port: u16 },
-    TunnelUrl { tunnel_url: String },
+    Localhost {
+        port: u16,
+    },
+    TunnelUrl {
+        tunnel_url: String,
+    },
     /// Tunnel client not yet available (T7); caller provides a resolved URL.
     Resolved {
         frontend_url: String,
@@ -187,6 +191,9 @@ mod tests {
     fn application_urls_custom_callbacks() {
         let paths = vec!["/custom/cb".into()];
         let urls = generate_application_urls("https://app.example", Some(&paths), None);
-        assert_eq!(urls.redirect_url_whitelist, vec!["https://app.example/custom/cb"]);
+        assert_eq!(
+            urls.redirect_url_whitelist,
+            vec!["https://app.example/custom/cb"]
+        );
     }
 }

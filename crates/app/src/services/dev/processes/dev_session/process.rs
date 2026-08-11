@@ -20,11 +20,9 @@ pub fn setup_dev_session_process(
     opts: DevSessionProcessOptions,
     _app_watcher: Arc<AppEventWatcher>,
 ) -> DevProcess {
-    DevProcess::new(
-        "app-preview",
-        DevProcessKind::DevSession,
-        move |ctx| run_dev_session(ctx.abort, opts),
-    )
+    DevProcess::new("app-preview", DevProcessKind::DevSession, move |ctx| {
+        run_dev_session(ctx.abort, opts)
+    })
 }
 
 async fn run_dev_session(

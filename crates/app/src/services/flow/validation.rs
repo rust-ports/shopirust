@@ -8,7 +8,12 @@ pub fn is_schema_type_reference(ty: &str) -> bool {
     ty.starts_with("schema.")
 }
 
-fn field_validation_error(property: &str, config_field: &ConfigField, handle: &str, index: usize) -> String {
+fn field_validation_error(
+    property: &str,
+    config_field: &ConfigField,
+    handle: &str,
+    index: usize,
+) -> String {
     let json = serde_json::to_string(config_field).unwrap_or_else(|_| "{}".into());
     format!(
         "'{property}' property must be a string for 'field[{index}]' {json} of flow extension '{handle}'"
@@ -187,7 +192,9 @@ mod tests {
             marketing_activity_create_url: None,
             marketing_activity_delete_url: None,
         };
-        assert!(validate_field_shape(&trigger, FlowExtensionType::FlowTrigger, "handle", 0).is_ok());
+        assert!(
+            validate_field_shape(&trigger, FlowExtensionType::FlowTrigger, "handle", 0).is_ok()
+        );
 
         let commerce = ConfigField {
             r#type: "product_reference".into(),
@@ -198,7 +205,9 @@ mod tests {
             marketing_activity_create_url: None,
             marketing_activity_delete_url: None,
         };
-        assert!(validate_field_shape(&commerce, FlowExtensionType::FlowAction, "handle", 0).is_ok());
+        assert!(
+            validate_field_shape(&commerce, FlowExtensionType::FlowAction, "handle", 0).is_ok()
+        );
 
         let missing_key = ConfigField {
             r#type: "string".into(),
@@ -209,7 +218,9 @@ mod tests {
             marketing_activity_create_url: None,
             marketing_activity_delete_url: None,
         };
-        assert!(validate_field_shape(&missing_key, FlowExtensionType::FlowAction, "handle", 0).is_err());
+        assert!(
+            validate_field_shape(&missing_key, FlowExtensionType::FlowAction, "handle", 0).is_err()
+        );
 
         let bad_trigger_key = ConfigField {
             r#type: "string".into(),

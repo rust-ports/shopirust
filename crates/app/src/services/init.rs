@@ -144,11 +144,7 @@ pub fn parse_github_template_ref(template: &str) -> (String, Option<String>, Opt
         let mut parts = rest.splitn(2, '/');
         let branch_from_tree = parts.next().map(str::to_string);
         file_path = parts.next().map(str::to_string);
-        return (
-            clone_url,
-            branch.or(branch_from_tree),
-            file_path,
-        );
+        return (clone_url, branch.or(branch_from_tree), file_path);
     }
     if !clone_url.ends_with(".git") && clone_url.contains("github.com") {
         clone_url.push_str(".git");
@@ -244,11 +240,7 @@ mod tests {
             "# {{app_name}} with {{dependency_manager}}",
         )
         .unwrap();
-        fs::write(
-            template.join("package.json"),
-            r#"{"name":"placeholder"}"#,
-        )
-        .unwrap();
+        fs::write(template.join("package.json"), r#"{"name":"placeholder"}"#).unwrap();
 
         let parent = dir.path().join("out");
         fs::create_dir_all(&parent).unwrap();
@@ -266,9 +258,10 @@ mod tests {
             fs::read_to_string(result.output_directory.join("README.md")).unwrap(),
             "# Demo App with npm"
         );
-        let pkg: serde_json::Value =
-            serde_json::from_str(&fs::read_to_string(result.output_directory.join("package.json")).unwrap())
-                .unwrap();
+        let pkg: serde_json::Value = serde_json::from_str(
+            &fs::read_to_string(result.output_directory.join("package.json")).unwrap(),
+        )
+        .unwrap();
         assert_eq!(pkg["name"], "demo-app");
         assert!(result.output_directory.join("shopify.app.toml").exists());
     }

@@ -1,10 +1,11 @@
 use async_trait::async_trait;
 use cli_api::types::{
-    filter_disabled_flags, AccountInfo, ApiSecretKey, AppLogsFetchResult, AppLogsSubscribeVariables,
-    AppModuleVersion, AppVersion, AppVersionIdentifiers, AppVersionWithContext, AssetUrlSchema,
-    BundleFormat, ClientName, CreateAppOptions, ExtensionTemplate, ExtensionTemplatesResult,
-    MinimalAppIdentifiers, MinimalOrganizationApp, Organization, OrganizationApp,
-    OrganizationSource, OrganizationStore, Paginateable, RemoteSpecification, UserError,
+    filter_disabled_flags, AccountInfo, ApiSecretKey, AppLogsFetchResult,
+    AppLogsSubscribeVariables, AppModuleVersion, AppVersion, AppVersionIdentifiers,
+    AppVersionWithContext, AssetUrlSchema, BundleFormat, ClientName, CreateAppOptions,
+    ExtensionTemplate, ExtensionTemplatesResult, MinimalAppIdentifiers, MinimalOrganizationApp,
+    Organization, OrganizationApp, OrganizationSource, OrganizationStore, Paginateable,
+    RemoteSpecification, UserError,
 };
 use cli_api::{CliApiError, DeveloperPlatformClient};
 use serde_json::Value;
@@ -527,12 +528,7 @@ impl DeveloperPlatformClient for AppManagementPlatformClient {
         filters: Option<&HashMap<String, String>>,
     ) -> Result<AppLogsFetchResult, CliApiError> {
         self.inner
-            .fetch_app_logs(
-                organization_id,
-                jwt_token,
-                cursor,
-                filters.cloned(),
-            )
+            .fetch_app_logs(organization_id, jwt_token, cursor, filters.cloned())
             .await
             .map_err(CliApiError::message)
     }

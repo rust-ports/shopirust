@@ -1,8 +1,8 @@
 //! Persist app logs under `.shopify/logs` (shared with function replay).
 
-use chrono::{Datelike, Timelike};
 use crate::error::AppError;
 use crate::services::app_logs::render::{parse_app_log_payload, to_formatted_app_log_json};
+use chrono::{Datelike, Timelike};
 use cli_api::AppLogData;
 use std::fs;
 use std::path::{Path, PathBuf};

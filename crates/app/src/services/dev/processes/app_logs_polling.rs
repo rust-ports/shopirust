@@ -36,13 +36,8 @@ pub async fn run_app_logs_polling(
     client: &dyn DeveloperPlatformClient,
     opts: AppLogsPollingOptions,
 ) -> Result<(), AppError> {
-    let jwt = subscribe_to_app_logs(
-        client,
-        &opts.shop_ids,
-        &opts.api_key,
-        &opts.organization_id,
-    )
-    .await?;
+    let jwt =
+        subscribe_to_app_logs(client, &opts.shop_ids, &opts.api_key, &opts.organization_id).await?;
 
     let mut poller = AppLogsPoller::new(jwt, PollFilters::default());
     let backend = PollBackend::Platform {
@@ -59,7 +54,6 @@ pub async fn run_app_logs_polling(
         None,
         true,
         || {
-            let client = client;
             let shop_ids = shop_ids.clone();
             let api_key = api_key.clone();
             let org = org_id.clone();

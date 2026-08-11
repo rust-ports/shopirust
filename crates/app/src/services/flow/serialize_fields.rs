@@ -223,9 +223,7 @@ mod tests {
             marketing_activity_delete_url: None,
         };
         let err = serialize_config_field(&field, FlowExtensionType::FlowTrigger).unwrap_err();
-        assert!(err
-            .to_string()
-            .contains("not supported on Flow Triggers"));
+        assert!(err.to_string().contains("not supported on Flow Triggers"));
     }
 
     #[test]

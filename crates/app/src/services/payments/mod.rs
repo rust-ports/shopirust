@@ -69,14 +69,19 @@ fn type_to_context(type_name: &str) -> Option<&'static str> {
     DashboardPaymentExtensionType::from_type_name(type_name).map(|t| t.target())
 }
 
-fn version_of(ext: &ExtensionRegistration) -> Result<&crate::services::import_extensions::ExtensionVersion, AppError> {
+fn version_of(
+    ext: &ExtensionRegistration,
+) -> Result<&crate::services::import_extensions::ExtensionVersion, AppError> {
     ext.active_version
         .as_ref()
         .or(ext.draft_version.as_ref())
         .ok_or_else(|| AppError::message("No config found for extension"))
 }
 
-fn extension_uuid_to_handle(config: &Value, all_extensions: &[ExtensionRegistration]) -> Option<String> {
+fn extension_uuid_to_handle(
+    config: &Value,
+    all_extensions: &[ExtensionRegistration],
+) -> Option<String> {
     if let Some(handle) = config.get("ui_extension_handle").and_then(|v| v.as_str()) {
         return Some(handle.to_string());
     }
@@ -322,11 +327,7 @@ fn deploy_config_to_cli(
         CUSTOM_ONSITE_TARGET => custom_onsite_deploy_config_to_cli(config, all_extensions),
         REDEEMABLE_TARGET => redeemable_deploy_config_to_cli(config, all_extensions),
         CARD_PRESENT_TARGET => card_present_deploy_config_to_cli(config),
-        other => {
-            return Err(AppError::message(format!(
-                "Unsupported extension: {other}"
-            )))
-        }
+        other => return Err(AppError::message(format!("Unsupported extension: {other}"))),
     };
     cli.remove("api_version");
     Ok(cli)
@@ -360,10 +361,7 @@ pub fn build_extension_config(
         Value::String(truncated_handle(&extension.title)),
     );
     extension_obj.append(&mut cli_config);
-    extension_obj.insert(
-        "targeting".into(),
-        json!([{ "target": context }]),
-    );
+    extension_obj.insert("targeting".into(), json!([{ "target": context }]));
 
     Ok(json!({
         "api_version": dashboard_config.get("api_version").cloned().unwrap_or(Value::Null),
@@ -390,8 +388,11 @@ mod tests {
             }),
             active_version: None,
         };
-        let got = build_extension_config(&extension, &[extension.clone()]).unwrap();
-        assert_eq!(got.get("api_version").and_then(|v| v.as_str()), Some("2023-10"));
+        let got = build_extension_config(&extension, std::slice::from_ref(&extension)).unwrap();
+        assert_eq!(
+            got.get("api_version").and_then(|v| v.as_str()),
+            Some("2023-10")
+        );
         assert_eq!(
             got.pointer("/extensions/0/payment_session_url")
                 .and_then(|v| v.as_str()),

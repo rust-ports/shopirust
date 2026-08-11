@@ -18,20 +18,14 @@ impl EnvValues {
     pub fn from_apps(app: &LoadedApp, remote_app: &OrganizationApp) -> Self {
         Self {
             shopify_api_key: remote_app.api_key.clone(),
-            shopify_api_secret: remote_app
-                .api_secret_keys
-                .first()
-                .map(|k| k.secret.clone()),
+            shopify_api_secret: remote_app.api_secret_keys.first().map(|k| k.secret.clone()),
             scopes: app_scopes_string(app),
         }
     }
 
     pub fn as_map(&self) -> HashMap<String, Option<String>> {
         let mut map = HashMap::new();
-        map.insert(
-            "SHOPIFY_API_KEY".into(),
-            Some(self.shopify_api_key.clone()),
-        );
+        map.insert("SHOPIFY_API_KEY".into(), Some(self.shopify_api_key.clone()));
         map.insert("SHOPIFY_API_SECRET".into(), self.shopify_api_secret.clone());
         map.insert("SCOPES".into(), Some(self.scopes.clone()));
         map
@@ -168,11 +162,6 @@ pub fn patch_env_file(
         output_lines.push(format!("{patch_key}={value}"));
     }
 
-    // Avoid trailing empty line duplication when source ended without newline.
-    while output_lines.last().is_some_and(|l| l.is_empty()) && output_lines.len() > 1 {
-        // keep a single trailing empty only if original had content ending in newline
-        break;
-    }
     output_lines.join("\n")
 }
 

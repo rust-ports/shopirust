@@ -33,8 +33,8 @@ pub async fn linked_app_context(
     let app = load_app(LoadAppOptions {
         directory: options.directory,
         config_name: options.config_name,
-                ignore_unknown_extensions: false,
-        })?;
+        ignore_unknown_extensions: false,
+    })?;
 
     let api_key = options
         .client_id

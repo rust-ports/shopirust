@@ -3,10 +3,10 @@
 use app::load_app;
 use app::models::loader::LoadAppOptions;
 use app::services::function::{
-    build_function_extension, build_graphql_types, choose_function, download_binary,
-    function_info, function_runner_binary, generate_schema_service, get_or_generate_schema_path,
-    replay, run_function, FunctionBuildOptions, FunctionInfoFormat, FunctionInfoOptions,
-    ReplayOptions, RunFunctionOptions, SchemaDefinitionFetcher, PREFERRED_FUNCTION_RUNNER_VERSION,
+    build_function_extension, build_graphql_types, choose_function, download_binary, function_info,
+    function_runner_binary, generate_schema_service, get_or_generate_schema_path, replay,
+    run_function, FunctionBuildOptions, FunctionInfoFormat, FunctionInfoOptions, ReplayOptions,
+    RunFunctionOptions, SchemaDefinitionFetcher, PREFERRED_FUNCTION_RUNNER_VERSION,
 };
 use app::services::{linked_app_context, LinkedAppContextOptions};
 use app::AppError;
@@ -50,12 +50,7 @@ impl SchemaDefinitionFetcher for FunctionsSchemaFetcher {
         };
         let resp: serde_json::Value = self
             .client
-            .request(
-                SCHEMA_DEFINITION_BY_API_TYPE_QUERY,
-                Some(vars),
-                None,
-                None,
-            )
+            .request(SCHEMA_DEFINITION_BY_API_TYPE_QUERY, Some(vars), None, None)
             .await
             .map_err(|e| AppError::message(e.to_string()))?;
         Ok(resp
@@ -77,12 +72,7 @@ impl SchemaDefinitionFetcher for FunctionsSchemaFetcher {
         };
         let resp: serde_json::Value = self
             .client
-            .request(
-                SCHEMA_DEFINITION_BY_TARGET_QUERY,
-                Some(vars),
-                None,
-                None,
-            )
+            .request(SCHEMA_DEFINITION_BY_TARGET_QUERY, Some(vars), None, None)
             .await
             .map_err(|e| AppError::message(e.to_string()))?;
         Ok(resp
@@ -153,12 +143,9 @@ impl BaseCommand for FunctionBuild {
         let app = load_local_app(&self.path, self.config.as_deref())?;
         let fun = choose_function(&app, &PathBuf::from(&self.path))
             .map_err(|e| CliError::abort(e.to_string()))?;
-        build_function_extension(
-            &fun,
-            FunctionBuildOptions { use_tasks: true },
-        )
-        .await
-        .map_err(|e| CliError::abort(e.to_string()))?;
+        build_function_extension(&fun, FunctionBuildOptions { use_tasks: true })
+            .await
+            .map_err(|e| CliError::abort(e.to_string()))?;
         println!("Function built successfully.");
         Ok(())
     }

@@ -68,12 +68,13 @@ pub fn build_extension_config(extension: &ExtensionRegistration) -> Result<Value
     }
 
     let config: FlowConfig = serde_json::from_str(version_config)?;
-    let partners_type = FlowPartnersExtensionType::parse(&extension.type_name).ok_or_else(|| {
-        AppError::message(format!(
-            "Unsupported flow extension type: {}",
-            extension.type_name
-        ))
-    })?;
+    let partners_type =
+        FlowPartnersExtensionType::parse(&extension.type_name).ok_or_else(|| {
+            AppError::message(format!(
+                "Unsupported flow extension type: {}",
+                extension.type_name
+            ))
+        })?;
 
     let fields: Vec<SerializedField> = config
         .fields

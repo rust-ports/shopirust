@@ -18,8 +18,8 @@ use std::time::UNIX_EPOCH;
 use store::{AssetResolver, ExtensionsPayloadStoreOptions};
 
 pub use models::{
-    AppPayload, Asset as PayloadAsset, ConnectedPayload, DevelopmentError, DevelopmentPayload,
-    DevelopmentState as PayloadDevelopmentState, DevNewExtensionPoint, ExtensionsEndpointPayload,
+    AppPayload, Asset as PayloadAsset, ConnectedPayload, DevNewExtensionPoint, DevelopmentError,
+    DevelopmentPayload, DevelopmentState as PayloadDevelopmentState, ExtensionsEndpointPayload,
     MainAssets as PayloadMainAssets, OptionalUrlHolder as PayloadOptionalUrlHolder,
     SupportedFeatures as PayloadSupportedFeatures, UIExtensionPayload as PayloadUIExtension,
     UrlHolder as PayloadUrlHolder,
@@ -39,7 +39,7 @@ pub fn get_ui_extension_payload(
     current_localization: Option<Value>,
 ) -> Result<UIExtensionPayload, AppError> {
     let mut resolver = resolver;
-    if let Some(r) = resolver.as_deref_mut() {
+    if let Some(r) = resolver.as_mut() {
         r.clear();
     }
 
@@ -90,7 +90,7 @@ pub fn get_ui_extension_payload(
         )
     };
 
-    if let Some(r) = resolver.as_deref_mut() {
+    if let Some(r) = resolver.as_mut() {
         // Ensure main asset is resolvable even without a manifest.
         let key = extension.output_file_name();
         if !r.contains_key(&key) {
@@ -111,18 +111,22 @@ pub fn get_ui_extension_payload(
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
 
-    let capabilities = extension.configuration.get("capabilities").cloned().or_else(|| {
-        Some(json!({
-            "blockProgress": false,
-            "networkAccess": false,
-            "apiAccess": false,
-            "collectBuyerConsent": {
-                "smsMarketing": false,
-                "customerPrivacy": false,
-            },
-            "iframe": { "sources": [] },
-        }))
-    });
+    let capabilities = extension
+        .configuration
+        .get("capabilities")
+        .cloned()
+        .or_else(|| {
+            Some(json!({
+                "blockProgress": false,
+                "networkAccess": false,
+                "apiAccess": false,
+                "collectBuyerConsent": {
+                    "smsMarketing": false,
+                    "customerPrivacy": false,
+                },
+                "iframe": { "sources": [] },
+            }))
+        });
 
     let status = current_development
         .as_ref()
@@ -216,10 +220,7 @@ fn get_extension_points(
         let surface = get_extension_point_target_surface(&target);
         if let Some(obj) = ep.as_object_mut() {
             obj.insert("surface".into(), json!(surface));
-            obj.insert(
-                "root".into(),
-                json!({ "url": format!("{url}/{target}") }),
-            );
+            obj.insert("root".into(), json!({ "url": format!("{url}/{target}") }));
             if !obj.contains_key("resource") {
                 obj.insert("resource".into(), json!({ "url": "" }));
             }
@@ -256,7 +257,9 @@ fn get_extension_points(
     Ok(Value::Array(result))
 }
 
-fn read_bundle_manifest(build_directory: &Path) -> Result<Option<HashMap<String, Value>>, AppError> {
+fn read_bundle_manifest(
+    build_directory: &Path,
+) -> Result<Option<HashMap<String, Value>>, AppError> {
     let path = build_directory.join("manifest.json");
     if !path.exists() {
         return Ok(None);
@@ -307,7 +310,7 @@ fn map_manifest_assets(
         if identifier == "assets" {
             if let Some(files) = value.as_array() {
                 let paths: Vec<&str> = files.iter().filter_map(|v| v.as_str()).collect();
-                if let Some(r) = resolver.as_deref_mut() {
+                if let Some(r) = resolver.as_mut() {
                     for file in &paths {
                         r.insert(format!("{target}/{file}"), (*file).to_string());
                     }
@@ -397,27 +400,28 @@ pub fn file_mtime_ms(path: &Path) -> u64 {
 }
 
 pub fn resolve_output_dir(output_path: &Path) -> PathBuf {
-    if output_path.is_dir()
-        || output_path
-            .extension()
-            .is_none_or(|e| e == "wasm" || e == "js" || e == "mjs")
-            && output_path
-                .file_name()
-                .is_some_and(|n| n.to_string_lossy().contains('.'))
+    let ext_ok = match output_path.extension() {
+        None => true,
+        Some(e) => e == "wasm" || e == "js" || e == "mjs",
+    };
+    let name_has_dot = output_path
+        .file_name()
+        .map(|n| n.to_string_lossy().contains('.'))
+        .unwrap_or(false);
+    if (output_path.is_dir() || (ext_ok && name_has_dot))
+        && (output_path.is_file() || output_path.extension().is_some())
     {
-        if output_path.is_file() || output_path.extension().is_some() {
-            return output_path
-                .parent()
-                .unwrap_or(output_path)
-                .to_path_buf();
-        }
+        return output_path.parent().unwrap_or(output_path).to_path_buf();
     }
     output_path.to_path_buf()
 }
 
 /// True when `candidate` is equal to or nested under `root`.
 pub fn is_subpath(root: &Path, candidate: &Path) -> bool {
-    let Ok(root) = root.canonicalize().or_else(|_| Ok::<_, std::io::Error>(root.to_path_buf())) else {
+    let Ok(root) = root
+        .canonicalize()
+        .or_else(|_| Ok::<_, std::io::Error>(root.to_path_buf()))
+    else {
         return false;
     };
     let Ok(cand) = candidate
@@ -492,7 +496,11 @@ mod tests {
         assert_eq!(payload.handle, "my-ext");
         assert_eq!(payload.name, "My Ext");
         assert_eq!(payload.approval_scopes, vec!["read_products"]);
-        assert!(payload.assets.main.url.contains("/extensions/dev-uid-1/assets/"));
+        assert!(payload
+            .assets
+            .main
+            .url
+            .contains("/extensions/dev-uid-1/assets/"));
         assert_eq!(payload.development.status, "success");
         assert!(!payload.development.hidden);
         assert!(is_new_extension_points_schema(&payload.extension_points));
@@ -505,16 +513,28 @@ mod tests {
         fs::create_dir_all(&ext_dir).unwrap();
         let bundle = dir.path().join("bundle/my-ext");
         fs::create_dir_all(&bundle).unwrap();
-        fs::write(bundle.join("manifest.json"), r#"{
+        fs::write(
+            bundle.join("manifest.json"),
+            r#"{
             "admin.product-details.block.render": { "main": "main.js" }
-        }"#).unwrap();
+        }"#,
+        )
+        .unwrap();
         fs::write(bundle.join("main.js"), "x").unwrap();
 
         let ext = make_ui_ext(&ext_dir);
         let opts = sample_options();
         let mut resolver = AssetResolver::new();
         resolver.insert("stale".into(), "gone".into());
-        let _ = get_ui_extension_payload(&ext, dir.path().join("bundle").as_path(), &opts, Some(&mut resolver), None, None).unwrap();
+        let _ = get_ui_extension_payload(
+            &ext,
+            dir.path().join("bundle").as_path(),
+            &opts,
+            Some(&mut resolver),
+            None,
+            None,
+        )
+        .unwrap();
         assert!(!resolver.contains_key("stale"));
     }
 
@@ -528,17 +548,10 @@ mod tests {
             .unwrap();
         let mut config = HashMap::new();
         config.insert("type".into(), json!("checkout_post_purchase"));
-        let mut ext = ExtensionInstance::new(
-            "pp",
-            ext_dir,
-            PathBuf::from("t.toml"),
-            config,
-            spec,
-        );
+        let mut ext = ExtensionInstance::new("pp", ext_dir, PathBuf::from("t.toml"), config, spec);
         let _ = ext.ensure_dev_uuid();
         let opts = sample_options();
-        let payload =
-            get_ui_extension_payload(&ext, dir.path(), &opts, None, None, None).unwrap();
+        let payload = get_ui_extension_payload(&ext, dir.path(), &opts, None, None, None).unwrap();
         let target = payload.extension_points[0]["target"].as_str().unwrap();
         assert_eq!(target, "purchase.post.render");
     }

@@ -29,19 +29,13 @@ pub fn setup_web_processes(
 ) -> Vec<DevProcess> {
     let mut out = Vec::new();
     for (i, web) in webs.iter().enumerate() {
-        let is_frontend = web
-            .roles
-            .iter()
-            .any(|r| r.eq_ignore_ascii_case("frontend"));
+        let is_frontend = web.roles.iter().any(|r| r.eq_ignore_ascii_case("frontend"));
         let port = if is_frontend {
             frontend_port
         } else {
             backend_port.saturating_add(i as u16)
         };
-        let name = web
-            .name
-            .clone()
-            .unwrap_or_else(|| format!("web-{}", i + 1));
+        let name = web.name.clone().unwrap_or_else(|| format!("web-{}", i + 1));
         let opts = WebProcessOptions {
             web: web.clone(),
             proxy_url: proxy_url.to_string(),

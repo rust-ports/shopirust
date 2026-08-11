@@ -60,8 +60,8 @@ pub async fn deploy(
             handle: None,
             modules: {
                 let mut modules = Vec::new();
-                let app_config_json = serde_json::to_value(&ctx.app.configuration)
-                    .unwrap_or(serde_json::json!({}));
+                let app_config_json =
+                    serde_json::to_value(&ctx.app.configuration).unwrap_or(serde_json::json!({}));
                 for e in &ctx.app.extensions {
                     e.validate()?;
                     let deploy_ctx = crate::models::extensions::DeployConfigContext {

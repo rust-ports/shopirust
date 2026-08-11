@@ -38,6 +38,13 @@ pub struct ManualMatchPending {
     pub remote: Vec<RemoteSource>,
 }
 
+type MatchByKeyOutcome = (
+    HashMap<String, String>,
+    Vec<LocalSource>,
+    Vec<(LocalSource, RemoteSource)>,
+    ManualMatchPending,
+);
+
 fn slugify(s: &str) -> String {
     let mut out = String::new();
     let mut prev_dash = false;
@@ -85,15 +92,7 @@ fn uniq_remote_by_type_title(sources: &[RemoteSource]) -> Vec<RemoteSource> {
     out
 }
 
-fn match_by_name_and_type(
-    local: &[LocalSource],
-    remote: &[RemoteSource],
-) -> (
-    HashMap<String, String>,
-    Vec<LocalSource>,
-    Vec<(LocalSource, RemoteSource)>,
-    ManualMatchPending,
-) {
+fn match_by_name_and_type(local: &[LocalSource], remote: &[RemoteSource]) -> MatchByKeyOutcome {
     let unique_local = uniq_by_type_handle(local);
     let unique_remote = uniq_remote_by_type_title(remote);
 
@@ -180,7 +179,8 @@ fn match_by_unique_type(
         .cloned()
         .collect();
 
-    let confirmed_remote_uuids: HashSet<_> = to_confirm.iter().map(|(_, r)| r.uuid.clone()).collect();
+    let confirmed_remote_uuids: HashSet<_> =
+        to_confirm.iter().map(|(_, r)| r.uuid.clone()).collect();
     let remote_pending: Vec<_> = remote_sources
         .iter()
         .filter(|r| !confirmed_remote_uuids.contains(&r.uuid))
@@ -214,12 +214,7 @@ fn match_by_uid_and_uuid(
     local: &[LocalSource],
     remote: &[RemoteSource],
     ids: &HashMap<String, String>,
-) -> (
-    HashMap<String, String>,
-    Vec<LocalSource>,
-    Vec<(LocalSource, RemoteSource)>,
-    ManualMatchPending,
-) {
+) -> MatchByKeyOutcome {
     let mut matched_by_uid = HashMap::new();
     let mut matched_by_uuid = HashMap::new();
     let mut pending_local = Vec::new();
@@ -357,7 +352,7 @@ mod tests {
         let remotes = vec![remote("u1", "pear", "checkout_ui_extension")];
         let result = automatic_matchmaking(&locals, &remotes, &HashMap::new(), false);
         assert_eq!(result.to_confirm.len(), 1);
-        assert!(result.identifiers.get("apple").is_none());
+        assert!(!result.identifiers.contains_key("apple"));
     }
 
     #[test]

@@ -74,10 +74,7 @@ pub fn function_info(ext: &ExtensionInstance, options: FunctionInfoOptions) -> S
                 "CONFIGURATION".into(),
                 format!("  Handle        {}", ext.handle),
                 format!("  Name          {}", ext.name()),
-                format!(
-                    "  API Version   {}",
-                    ext.api_version().unwrap_or("N/A")
-                ),
+                format!("  API Version   {}", ext.api_version().unwrap_or("N/A")),
             ];
             if !targeting.is_empty() {
                 lines.push(String::new());
@@ -165,10 +162,7 @@ mod tests {
         assert_eq!(parsed["name"], "My Function");
         assert_eq!(parsed["apiVersion"], "2024-01");
         assert!(parsed["targeting"].is_object());
-        assert_eq!(
-            parsed["wasmPath"],
-            "/path/to/function/dist/index.wasm"
-        );
+        assert_eq!(parsed["wasmPath"], "/path/to/function/dist/index.wasm");
     }
 
     #[test]
@@ -183,10 +177,7 @@ mod tests {
             },
         );
         let parsed: Value = serde_json::from_str(&out).unwrap();
-        assert_eq!(
-            parsed["wasmPath"],
-            "/path/to/function/custom/output.wasm"
-        );
+        assert_eq!(parsed["wasmPath"], "/path/to/function/custom/output.wasm");
     }
 
     #[test]

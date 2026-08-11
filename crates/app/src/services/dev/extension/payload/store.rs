@@ -1,9 +1,9 @@
 //! Payload store + raw payload builder.
 
+use super::get_ui_extension_payload;
 use super::models::{
     AppPayload, ConnectedPayload, ExtensionsEndpointPayload, UIExtensionPayload, UrlHolder,
 };
-use super::get_ui_extension_payload;
 use crate::error::AppError;
 use crate::models::extensions::ExtensionInstance;
 use crate::services::dev::extension::utilities::{build_app_url_for_mobile, build_app_url_for_web};
@@ -83,7 +83,9 @@ impl ExtensionsPayloadStore {
         extension_ids: &[String],
     ) -> ExtensionsEndpointPayload {
         let mut filtered = self.raw_payload.clone();
-        filtered.extensions.retain(|ext| extension_ids.contains(&ext.uuid));
+        filtered
+            .extensions
+            .retain(|ext| extension_ids.contains(&ext.uuid));
         filtered
     }
 
@@ -184,8 +186,14 @@ impl ExtensionsPayloadStore {
             .as_deref()
             .ok_or_else(|| AppError::message("extension missing dev_uuid"))?;
         let resolver = get_or_create_resolver(&mut self.asset_resolvers, uuid);
-        let payload =
-            get_ui_extension_payload(extension, bundle_path, &self.options, Some(resolver), None, None)?;
+        let payload = get_ui_extension_payload(
+            extension,
+            bundle_path,
+            &self.options,
+            Some(resolver),
+            None,
+            None,
+        )?;
         self.raw_payload.extensions.push(payload);
         self.emit_update(vec![uuid.to_string()]);
         Ok(())
@@ -212,7 +220,12 @@ pub fn get_extensions_payload_store_raw_payload(
             .ok_or_else(|| AppError::message("previewable extension missing dev_uuid"))?;
         let resolver = get_or_create_resolver(resolvers, uuid);
         payloads.push(get_ui_extension_payload(
-            ext, bundle_path, options, Some(resolver), None, None,
+            ext,
+            bundle_path,
+            options,
+            Some(resolver),
+            None,
+            None,
         )?);
     }
 
@@ -267,8 +280,7 @@ fn deep_merge(dest: &mut Value, src: &Value) {
         (Value::Object(d), Value::Object(s)) => {
             for (k, v) in s {
                 if k == "extensionPoints" {
-                    if let (Some(Value::Array(dest_arr)), Value::Array(src_arr)) =
-                        (d.get_mut(k), v)
+                    if let (Some(Value::Array(dest_arr)), Value::Array(src_arr)) = (d.get_mut(k), v)
                     {
                         merge_extension_points(dest_arr, src_arr);
                         continue;
@@ -281,7 +293,7 @@ fn deep_merge(dest: &mut Value, src: &Value) {
     }
 }
 
-fn merge_extension_points(dest: &mut Vec<Value>, src: &[Value]) {
+fn merge_extension_points(dest: &mut [Value], src: &[Value]) {
     for src_point in src {
         let Some(target) = src_point.get("target").and_then(|t| t.as_str()) else {
             continue;
@@ -348,9 +360,15 @@ mod tests {
     fn sample_payload(uuid: &str, handle: &str) -> UIExtensionPayload {
         UIExtensionPayload {
             assets: MainAssets {
-                main: Asset::new("main", format!("http://localhost/extensions/{uuid}/assets/{handle}.js"), 1),
+                main: Asset::new(
+                    "main",
+                    format!("http://localhost/extensions/{uuid}/assets/{handle}.js"),
+                    1,
+                ),
             },
-            supported_features: Some(SupportedFeatures { runs_offline: false }),
+            supported_features: Some(SupportedFeatures {
+                runs_offline: false,
+            }),
             capabilities: None,
             development: DevelopmentState {
                 resource: OptionalUrlHolder { url: None },

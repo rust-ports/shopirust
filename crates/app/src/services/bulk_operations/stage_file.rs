@@ -154,8 +154,7 @@ mod tests {
 
     #[test]
     fn wraps_json_array_as_multiline_jsonl() {
-        let bytes =
-            resolve_mutation_jsonl(Some(r#"[{"id":"1"},{"id":"2"}]"#), None).unwrap();
+        let bytes = resolve_mutation_jsonl(Some(r#"[{"id":"1"},{"id":"2"}]"#), None).unwrap();
         let text = String::from_utf8(bytes).unwrap();
         let lines: Vec<_> = text.lines().collect();
         assert_eq!(lines.len(), 2);

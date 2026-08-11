@@ -80,7 +80,7 @@ fn maybe_embed_url(url: &str, embedded: bool) -> String {
     };
     full.set_query(link_url.query());
     // url crate: set_fragment takes Option
-    let _ = full.set_fragment(link_url.fragment());
+    full.set_fragment(link_url.fragment());
     full.to_string()
 }
 

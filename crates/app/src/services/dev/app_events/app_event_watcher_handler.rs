@@ -37,7 +37,9 @@ pub fn handle_watcher_events(
     for event in events {
         let affected = affected_extensions(app, event);
         let partial = match event.r#type {
-            WatcherEventType::ExtensionFolderDeleted => extension_folder_deleted(event, app, &affected)?,
+            WatcherEventType::ExtensionFolderDeleted => {
+                extension_folder_deleted(event, app, &affected)?
+            }
             WatcherEventType::FileCreated
             | WatcherEventType::FileDeleted
             | WatcherEventType::FileUpdated => file_change(event, app, &affected),
@@ -76,7 +78,11 @@ fn affected_extensions<'a>(app: &'a LoadedApp, event: &WatcherEvent) -> Vec<&'a 
     }
 }
 
-fn file_change(event: &WatcherEvent, app: &LoadedApp, extensions: &[&ExtensionInstance]) -> AppEvent {
+fn file_change(
+    event: &WatcherEvent,
+    app: &LoadedApp,
+    extensions: &[&ExtensionInstance],
+) -> AppEvent {
     AppEvent {
         app: app.clone(),
         extension_events: extensions
@@ -191,12 +197,7 @@ mod tests {
         e
     }
 
-    fn ev(
-        ty: WatcherEventType,
-        path: &str,
-        handle: Option<&str>,
-        ext_path: &str,
-    ) -> WatcherEvent {
+    fn ev(ty: WatcherEventType, path: &str, handle: Option<&str>, ext_path: &str) -> WatcherEvent {
         WatcherEvent {
             r#type: ty,
             path: PathBuf::from(path),

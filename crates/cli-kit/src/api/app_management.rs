@@ -1191,14 +1191,12 @@ impl AppManagementClient {
         let resp: serde_json::Value = self
             .request(APP_LOGS_SUBSCRIBE_MUTATION, Some(vars), None, None)
             .await?;
-        let payload = resp
-            .get("appLogsSubscribe")
-            .ok_or_else(|| {
-                GraphqlRequestError::ApiError(
-                    "Failed to subscribe to app logs: No response received".into(),
-                    500,
-                )
-            })?;
+        let payload = resp.get("appLogsSubscribe").ok_or_else(|| {
+            GraphqlRequestError::ApiError(
+                "Failed to subscribe to app logs: No response received".into(),
+                500,
+            )
+        })?;
         if let Some(errors) = payload.get("errors").and_then(|e| e.as_array()) {
             let msgs: Vec<String> = errors
                 .iter()

@@ -450,7 +450,11 @@ pub enum AppSubcommand {
         store: Option<String>,
         #[arg(long = "tunnel-url", env = "SHOPIFY_FLAG_TUNNEL_URL")]
         tunnel_url: Option<String>,
-        #[arg(long = "use-localhost", env = "SHOPIFY_FLAG_USE_LOCALHOST", default_value_t = false)]
+        #[arg(
+            long = "use-localhost",
+            env = "SHOPIFY_FLAG_USE_LOCALHOST",
+            default_value_t = false
+        )]
         use_localhost: bool,
         #[arg(long = "localhost-port", env = "SHOPIFY_FLAG_LOCALHOST_PORT")]
         localhost_port: Option<u16>,
@@ -462,17 +466,31 @@ pub enum AppSubcommand {
         skip_dependencies_installation: bool,
         #[arg(short = 't', long = "theme", env = "SHOPIFY_FLAG_THEME")]
         theme: Option<String>,
-        #[arg(long = "theme-app-extension-port", env = "SHOPIFY_FLAG_THEME_APP_EXTENSION_PORT")]
+        #[arg(
+            long = "theme-app-extension-port",
+            env = "SHOPIFY_FLAG_THEME_APP_EXTENSION_PORT"
+        )]
         theme_extension_port: Option<u16>,
-        #[arg(long = "no-update", env = "SHOPIFY_FLAG_NO_UPDATE", default_value_t = false)]
+        #[arg(
+            long = "no-update",
+            env = "SHOPIFY_FLAG_NO_UPDATE",
+            default_value_t = false
+        )]
         no_update: bool,
         #[arg(long = "checkout-cart-url", env = "SHOPIFY_FLAG_CHECKOUT_CART_URL")]
         checkout_cart_url: Option<String>,
-        #[arg(long = "subscription-product-url", env = "SHOPIFY_FLAG_SUBSCRIPTION_PRODUCT_URL")]
+        #[arg(
+            long = "subscription-product-url",
+            env = "SHOPIFY_FLAG_SUBSCRIPTION_PRODUCT_URL"
+        )]
         subscription_product_url: Option<String>,
         #[arg(long = "notify", env = "SHOPIFY_FLAG_NOTIFY")]
         notify: Option<String>,
-        #[arg(long = "graphiql-port", env = "SHOPIFY_FLAG_GRAPHIQL_PORT", hide = true)]
+        #[arg(
+            long = "graphiql-port",
+            env = "SHOPIFY_FLAG_GRAPHIQL_PORT",
+            hide = true
+        )]
         graphiql_port: Option<u16>,
         #[arg(long = "graphiql-key", env = "SHOPIFY_FLAG_GRAPHIQL_KEY", hide = true)]
         graphiql_key: Option<String>,
@@ -565,14 +583,7 @@ impl TopicCommand for AppTopic {
                 config,
                 path,
             }) => Self::GenerateExtension(generate::GenerateExtension::new(
-                path,
-                config,
-                name,
-                type_name,
-                template,
-                flavor,
-                local,
-                clone_url,
+                path, config, name, type_name, template, flavor, local, clone_url,
             )),
             AppSubcommand::ImportExtensions {
                 config,

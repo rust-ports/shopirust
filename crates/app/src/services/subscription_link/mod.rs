@@ -66,7 +66,8 @@ mod tests {
             Some("custom-subscription-link")
         );
         assert_eq!(
-            got.pointer("/extensions/0/pattern").and_then(|v| v.as_str()),
+            got.pointer("/extensions/0/pattern")
+                .and_then(|v| v.as_str()),
             Some("/subscriptions{?customer_id,shop}&id={contract_id}")
         );
     }

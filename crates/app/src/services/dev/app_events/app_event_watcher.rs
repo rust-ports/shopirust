@@ -31,7 +31,9 @@ impl EventType {
 
 #[derive(Debug, Clone)]
 pub enum ExtensionBuildResult {
-    Ok { uid: String },
+    Ok {
+        uid: String,
+    },
     Error {
         error: String,
         file: Option<String>,
@@ -125,7 +127,10 @@ impl AppEventWatcher {
                 app_was_reloaded: false,
             });
         } else {
-            self.start_listeners.lock().unwrap().push(Arc::new(listener));
+            self.start_listeners
+                .lock()
+                .unwrap()
+                .push(Arc::new(listener));
         }
     }
 
@@ -133,7 +138,10 @@ impl AppEventWatcher {
     where
         F: Fn(AppError) + Send + Sync + 'static,
     {
-        self.error_listeners.lock().unwrap().push(Arc::new(listener));
+        self.error_listeners
+            .lock()
+            .unwrap()
+            .push(Arc::new(listener));
     }
 
     /// Push synthetic watcher events (tests).
@@ -340,7 +348,11 @@ mod tests {
         let ext_dir = dir.join("extensions/my-ext");
         std::fs::create_dir_all(ext_dir.join("src")).unwrap();
         std::fs::write(dir.join("shopify.app.toml"), "name = \"app\"\n").unwrap();
-        std::fs::write(ext_dir.join("shopify.extension.toml"), "type = \"ui_extension\"\nname = \"x\"\n").unwrap();
+        std::fs::write(
+            ext_dir.join("shopify.extension.toml"),
+            "type = \"ui_extension\"\nname = \"x\"\n",
+        )
+        .unwrap();
         std::fs::write(ext_dir.join("src/index.js"), "export default {}").unwrap();
         let mut ext = ExtensionInstance::new(
             "my-ext",
@@ -370,15 +382,15 @@ mod tests {
         let app = sample_app(dir.path());
         let builds = Arc::new(AtomicUsize::new(0));
         let builds2 = builds.clone();
-        let watcher = Arc::new(
-            AppEventWatcher::new(app).with_builder(Arc::new(move |ext, bundle| {
+        let watcher = Arc::new(AppEventWatcher::new(app).with_builder(Arc::new(
+            move |ext, bundle| {
                 builds2.fetch_add(1, Ordering::SeqCst);
                 let out = ext.get_output_path_for_directory(bundle);
                 std::fs::create_dir_all(out.parent().unwrap()).unwrap();
                 std::fs::write(&out, b"built").unwrap();
                 Ok(())
-            })),
-        );
+            },
+        )));
 
         let started = Arc::new(AtomicUsize::new(0));
         let started2 = started.clone();
@@ -392,7 +404,11 @@ mod tests {
         let updated2 = updated.clone();
         watcher
             .on_event(move |ev| {
-                if ev.extension_events.iter().any(|e| e.r#type == EventType::Updated) {
+                if ev
+                    .extension_events
+                    .iter()
+                    .any(|e| e.r#type == EventType::Updated)
+                {
                     updated2.fetch_add(1, Ordering::SeqCst);
                 }
             })
@@ -421,14 +437,16 @@ mod tests {
     async fn folder_delete_emits_deleted() {
         let dir = tempdir().unwrap();
         let app = sample_app(dir.path());
-        let watcher = Arc::new(
-            AppEventWatcher::new(app).with_builder(Arc::new(|_, _| Ok(()))),
-        );
+        let watcher = Arc::new(AppEventWatcher::new(app).with_builder(Arc::new(|_, _| Ok(()))));
         let deleted = Arc::new(AtomicUsize::new(0));
         let deleted2 = deleted.clone();
         watcher
             .on_event(move |ev| {
-                if ev.extension_events.iter().any(|e| e.r#type == EventType::Deleted) {
+                if ev
+                    .extension_events
+                    .iter()
+                    .any(|e| e.r#type == EventType::Deleted)
+                {
                     deleted2.fetch_add(1, Ordering::SeqCst);
                 }
             })

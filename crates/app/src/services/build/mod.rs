@@ -31,8 +31,8 @@ pub async fn build_app(options: BuildOptions) -> Result<BuildResult, AppError> {
     let app = load_app(LoadAppOptions {
         directory: options.directory.clone(),
         config_name: options.config_name,
-                ignore_unknown_extensions: false,
-        })?;
+        ignore_unknown_extensions: false,
+    })?;
 
     let mut result = BuildResult {
         built: vec![],
@@ -76,13 +76,7 @@ async fn build_extension(
             .features
             .contains(&ExtensionFeature::Function)
     {
-        build_function_extension(
-            ext,
-            FunctionBuildOptions {
-                use_tasks: false,
-            },
-        )
-        .await?;
+        build_function_extension(ext, FunctionBuildOptions { use_tasks: false }).await?;
         return Ok(format!("function:{}", ext.handle));
     }
     if ext.is_ui_extension() {
@@ -146,13 +140,8 @@ pub async fn bundle_and_build_extensions(app: &mut LoadedApp) -> Result<(), AppE
             let out = build_theme_extension(ext)?;
             ext.output_path = Some(out);
         } else if ext.is_function_extension() {
-            let out = build_function_extension(
-                ext,
-                FunctionBuildOptions {
-                    use_tasks: false,
-                },
-            )
-            .await?;
+            let out =
+                build_function_extension(ext, FunctionBuildOptions { use_tasks: false }).await?;
             ext.output_path = Some(out);
         } else if ext.is_ui_extension() {
             let out = build_ui_extension(ext)?;

@@ -116,7 +116,10 @@ impl FileWatcher {
             .clone()
             .unwrap_or_else(|| vec!["extensions".into()]);
         for d in ext_dirs {
-            let full = self.app.directory.join(d.trim_end_matches('/').trim_end_matches("/**"));
+            let full = self
+                .app
+                .directory
+                .join(d.trim_end_matches('/').trim_end_matches("/**"));
             paths.push(full);
         }
         paths.extend(self.watched_file_owners.keys().cloned());
@@ -166,12 +169,8 @@ impl FileWatcher {
                 }
                 match rx.recv_timeout(debounce) {
                     Ok(Ok(event)) => {
-                        let mapped = map_notify_event(
-                            &event,
-                            &app_config,
-                            &extension_paths,
-                            &owners,
-                        );
+                        let mapped =
+                            map_notify_event(&event, &app_config, &extension_paths, &owners);
                         if mapped.is_empty() {
                             continue;
                         }
@@ -217,11 +216,7 @@ impl FileWatcher {
     }
 
     /// Synchronous classify helper for tests (no notify).
-    pub fn classify_path(
-        &self,
-        path: &Path,
-        kind: WatcherEventType,
-    ) -> Vec<WatcherEvent> {
+    pub fn classify_path(&self, path: &Path, kind: WatcherEventType) -> Vec<WatcherEvent> {
         classify(
             path,
             kind,
@@ -266,7 +261,13 @@ fn map_notify_event(
         if should_ignore(path) {
             continue;
         }
-        out.extend(classify(path, kind.clone(), app_config, extension_paths, owners));
+        out.extend(classify(
+            path,
+            kind.clone(),
+            app_config,
+            extension_paths,
+            owners,
+        ));
     }
     out
 }
@@ -286,10 +287,7 @@ fn classify(
     owners: &HashMap<PathBuf, HashSet<String>>,
 ) -> Vec<WatcherEvent> {
     let start = Instant::now();
-    let file_name = path
-        .file_name()
-        .and_then(|s| s.to_str())
-        .unwrap_or("");
+    let file_name = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
 
     if path == app_config {
         if matches!(kind, WatcherEventType::FileDeleted) {
@@ -297,10 +295,7 @@ fn classify(
                 r#type: WatcherEventType::AppConfigDeleted,
                 path: path.to_path_buf(),
                 extension_handle: None,
-                extension_path: app_config
-                    .parent()
-                    .unwrap_or(Path::new(""))
-                    .to_path_buf(),
+                extension_path: app_config.parent().unwrap_or(Path::new("")).to_path_buf(),
                 start_time: start,
             }];
         }
@@ -309,10 +304,7 @@ fn classify(
             r#type: kind,
             path: path.to_path_buf(),
             extension_handle: None,
-            extension_path: app_config
-                .parent()
-                .unwrap_or(Path::new(""))
-                .to_path_buf(),
+            extension_path: app_config.parent().unwrap_or(Path::new("")).to_path_buf(),
             start_time: start,
         }];
     }
@@ -393,13 +385,8 @@ mod tests {
         let config_path = ext_dir.join("shopify.extension.toml");
         std::fs::write(&config_path, "name = \"x\"").unwrap();
         std::fs::write(ext_dir.join("src.js"), "1").unwrap();
-        let mut ext = ExtensionInstance::new(
-            "my-ext",
-            ext_dir.clone(),
-            config_path,
-            HashMap::new(),
-            spec,
-        );
+        let mut ext =
+            ExtensionInstance::new("my-ext", ext_dir.clone(), config_path, HashMap::new(), spec);
         ext.uid = Some("1".into());
         LoadedApp {
             directory: dir.to_path_buf(),

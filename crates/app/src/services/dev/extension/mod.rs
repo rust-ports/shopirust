@@ -9,9 +9,7 @@ use crate::error::AppError;
 use crate::models::extensions::ExtensionInstance;
 use crate::services::dev::app_events::{AppEvent, AppEventWatcher, EventType};
 use payload::models::DevelopmentPayload;
-use payload::store::{
-    get_extensions_payload_store_raw_payload, ExtensionsPayloadStoreOptions,
-};
+use payload::store::{get_extensions_payload_store_raw_payload, ExtensionsPayloadStoreOptions};
 use server::{build_extension_router, serve_extension_server, ServerState};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -66,8 +64,8 @@ impl ExtensionDevOptions {
 
 /// Convert an http(s) extension server URL into the websocket URL (`/extensions`).
 pub fn get_websocket_url(url: &str) -> String {
-    let mut parsed =
-        url::Url::parse(url).unwrap_or_else(|_| url::Url::parse(&format!("http://{url}")).expect("fallback url"));
+    let mut parsed = url::Url::parse(url)
+        .unwrap_or_else(|_| url::Url::parse(&format!("http://{url}")).expect("fallback url"));
     let scheme = match parsed.scheme() {
         "https" => "wss",
         _ => "ws",

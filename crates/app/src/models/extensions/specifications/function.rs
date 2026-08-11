@@ -26,10 +26,7 @@ pub fn function_specification() -> ExtensionSpecification {
         surface: "admin".into(),
         experience: ExtensionExperience::Extension,
         registration_limit: 50,
-        additional_identifiers: FUNCTION_ALIASES
-            .iter()
-            .map(|s| (*s).to_string())
-            .collect(),
+        additional_identifiers: FUNCTION_ALIASES.iter().map(|s| (*s).to_string()).collect(),
         group: Some("Functions".into()),
         features: vec![ExtensionFeature::Function],
         uid_strategy: UidStrategy::Uuid,

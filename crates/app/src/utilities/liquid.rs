@@ -95,7 +95,9 @@ fn load_bypass_patterns(from: &Path) -> Result<Vec<String>, LiquidError> {
 }
 
 fn is_bypassed(rel: &str, patterns: &[String]) -> bool {
-    patterns.iter().any(|p| rel == p.as_str() || rel.starts_with(&format!("{p}/")) || match_glob_simple(rel, p))
+    patterns.iter().any(|p| {
+        rel == p.as_str() || rel.starts_with(&format!("{p}/")) || match_glob_simple(rel, p)
+    })
 }
 
 fn match_glob_simple(path: &str, pattern: &str) -> bool {

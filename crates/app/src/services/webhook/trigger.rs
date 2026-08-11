@@ -28,7 +28,9 @@ pub struct WebhookTriggerResult {
 /// Localhost (and HTTP when targeting a reachable URL) POSTs from the CLI with an optional
 /// HMAC header. Pub/Sub and EventBridge are reported as remote enqueue (Partners API path
 /// not required for local testing).
-pub async fn webhook_trigger(options: WebhookTriggerOptions) -> Result<WebhookTriggerResult, AppError> {
+pub async fn webhook_trigger(
+    options: WebhookTriggerOptions,
+) -> Result<WebhookTriggerResult, AppError> {
     let method = options
         .delivery_method
         .clone()

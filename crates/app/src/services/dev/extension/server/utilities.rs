@@ -4,12 +4,12 @@ use crate::models::extensions::ExtensionInstance;
 use crate::services::dev::extension::get_extension_point_target_surface;
 use crate::services::dev::extension::payload::store::ExtensionsPayloadStoreOptions;
 
-pub fn get_extension_url(extension: &ExtensionInstance, options: &ExtensionsPayloadStoreOptions) -> String {
+pub fn get_extension_url(
+    extension: &ExtensionInstance,
+    options: &ExtensionsPayloadStoreOptions,
+) -> String {
     let uuid = extension.dev_uuid.as_deref().unwrap_or("");
-    format!(
-        "{}/extensions/{uuid}",
-        options.url.trim_end_matches('/')
-    )
+    format!("{}/extensions/{uuid}", options.url.trim_end_matches('/'))
 }
 
 pub fn get_redirect_url(
@@ -27,8 +27,10 @@ pub fn get_redirect_url(
             let mut raw = url::Url::parse(&format!("https://{}/", options.store_fqdn))
                 .unwrap_or_else(|_| url::Url::parse("https://example.myshopify.com/").unwrap());
             raw.set_path(resource.trim_start_matches('/'));
-            raw.query_pairs_mut()
-                .append_pair("dev", &format!("{}/extensions", options.url.trim_end_matches('/')));
+            raw.query_pairs_mut().append_pair(
+                "dev",
+                &format!("{}/extensions", options.url.trim_end_matches('/')),
+            );
             return raw.to_string();
         }
     }
@@ -90,7 +92,11 @@ pub fn get_extension_point_redirect_url(
                 .append_pair("target", requested_target);
         }
         "customer-accounts" => {
-            return Some(customer_accounts_redirect(extension, options, requested_target));
+            return Some(customer_accounts_redirect(
+                extension,
+                options,
+                requested_target,
+            ));
         }
         _ => return None,
     }
@@ -111,14 +117,12 @@ fn customer_accounts_redirect(
     .expect("static url");
     raw.query_pairs_mut()
         .append_pair("origin", &origin)
-        .append_pair(
-            "extensionId",
-            extension.dev_uuid.as_deref().unwrap_or(""),
-        )
+        .append_pair("extensionId", extension.dev_uuid.as_deref().unwrap_or(""))
         .append_pair("source", "CUSTOMER_ACCOUNT_EXTENSION")
         .append_pair("appId", options.app_id.as_deref().unwrap_or(""));
     if !requested_target.is_empty() {
-        raw.query_pairs_mut().append_pair("target", requested_target);
+        raw.query_pairs_mut()
+            .append_pair("target", requested_target);
     }
     raw.to_string()
 }
@@ -164,8 +168,9 @@ mod tests {
     #[test]
     fn admin_redirect() {
         let e = ext("ui_extension");
-        let url = get_extension_point_redirect_url("admin.product-details.block.render", &e, &opts())
-            .unwrap();
+        let url =
+            get_extension_point_redirect_url("admin.product-details.block.render", &e, &opts())
+                .unwrap();
         assert!(url.contains("admin/extensions-dev"));
         assert!(url.contains("target="));
     }
@@ -173,8 +178,8 @@ mod tests {
     #[test]
     fn checkout_redirect() {
         let e = ext("checkout_ui_extension");
-        let url =
-            get_extension_point_redirect_url("purchase.checkout.block.render", &e, &opts()).unwrap();
+        let url = get_extension_point_redirect_url("purchase.checkout.block.render", &e, &opts())
+            .unwrap();
         assert!(url.contains("/cart/1:1"));
         assert!(url.contains("dev="));
     }

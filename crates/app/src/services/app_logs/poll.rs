@@ -98,13 +98,7 @@ impl AppLogsPoller {
                 .await
                 .map_err(|e| AppError::message(e.to_string()))?,
             PollBackend::Http { base_url } => {
-                poll_app_logs_http(
-                    base_url,
-                    &self.jwt_token,
-                    self.cursor.as_deref(),
-                    None,
-                )
-                .await?
+                poll_app_logs_http(base_url, &self.jwt_token, self.cursor.as_deref(), None).await?
             }
         };
 
@@ -115,11 +109,8 @@ impl AppLogsPoller {
                 cursor: raw.cursor.clone(),
                 errors: raw.errors.clone(),
             };
-            let handled = handle_fetch_error(
-                &error_response,
-                || async { on_resubscribe().await },
-            )
-            .await?;
+            let handled =
+                handle_fetch_error(&error_response, || async { on_resubscribe().await }).await?;
 
             if handled.resubscribe_result == ResubscribeResult::Failed {
                 self.consecutive_resubscribe_failures += 1;
@@ -470,7 +461,10 @@ mod tests {
             .await
             .unwrap();
 
-        assert!(matches!(result.outcome, PollOutcome::Error { status: 401, .. }));
+        assert!(matches!(
+            result.outcome,
+            PollOutcome::Error { status: 401, .. }
+        ));
         assert_eq!(result.resubscribe_result, ResubscribeResult::Succeeded);
         assert_eq!(result.next_jwt_token.as_deref(), Some("fresh-jwt"));
         assert_eq!(poller.jwt_token, "fresh-jwt");

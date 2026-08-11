@@ -47,10 +47,7 @@ pub struct DevelopmentPayload {
     pub hidden: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<DevelopmentError>,
-    #[serde(
-        rename = "localizationStatus",
-        skip_serializing_if = "Option::is_none"
-    )]
+    #[serde(rename = "localizationStatus", skip_serializing_if = "Option::is_none")]
     pub localization_status: Option<String>,
 }
 

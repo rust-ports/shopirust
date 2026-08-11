@@ -22,6 +22,7 @@ pub struct WebhookTrigger {
 }
 
 impl WebhookTrigger {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         path: String,
         config: Option<String>,

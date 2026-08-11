@@ -10,7 +10,7 @@ pub use cloudflare::CloudflareTunnel;
 pub use fake::FakeTunnel;
 
 /// Re-export app-side tunnel mode resolution (`Auto` / `UseLocalhost` / `Custom`).
-pub use app::services::{TunnelMode, get_tunnel_mode, DEFAULT_LOCALHOST_PORT};
+pub use app::services::{get_tunnel_mode, TunnelMode, DEFAULT_LOCALHOST_PORT};
 
 use async_trait::async_trait;
 use thiserror::Error;
@@ -27,7 +27,9 @@ pub enum TunnelStatus {
 pub enum TunnelError {
     #[error("{0}")]
     Message(String),
-    #[error("cloudflared not found on PATH (set SHOPIFY_CLI_CLOUDFLARED_PATH or install cloudflared)")]
+    #[error(
+        "cloudflared not found on PATH (set SHOPIFY_CLI_CLOUDFLARED_PATH or install cloudflared)"
+    )]
     CloudflaredMissing,
     #[error("tunnel timed out waiting for URL")]
     Timeout,

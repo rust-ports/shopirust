@@ -44,10 +44,7 @@ fn expand_schema_glob(extension_path: &Path, patch_path: &str) -> Result<Vec<Pat
     }
 
     let parent = joined.parent().unwrap_or(extension_path).to_path_buf();
-    let pattern = joined
-        .file_name()
-        .and_then(|s| s.to_str())
-        .unwrap_or("*");
+    let pattern = joined.file_name().and_then(|s| s.to_str()).unwrap_or("*");
     let mut matches = Vec::new();
     let Ok(entries) = fs::read_dir(&parent) else {
         return Ok(matches);
@@ -76,7 +73,10 @@ fn glob_match(pattern: &str, name: &str) -> bool {
                 }
                 let rest: String = p.collect();
                 let name_rest: String = n.collect();
-                for (i, _) in name_rest.char_indices().chain(std::iter::once((name_rest.len(), '\0'))) {
+                for (i, _) in name_rest
+                    .char_indices()
+                    .chain(std::iter::once((name_rest.len(), '\0')))
+                {
                     if glob_match(&rest, &name_rest[i..]) {
                         return true;
                     }
@@ -175,8 +175,8 @@ mod tests {
         .unwrap_err();
         assert!(err.to_string().contains("must resolve to an HTTPS URL"));
 
-        let err =
-            resolve_flow_action_url("runtime_url", "", Some("https://my-app.example.com")).unwrap_err();
+        let err = resolve_flow_action_url("runtime_url", "", Some("https://my-app.example.com"))
+            .unwrap_err();
         assert!(err.to_string().contains("must resolve to an HTTPS URL"));
 
         let err = resolve_flow_action_url(
@@ -195,7 +195,11 @@ mod tests {
         fs::create_dir_all(&fixtures).unwrap();
         let mut f = fs::File::create(fixtures.join("valid-schema-patch.graphql")).unwrap();
         writeln!(f, "type Test {{ a: String }}").unwrap();
-        fs::write(fixtures.join("valid-schema-patch2.graphql"), "type Other {}\n").unwrap();
+        fs::write(
+            fixtures.join("valid-schema-patch2.graphql"),
+            "type Other {}\n",
+        )
+        .unwrap();
 
         let content =
             load_schema_from_path(&fixtures, Some("./valid-schema-patch.graphql")).unwrap();

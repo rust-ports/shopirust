@@ -61,7 +61,8 @@ pub fn resolve_asset_file(output_path: &Path, filesystem_path: &str) -> Result<P
     }
     if !normalized.exists() {
         // Directory → index.html
-        if normalized.is_dir() || (!normalized.exists() && output_dir.join(filesystem_path).is_dir())
+        if normalized.is_dir()
+            || (!normalized.exists() && output_dir.join(filesystem_path).is_dir())
         {
             let index = normalized.join("index.html");
             if index.exists() && !is_path_jail_escape(&output_dir, &index) {
@@ -84,9 +85,7 @@ pub fn resolve_asset_file(output_path: &Path, filesystem_path: &str) -> Result<P
 }
 
 pub fn is_path_jail_escape(root: &Path, candidate: &Path) -> bool {
-    !is_subpath(root, candidate)
-        && !candidate.starts_with(root)
-        && !path_is_under(root, candidate)
+    !is_subpath(root, candidate) && !candidate.starts_with(root) && !path_is_under(root, candidate)
 }
 
 fn path_is_under(root: &Path, candidate: &Path) -> bool {
@@ -131,7 +130,10 @@ mod tests {
     #[test]
     fn content_types() {
         assert_eq!(content_type_for_path(Path::new("a.js")), "text/javascript");
-        assert_eq!(content_type_for_path(Path::new("a.wasm")), "application/wasm");
+        assert_eq!(
+            content_type_for_path(Path::new("a.wasm")),
+            "application/wasm"
+        );
         assert_eq!(content_type_for_path(Path::new("a.unknown")), "text/plain");
     }
 

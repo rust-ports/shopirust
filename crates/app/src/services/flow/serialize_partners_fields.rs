@@ -150,9 +150,11 @@ mod tests {
             },
         ];
 
-        let config =
-            config_from_serialized_fields(FlowPartnersExtensionType::FlowActionDefinition, Some(&fields))
-                .unwrap();
+        let config = config_from_serialized_fields(
+            FlowPartnersExtensionType::FlowActionDefinition,
+            Some(&fields),
+        )
+        .unwrap();
         let reserialized = serialize_fields(FlowExtensionType::FlowAction, Some(&config)).unwrap();
         assert_eq!(reserialized, fields);
     }
@@ -192,9 +194,11 @@ mod tests {
             },
         ];
 
-        let config =
-            config_from_serialized_fields(FlowPartnersExtensionType::FlowTriggerDefinition, Some(&fields))
-                .unwrap();
+        let config = config_from_serialized_fields(
+            FlowPartnersExtensionType::FlowTriggerDefinition,
+            Some(&fields),
+        )
+        .unwrap();
         let reserialized = serialize_fields(FlowExtensionType::FlowTrigger, Some(&config)).unwrap();
         assert_eq!(reserialized, fields);
     }

@@ -88,12 +88,10 @@ pub async fn dev(
             tunnel_url: format!("{proxy_url}:{proxy_port}"),
         }
     })
-    .unwrap_or_else(|_| {
-        crate::services::dev::urls::FrontendUrlResult {
-            frontend_url: proxy_url.clone(),
-            frontend_port: proxy_port,
-            using_localhost,
-        }
+    .unwrap_or_else(|_| crate::services::dev::urls::FrontendUrlResult {
+        frontend_url: proxy_url.clone(),
+        frontend_port: proxy_port,
+        using_localhost,
     });
     let _ = frontend;
 
@@ -123,7 +121,9 @@ pub async fn dev(
             theme_extension_port: options.theme_extension_port,
             graphiql_port,
             graphiql_key: options.graphiql_key.clone(),
-            enable_graphiql: std::env::var("SHOPIFY_CLI_DISABLE_GRAPHIQL").ok().as_deref()
+            enable_graphiql: std::env::var("SHOPIFY_CLI_DISABLE_GRAPHIQL")
+                .ok()
+                .as_deref()
                 != Some("1"),
             supports_dev_sessions: client.supports_dev_sessions(),
             remote_app_updated: false,
@@ -214,11 +214,15 @@ async fn resolve_network(options: &DevOptions) -> Result<(String, u16, bool), Ap
             }) {
                 Ok((parsed.frontend_url, parsed.frontend_port, false))
             } else {
-                Ok((strip_port(url), parse_port_from_url(url).unwrap_or(443), false))
+                Ok((
+                    strip_port(url),
+                    parse_port_from_url(url).unwrap_or(443),
+                    false,
+                ))
             }
         }
         TunnelMode::UseLocalhost { actual_port, .. } => {
-            Ok((format!("https://localhost"), *actual_port, true))
+            Ok(("https://localhost".to_string(), *actual_port, true))
         }
     }
 }

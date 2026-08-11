@@ -43,10 +43,7 @@ pub fn load_locales_config(directory: &Path, _name: &str) -> Result<Option<Value
 
         let content = fs::read_to_string(&path)?;
         let parsed: Value = serde_json::from_str(&content).map_err(|e| {
-            AppError::message(format!(
-                "Invalid locale JSON {}: {e}",
-                path.display()
-            ))
+            AppError::message(format!("Invalid locale JSON {}: {e}", path.display()))
         })?;
         // Upstream base64-encodes the JSON string of translations.
         let encoded = base64::Engine::encode(

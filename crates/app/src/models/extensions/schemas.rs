@@ -47,9 +47,7 @@ pub fn validate_handle(handle: &str) -> Result<(), AppError> {
         ));
     }
     if handle.starts_with('-') || handle.ends_with('-') {
-        return Err(AppError::message(
-            "Handle can't start or end with a hyphen",
-        ));
+        return Err(AppError::message("Handle can't start or end with a hyphen"));
     }
     Ok(())
 }
@@ -65,7 +63,8 @@ pub fn validate_uid(uid: &str) -> Result<(), AppError> {
         )));
     }
     if !uid.chars().all(|c| {
-        c.is_ascii_alphanumeric() || matches!(c, '-' | '$' | '{' | '}' | '.' | '(' | ')' | '_' | '`')
+        c.is_ascii_alphanumeric()
+            || matches!(c, '-' | '$' | '{' | '}' | '.' | '(' | ')' | '_' | '`')
     }) {
         return Err(AppError::message(
             "UID can only contain alphanumeric characters and hyphens",

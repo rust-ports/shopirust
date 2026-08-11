@@ -166,9 +166,14 @@ fn registration_from_value(item: &Value) -> Option<ExtensionRegistration> {
         .unwrap_or("unknown")
         .to_string();
 
-    let draft_version = version_from(item.get("draftVersion").or_else(|| item.get("draft_version")));
-    let active_version =
-        version_from(item.get("activeVersion").or_else(|| item.get("active_version")));
+    let draft_version = version_from(
+        item.get("draftVersion")
+            .or_else(|| item.get("draft_version")),
+    );
+    let active_version = version_from(
+        item.get("activeVersion")
+            .or_else(|| item.get("active_version")),
+    );
 
     Some(ExtensionRegistration {
         uuid,

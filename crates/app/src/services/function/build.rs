@@ -245,7 +245,8 @@ pub fn validate_shopify_function_package_version(
         ))
     })?;
 
-    let package_json: serde_json::Value = serde_json::from_str(&fs::read_to_string(package_json_path)?)?;
+    let package_json: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(package_json_path)?)?;
     let version = package_json
         .get("version")
         .and_then(|v| v.as_str())
@@ -325,12 +326,7 @@ fn bundle_default(ext: &ExtensionInstance) -> Result<(), AppError> {
         )
     })?;
 
-    run_esbuild(
-        &ext.directory,
-        &entry_point,
-        &user_function,
-        None,
-    )
+    run_esbuild(&ext.directory, &entry_point, &user_function, None)
 }
 
 fn bundle_with_exports(ext: &ExtensionInstance, exports: &[String]) -> Result<(), AppError> {
@@ -558,12 +554,7 @@ pub async fn run_wasm_opt(module_path: &Path) -> Result<(), AppError> {
             "-o",
             &module_path.display().to_string(),
         ])
-        .current_dir(
-            wasm_opt
-                .path
-                .parent()
-                .unwrap_or_else(|| Path::new(".")),
-        )
+        .current_dir(wasm_opt.path.parent().unwrap_or_else(|| Path::new(".")))
         .status()
         .map_err(|e| AppError::message(format!("Failed to run wasm-opt: {e}")))?;
     if !status.success() {
@@ -742,9 +733,10 @@ pub fn js_exports(ext: &ExtensionInstance) -> Result<Vec<String>, AppError> {
     let invalid: Vec<_> = with_export
         .iter()
         .filter(|t| {
-            !t.export
-                .as_ref()
-                .is_some_and(|e| e.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-'))
+            !t.export.as_ref().is_some_and(|e| {
+                e.chars()
+                    .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+            })
         })
         .collect();
     if !invalid.is_empty() {
@@ -869,7 +861,10 @@ mod tests {
                 ]
             }),
         );
-        assert!(js_exports(&ext).unwrap_err().to_string().contains("Can't infer"));
+        assert!(js_exports(&ext)
+            .unwrap_err()
+            .to_string()
+            .contains("Can't infer"));
     }
 
     #[test]
@@ -942,14 +937,9 @@ mod tests {
             }),
         );
         // Avoid network for wasm-opt in unit test (wasm_opt: false).
-        let out = build_function_extension(
-            &ext,
-            FunctionBuildOptions {
-                use_tasks: false,
-            },
-        )
-        .await
-        .unwrap();
+        let out = build_function_extension(&ext, FunctionBuildOptions { use_tasks: false })
+            .await
+            .unwrap();
         assert!(out.exists());
     }
 

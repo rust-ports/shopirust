@@ -134,9 +134,7 @@ impl ExtensionInstance {
         if self.type_name() == "checkout_post_purchase" {
             return target == "purchase.post.render";
         }
-        self.extension_point_targets()
-            .iter()
-            .any(|t| t == target)
+        self.extension_point_targets().iter().any(|t| t == target)
     }
 
     /// Targets from `extension_points` or `targeting` config arrays.
@@ -150,7 +148,11 @@ impl ExtensionInstance {
         };
         items
             .iter()
-            .filter_map(|item| item.get("target").and_then(|t| t.as_str()).map(str::to_string))
+            .filter_map(|item| {
+                item.get("target")
+                    .and_then(|t| t.as_str())
+                    .map(str::to_string)
+            })
             .collect()
     }
 

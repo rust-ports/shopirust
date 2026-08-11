@@ -81,9 +81,7 @@ pub fn import_custom_data_definitions(
     }
 
     for mo in &options.metaobjects {
-        if !options.include_existing
-            && existing.contains(&format!("type = \"{}\"", mo.type_name))
-        {
+        if !options.include_existing && existing.contains(&format!("type = \"{}\"", mo.type_name)) {
             continue;
         }
         additions.push('\n');
@@ -159,7 +157,15 @@ fn escape_toml(s: &str) -> String {
 }
 
 /// Parse a simplified JSON payload (from Admin API dump / fixture) into import inputs.
-pub fn definitions_from_json(value: &serde_json::Value) -> Result<(Vec<MetafieldDefinitionInput>, Vec<MetaobjectDefinitionInput>), AppError> {
+pub fn definitions_from_json(
+    value: &serde_json::Value,
+) -> Result<
+    (
+        Vec<MetafieldDefinitionInput>,
+        Vec<MetaobjectDefinitionInput>,
+    ),
+    AppError,
+> {
     let metafields = value
         .get("metafields")
         .and_then(|v| v.as_array())
@@ -284,7 +290,11 @@ mod tests {
     fn imports_into_app_toml() {
         let dir = tempdir().unwrap();
         let config = dir.path().join("shopify.app.toml");
-        fs::write(&config, "name = \"Demo\"\napplication_url = \"https://e.com\"\n").unwrap();
+        fs::write(
+            &config,
+            "name = \"Demo\"\napplication_url = \"https://e.com\"\n",
+        )
+        .unwrap();
         let result = import_custom_data_definitions(ImportCustomDataOptions {
             configuration_path: config.clone(),
             metafields: vec![MetafieldDefinitionInput {

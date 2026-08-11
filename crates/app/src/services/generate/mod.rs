@@ -32,13 +32,7 @@ pub fn slugify(name: &str) -> String {
     name.trim()
         .to_lowercase()
         .chars()
-        .map(|c| {
-            if c.is_ascii_alphanumeric() {
-                c
-            } else {
-                '-'
-            }
-        })
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
         .collect::<String>()
         .split('-')
         .filter(|s| !s.is_empty())
@@ -89,11 +83,8 @@ pub fn generate_extension(
     let directory = ensure_extension_directory(app, &options.name)?;
 
     let result = (|| -> Result<GeneratedExtension, AppError> {
-        let tmp = std::env::temp_dir().join(format!(
-            "shopify-ext-gen-{}-{}",
-            std::process::id(),
-            handle
-        ));
+        let tmp =
+            std::env::temp_dir().join(format!("shopify-ext-gen-{}-{}", std::process::id(), handle));
         let _ = fs::remove_dir_all(&tmp);
         fs::create_dir_all(&tmp)?;
 

@@ -3,11 +3,11 @@
 pub mod middlewares;
 pub mod utilities;
 
+use crate::error::AppError;
 use crate::models::extensions::ExtensionInstance;
 use crate::services::dev::extension::payload::store::ExtensionsPayloadStore;
 use crate::services::dev::extension::websocket::handle_ws_socket;
 use crate::services::dev::extension::ExtensionDevOptions;
-use crate::error::AppError;
 use axum::extract::ws::WebSocketUpgrade;
 use axum::extract::{Path, State};
 use axum::http::{header, HeaderMap, StatusCode};
@@ -41,9 +41,9 @@ pub async fn serve_extension_server(
 ) -> Result<(), AppError> {
     let app = build_extension_router(state);
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
-    let listener = tokio::net::TcpListener::bind(addr)
-        .await
-        .map_err(|e| AppError::message(format!("failed to bind extension server on {addr}: {e}")))?;
+    let listener = tokio::net::TcpListener::bind(addr).await.map_err(|e| {
+        AppError::message(format!("failed to bind extension server on {addr}: {e}"))
+    })?;
 
     axum::serve(listener, app)
         .with_graceful_shutdown(cancel.cancelled_owned())
@@ -201,12 +201,16 @@ async fn extension_payload(
             )
                 .into_response();
         }
-        let opts = state.options.to_store_options(state.options.websocket_url());
+        let opts = state
+            .options
+            .to_store_options(state.options.websocket_url());
         let url = get_redirect_url(extension, &opts);
         return Redirect::temporary(&url).into_response();
     }
 
-    let store_opts = state.options.to_store_options(state.options.websocket_url());
+    let store_opts = state
+        .options
+        .to_store_options(state.options.websocket_url());
     let payload = match crate::services::dev::extension::payload::get_ui_extension_payload(
         extension,
         &state.bundle_path,
@@ -264,7 +268,9 @@ async fn extension_point_redirect(
             .into_response();
     }
 
-    let opts = state.options.to_store_options(state.options.websocket_url());
+    let opts = state
+        .options
+        .to_store_options(state.options.websocket_url());
     match get_extension_point_redirect_url(&extension_point_target, extension, &opts) {
         Some(url) => Redirect::temporary(&url).into_response(),
         None => (

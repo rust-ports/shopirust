@@ -62,11 +62,7 @@ fn platform_arch(process_platform: &str, process_arch: &str) -> Result<(String, 
         "darwin" | "macos" => "macos",
         "linux" => "linux",
         "win32" | "windows" => "windows",
-        other => {
-            return Err(AppError::message(format!(
-                "Unsupported platform {other}"
-            )))
-        }
+        other => return Err(AppError::message(format!("Unsupported platform {other}"))),
     }
     .to_string();
     let arch = match process_arch.to_lowercase().as_str() {
@@ -194,7 +190,9 @@ pub fn wasm_opt_binary() -> DownloadableBinary {
         name: "wasm-opt.cjs".into(),
         version: BINARYEN_VERSION.into(),
         path: bin_dir().join("wasm-opt.cjs"),
-        download_url: format!("https://cdn.jsdelivr.net/npm/binaryen@{BINARYEN_VERSION}/bin/wasm-opt"),
+        download_url: format!(
+            "https://cdn.jsdelivr.net/npm/binaryen@{BINARYEN_VERSION}/bin/wasm-opt"
+        ),
         gzip: false,
     }
 }
@@ -259,12 +257,8 @@ async fn download_once(bin: &DownloadableBinary) -> Result<(), AppError> {
         .await
         .map_err(|e| AppError::message(format!("Downloading {} failed: {e}", bin.name)))?;
 
-    let tmp = tempfile::NamedTempFile::new_in(
-        bin.path
-            .parent()
-            .unwrap_or_else(|| Path::new(".")),
-    )
-    .map_err(|e| AppError::message(e.to_string()))?;
+    let tmp = tempfile::NamedTempFile::new_in(bin.path.parent().unwrap_or_else(|| Path::new(".")))
+        .map_err(|e| AppError::message(e.to_string()))?;
 
     if bin.gzip {
         let mut decoder = GzDecoder::new(&bytes[..]);

@@ -148,8 +148,8 @@ impl BaseCommand for Pull {
             load_app(LoadAppOptions {
                 directory: PathBuf::from(&self.path),
                 config_name: self.config.clone(),
-                        ignore_unknown_extensions: false,
-        })
+                ignore_unknown_extensions: false,
+            })
             .ok()
             .and_then(|a| a.configuration.client_id)
         });

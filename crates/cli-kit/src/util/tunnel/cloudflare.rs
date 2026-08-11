@@ -13,6 +13,8 @@ use tokio::time::timeout;
 const TUNNEL_TIMEOUT_SECS: u64 = 40;
 const DEFAULT_DOMAIN: &str = "trycloudflare.com";
 
+type UrlReadyTx = Arc<Mutex<Option<oneshot::Sender<Result<String, TunnelError>>>>>;
+
 pub struct CloudflareTunnel {
     port: u16,
     status: Arc<Mutex<TunnelStatus>>,
@@ -97,7 +99,7 @@ fn find_connection(line: &str) -> bool {
 fn spawn_reader<R>(
     stream: Option<R>,
     status: Arc<Mutex<TunnelStatus>>,
-    tx: Arc<Mutex<Option<oneshot::Sender<Result<String, TunnelError>>>>>,
+    tx: UrlReadyTx,
     domain: String,
 ) where
     R: AsyncRead + Unpin + Send + 'static,

@@ -38,7 +38,10 @@ pub async fn run_function(
     let runner = resolve_runner_binary(ext).await?;
     download_binary(&runner).await?;
 
-    let mut args: Vec<String> = vec!["-f".into(), ext.function_output_path().display().to_string()];
+    let mut args: Vec<String> = vec![
+        "-f".into(),
+        ext.function_output_path().display().to_string(),
+    ];
     if let Some(ref input_path) = options.input_path {
         args.push("--input".into());
         args.push(input_path.display().to_string());

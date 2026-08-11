@@ -1,14 +1,11 @@
 //! WebSocket message handlers (unit-testable without a live socket).
 
 use super::models::{EventType, IncomingMessage, LogPayload};
-use crate::services::dev::extension::payload::store::ExtensionsPayloadStore;
 use crate::services::dev::extension::payload::models::UIExtensionPayload;
+use crate::services::dev::extension::payload::store::ExtensionsPayloadStore;
 use serde_json::{json, Value};
 
-pub fn build_connected_payload(
-    store: &ExtensionsPayloadStore,
-    manifest_version: &str,
-) -> Value {
+pub fn build_connected_payload(store: &ExtensionsPayloadStore, manifest_version: &str) -> Value {
     json!({
         "event": "connected",
         "data": store.get_connected_payload(),
@@ -40,10 +37,7 @@ pub fn build_outgoing_dispatch(
         if let Some(data) = obj.get_mut("data").and_then(|d| d.as_object_mut()) {
             data.insert("extensions".into(), json!([]));
             data.insert("store".into(), json!(raw.store));
-            data.insert(
-                "app".into(),
-                json!({ "apiKey": raw.app.api_key }),
-            );
+            data.insert("app".into(), json!({ "apiKey": raw.app.api_key }));
         }
     }
     out
@@ -256,7 +250,8 @@ mod tests {
     #[test]
     fn log_does_not_notify() {
         let mut store = store_with_key("key");
-        let msg = r#"{"event":"log","data":{"type":"info","message":"[\"hi\"]","extensionName":"ext"}}"#;
+        let msg =
+            r#"{"event":"log","data":{"type":"info","message":"[\"hi\"]","extensionName":"ext"}}"#;
         assert!(handle_incoming_message(msg, &mut store, "3").is_none());
     }
 

@@ -164,9 +164,9 @@ async fn start_tunnel_if_needed(
             cf.start()
                 .await
                 .map_err(|e| CliError::abort(e.to_string()))?;
-            let url = cf.get_url().ok_or_else(|| {
-                CliError::abort("Cloudflare tunnel started but URL was empty")
-            })?;
+            let url = cf
+                .get_url()
+                .ok_or_else(|| CliError::abort("Cloudflare tunnel started but URL was empty"))?;
             Ok((Some(url), Some(port), Some(cf)))
         }
         _ => Ok((None, None, None)),

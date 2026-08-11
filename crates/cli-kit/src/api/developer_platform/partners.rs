@@ -1,10 +1,10 @@
 use async_trait::async_trait;
 use cli_api::types::{
-    filter_disabled_flags, AccountInfo, ApiSecretKey, AppLogsFetchResult, AppLogsSubscribeVariables,
-    AppVersion, AppVersionIdentifiers, AppVersionWithContext, AssetUrlSchema, BundleFormat,
-    ClientName, CreateAppOptions, ExtensionTemplatesResult, MinimalAppIdentifiers,
-    MinimalOrganizationApp, Organization, OrganizationApp, OrganizationSource, OrganizationStore,
-    Paginateable, RemoteSpecification,
+    filter_disabled_flags, AccountInfo, ApiSecretKey, AppLogsFetchResult,
+    AppLogsSubscribeVariables, AppVersion, AppVersionIdentifiers, AppVersionWithContext,
+    AssetUrlSchema, BundleFormat, ClientName, CreateAppOptions, ExtensionTemplatesResult,
+    MinimalAppIdentifiers, MinimalOrganizationApp, Organization, OrganizationApp,
+    OrganizationSource, OrganizationStore, Paginateable, RemoteSpecification,
 };
 use cli_api::{CliApiError, DeveloperPlatformClient};
 use serde_json::Value;
