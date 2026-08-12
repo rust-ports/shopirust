@@ -1823,7 +1823,7 @@ pub struct Check {
     output: String,
     #[arg(long, env = "SHOPIFY_FLAG_PRINT")]
     print: bool,
-    #[arg(short = 'v', long, env = "SHOPIFY_FLAG_VERSION")]
+    #[arg(long, env = "SHOPIFY_FLAG_VERSION")]
     version: bool,
     #[arg(short = 'e', long, env = "SHOPIFY_FLAG_ENVIRONMENT", action = clap::ArgAction::Append)]
     environment: Vec<String>,
