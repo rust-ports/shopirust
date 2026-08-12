@@ -87,10 +87,26 @@ pub fn theme_environment_info_json(
         store: store.unwrap_or("Not configured").to_string(),
         development_theme_id,
         cli_version: cli_version.to_string(),
-        os: format!("{}-{}", std::env::consts::OS, std::env::consts::ARCH),
+        os: npm_platform_arch(std::env::consts::OS, std::env::consts::ARCH),
         shell: shell.unwrap_or("unknown").to_string(),
         node_version: "node-rust".to_string(),
     }
+}
+
+/// npm/oclif-style platform label, e.g. `darwin-arm64`, `linux-x64`.
+fn npm_platform_arch(os: &str, arch: &str) -> String {
+    let platform = match os {
+        "macos" | "darwin" => "darwin",
+        "windows" => "win32",
+        other => other,
+    };
+    let arch = match arch {
+        "aarch64" | "arm" => "arm64",
+        "x86_64" => "x64",
+        "i686" | "x86" => "ia32",
+        other => other,
+    };
+    format!("{platform}-{arch}")
 }
 
 #[cfg(test)]
@@ -106,6 +122,16 @@ mod tests {
         assert_eq!(info.cli_version, "1.2.3");
         assert_eq!(info.shell, "unknown");
         assert_eq!(info.node_version, "node-rust");
+        assert_eq!(
+            info.os,
+            npm_platform_arch(std::env::consts::OS, std::env::consts::ARCH)
+        );
+    }
+
+    #[test]
+    fn npm_platform_arch_uses_node_style_labels() {
+        assert_eq!(npm_platform_arch("macos", "aarch64"), "darwin-arm64");
+        assert_eq!(npm_platform_arch("linux", "x86_64"), "linux-x64");
     }
 
     #[test]

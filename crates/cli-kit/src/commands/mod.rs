@@ -82,8 +82,9 @@ impl TopicCommand for CliTopic {
             }
             Self::Version => {
                 println!(
-                    "@shopify/cli/{} linux-x64 node-rust",
-                    env!("CARGO_PKG_VERSION")
+                    "@shopify/cli/{} {} node-rust",
+                    env!("CARGO_PKG_VERSION"),
+                    crate::util::system::host_npm_platform_arch()
                 );
                 Ok(())
             }

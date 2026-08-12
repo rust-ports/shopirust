@@ -426,4 +426,23 @@ mod tests {
         assert_eq!(bin.name, "function-runner");
         assert!(bin.path.to_string_lossy().contains("function-runner-"));
     }
+
+    #[test]
+    fn host_download_urls_match_compile_target_os() {
+        let (platform, arch) =
+            platform_arch(std::env::consts::OS, std::env::consts::ARCH).unwrap();
+        let expected = format!("{arch}-{platform}");
+        let javy = javy_binary(PREFERRED_JAVY_VERSION).unwrap();
+        let runner = function_runner_binary(PREFERRED_FUNCTION_RUNNER_VERSION).unwrap();
+        assert!(
+            javy.download_url().contains(&expected),
+            "javy url {} should contain {expected}",
+            javy.download_url()
+        );
+        assert!(
+            runner.download_url().contains(&expected),
+            "function-runner url {} should contain {expected}",
+            runner.download_url()
+        );
+    }
 }

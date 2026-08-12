@@ -102,6 +102,30 @@ pub fn is_stdin_piped() -> bool {
     !std::io::stdin().is_terminal()
 }
 
+/// npm/oclif-style platform label, e.g. `darwin-arm64`, `linux-x64`, `win32-x64`.
+pub fn npm_platform_arch(
+    os: &str,
+    arch: &str,
+) -> String {
+    let platform = match os {
+        "macos" | "darwin" => "darwin",
+        "windows" => "win32",
+        other => other,
+    };
+    let arch = match arch {
+        "aarch64" | "arm" => "arm64",
+        "x86_64" => "x64",
+        "i686" | "x86" => "ia32",
+        other => other,
+    };
+    format!("{platform}-{arch}")
+}
+
+/// Host platform label derived from the compiled target (`std::env::consts`).
+pub fn host_npm_platform_arch() -> String {
+    npm_platform_arch(std::env::consts::OS, std::env::consts::ARCH)
+}
+
 pub async fn read_stdin_string() -> Option<String> {
     if !is_stdin_piped() {
         return None;
@@ -152,5 +176,24 @@ mod tests {
     #[test]
     fn test_terminal_supports_hyperlinks_no_panic() {
         let _ = terminal_supports_hyperlinks();
+    }
+
+    #[test]
+    fn npm_platform_arch_maps_common_targets() {
+        assert_eq!(npm_platform_arch("macos", "aarch64"), "darwin-arm64");
+        assert_eq!(npm_platform_arch("darwin", "x86_64"), "darwin-x64");
+        assert_eq!(npm_platform_arch("linux", "x86_64"), "linux-x64");
+        assert_eq!(npm_platform_arch("linux", "aarch64"), "linux-arm64");
+        assert_eq!(npm_platform_arch("windows", "x86_64"), "win32-x64");
+    }
+
+    #[test]
+    fn host_npm_platform_arch_matches_compile_target() {
+        let host = host_npm_platform_arch();
+        assert_eq!(
+            host,
+            npm_platform_arch(std::env::consts::OS, std::env::consts::ARCH)
+        );
+        assert!(!host.contains("linux-x64") || std::env::consts::OS == "linux");
     }
 }
