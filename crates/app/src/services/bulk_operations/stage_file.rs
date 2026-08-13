@@ -89,9 +89,10 @@ pub async fn upload_staged_jsonl(
             .await
             .map_err(|e| AppError::message(e.to_string()))?;
         if !resp.status().is_success() {
+            let status = resp.status();
+            let body = resp.text().await.unwrap_or_default();
             return Err(AppError::message(format!(
-                "Staged upload failed: HTTP {}",
-                resp.status()
+                "Staged upload failed: HTTP {status} {body}"
             )));
         }
         return Ok(());
@@ -115,9 +116,10 @@ pub async fn upload_staged_jsonl(
         .await
         .map_err(|e| AppError::message(e.to_string()))?;
     if !resp.status().is_success() {
+        let status = resp.status();
+        let body = resp.text().await.unwrap_or_default();
         return Err(AppError::message(format!(
-            "Staged upload failed: HTTP {}",
-            resp.status()
+            "Staged upload failed: HTTP {status} {body}"
         )));
     }
     Ok(())

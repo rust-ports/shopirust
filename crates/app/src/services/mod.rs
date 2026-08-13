@@ -38,13 +38,16 @@ pub use app_logs::{
 };
 pub use build::{build_app, bundle_and_build_extensions, BuildOptions, BuildResult};
 pub use bulk_operations::{
-    cancel_bulk_operation, execute_bulk_operation, extract_bulk_operation_id,
-    format_bulk_operation_cancellation_result, format_bulk_operation_status,
-    format_bulk_operation_user_errors, get_bulk_operation_status, list_bulk_operations,
+    cancel_bulk_operation, download_bulk_operation_results, execute_bulk_operation,
+    extract_bulk_operation_id, extract_list_nodes, extract_operation_node,
+    format_bulk_operation_cancellation_result, format_bulk_operation_list_row,
+    format_bulk_operation_status, format_bulk_operation_user_errors, get_bulk_operation_status,
+    is_graphql_mutation, list_bulk_operations, list_created_at_filter,
     normalize_bulk_operation_id, parse_bulk_operation_status, resolve_mutation_jsonl,
-    staged_upload_path_from_response, upload_staged_jsonl, watch_bulk_operation,
-    BulkOperationCancellationResult, BulkOperationStatus, ExecuteBulkOptions,
-    BULK_OPERATIONS_MIN_API_VERSION,
+    results_contain_user_errors, short_bulk_operation_poll, staged_upload_path_from_response,
+    upload_staged_jsonl, watch_bulk_operation, BulkAdminClient, BulkOperationCancellationResult,
+    BulkOperationStatus, ExecuteBulkOptions, ExecuteBulkResult, HttpBulkAdminClient,
+    MockBulkAdminClient, WatchOptions, BULK_OPERATIONS_MIN_API_VERSION,
 };
 pub use config::{
     add_uid_to_extension_toml, fetch_app_remote_configuration, link_config,

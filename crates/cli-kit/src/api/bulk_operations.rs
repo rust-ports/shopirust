@@ -61,9 +61,21 @@ impl BulkOperationsClient {
             .await
     }
 
-    pub async fn list(&self) -> Result<Value, GraphqlRequestError> {
+    pub async fn list(
+        &self,
+        first: i64,
+        sort_key: &str,
+        query: Option<&str>,
+    ) -> Result<Value, GraphqlRequestError> {
         self.graphql
-            .query(list_bulk_operations::LIST_BULK_OPERATIONS_QUERY)
+            .query_with_variables(
+                list_bulk_operations::LIST_BULK_OPERATIONS_QUERY,
+                Some(serde_json::json!({
+                    "first": first,
+                    "sortKey": sort_key,
+                    "query": query,
+                })),
+            )
             .await
     }
 

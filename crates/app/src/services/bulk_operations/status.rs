@@ -1,4 +1,7 @@
 use crate::error::AppError;
+use crate::services::bulk_operations::client::{
+    extract_list_nodes, extract_operation_node, list_created_at_filter, BulkAdminClient,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -18,95 +21,52 @@ pub struct BulkOperationStatus {
 }
 
 /// Normalize bulk operation IDs to the Admin GID form.
+/// Only numeric IDs are prefixed (upstream `/^\d+$/`); other strings are left as-is.
 pub fn normalize_bulk_operation_id(id: &str) -> String {
     if id.starts_with("gid://") {
         return id.to_string();
     }
-    format!("gid://shopify/BulkOperation/{id}")
+    if !id.is_empty() && id.chars().all(|c| c.is_ascii_digit()) {
+        return format!("gid://shopify/BulkOperation/{id}");
+    }
+    id.to_string()
 }
 
 pub async fn get_bulk_operation_status(
-    admin_graphql_url: &str,
-    token: &str,
+    client: &dyn BulkAdminClient,
     id: &str,
 ) -> Result<BulkOperationStatus, AppError> {
     let gid = normalize_bulk_operation_id(id);
-    let query = r#"
-      query GetBulkOperation($id: ID!) {
-        node(id: $id) {
-          ... on BulkOperation {
-            id
-            status
-            errorCode
-            createdAt
-            completedAt
-            objectCount
-            fileSize
-            url
-            partialDataUrl
-            type
-          }
-        }
-      }
-    "#;
-    let client = reqwest::Client::new();
-    let resp = client
-        .post(admin_graphql_url)
-        .header("X-Shopify-Access-Token", token)
-        .json(&serde_json::json!({ "query": query, "variables": { "id": gid } }))
-        .send()
-        .await
-        .map_err(|e| AppError::message(e.to_string()))?;
-    let value: Value = resp
-        .json()
-        .await
-        .map_err(|e| AppError::message(e.to_string()))?;
-    let node = value
-        .pointer("/data/node")
+    let value = client.get_by_id(&gid).await?;
+    let node = extract_operation_node(&value)
         .ok_or_else(|| AppError::message(format!("Bulk operation not found: {gid}")))?;
     Ok(parse_bulk_operation_status(node))
 }
 
 pub async fn list_bulk_operations(
-    admin_graphql_url: &str,
-    token: &str,
+    client: &dyn BulkAdminClient,
 ) -> Result<Vec<BulkOperationStatus>, AppError> {
-    let query = r#"
-      query ListBulkOperations {
-        bulkOperations(first: 25, reverse: true) {
-          nodes {
-            id
-            status
-            errorCode
-            createdAt
-            completedAt
-            objectCount
-            fileSize
-            url
-            partialDataUrl
-            type
-          }
-        }
-      }
-    "#;
-    let client = reqwest::Client::new();
-    let resp = client
-        .post(admin_graphql_url)
-        .header("X-Shopify-Access-Token", token)
-        .json(&serde_json::json!({ "query": query }))
-        .send()
-        .await
-        .map_err(|e| AppError::message(e.to_string()))?;
-    let value: Value = resp
-        .json()
-        .await
-        .map_err(|e| AppError::message(e.to_string()))?;
-    let nodes = value
-        .pointer("/data/bulkOperations/nodes")
-        .and_then(|v| v.as_array())
-        .cloned()
-        .unwrap_or_default();
-    Ok(nodes.iter().map(parse_bulk_operation_status).collect())
+    let filter = list_created_at_filter();
+    let value = client.list(100, "CREATED_AT", Some(&filter)).await?;
+    Ok(extract_list_nodes(&value)
+        .iter()
+        .map(parse_bulk_operation_status)
+        .collect())
+}
+
+/// One-line list row: id, status, count, created, download URL.
+pub fn format_bulk_operation_list_row(operation: &BulkOperationStatus) -> String {
+    let count = operation.object_count.as_deref().unwrap_or("-");
+    let created = operation.created_at.as_deref().unwrap_or("-");
+    let download = operation
+        .url
+        .as_deref()
+        .or(operation.partial_data_url.as_deref())
+        .unwrap_or("-");
+    format!(
+        "{}  {}  objects={}  created={}  download={}",
+        operation.id, operation.status, count, created, download
+    )
 }
 
 /// Extract the numeric ID from a GID like `gid://shopify/BulkOperation/123`.
@@ -293,6 +253,10 @@ mod tests {
             normalize_bulk_operation_id("gid://shopify/BulkOperation/9"),
             "gid://shopify/BulkOperation/9"
         );
+        assert_eq!(
+            normalize_bulk_operation_id("not-a-number"),
+            "not-a-number"
+        );
     }
 
     #[test]
@@ -478,5 +442,45 @@ mod tests {
     fn cancellation_omits_completed_at_when_missing() {
         let result = format_bulk_operation_cancellation_result(&mock_op("CANCELED", "0", "QUERY"));
         assert!(!result.details.iter().any(|d| d.contains("Completed at")));
+    }
+
+    #[tokio::test]
+    async fn get_status_parses_bulk_operation_pointer() {
+        use crate::services::bulk_operations::client::MockBulkAdminClient;
+        let mock = MockBulkAdminClient::default();
+        *mock.get_by_id_queue.lock().unwrap() = vec![serde_json::json!({
+            "bulkOperation": {
+                "id": "gid://shopify/BulkOperation/1",
+                "status": "COMPLETED",
+                "url": "https://example.com/r.jsonl"
+            }
+        })];
+        let status = get_bulk_operation_status(&mock, "1").await.unwrap();
+        assert_eq!(status.status, "COMPLETED");
+        assert_eq!(status.url.as_deref(), Some("https://example.com/r.jsonl"));
+    }
+
+    #[tokio::test]
+    async fn list_sends_seven_day_filter() {
+        use crate::services::bulk_operations::client::MockBulkAdminClient;
+        let mock = MockBulkAdminClient::default();
+        *mock.list_response.lock().unwrap() = Some(serde_json::json!({
+            "bulkOperations": {
+                "nodes": [{ "id": "gid://shopify/BulkOperation/1", "status": "COMPLETED" }]
+            }
+        }));
+        let list = list_bulk_operations(&mock).await.unwrap();
+        assert_eq!(list.len(), 1);
+        let calls = mock.list_calls.lock().unwrap();
+        assert_eq!(calls[0].0, 100);
+        assert_eq!(calls[0].1, "CREATED_AT");
+        assert!(calls[0].2.as_ref().unwrap().starts_with("created_at:>="));
+    }
+
+    #[test]
+    fn list_row_includes_download() {
+        let row = format_bulk_operation_list_row(&mock_op("COMPLETED", "3", "QUERY"));
+        assert!(row.contains("COMPLETED"));
+        assert!(row.contains("objects=3"));
     }
 }

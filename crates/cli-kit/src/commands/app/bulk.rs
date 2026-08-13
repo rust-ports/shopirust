@@ -1,98 +1,103 @@
+use app::error::AppError;
 use app::services::{
-    normalize_bulk_operation_id, parse_bulk_operation_status, resolve_mutation_jsonl,
-    staged_upload_path_from_response, upload_staged_jsonl, BulkOperationStatus,
+    cancel_bulk_operation, execute_bulk_operation, extract_bulk_operation_id,
+    format_bulk_operation_list_row, format_bulk_operation_status, get_bulk_operation_status,
+    list_bulk_operations, BulkAdminClient, BulkOperationStatus, ExecuteBulkOptions,
     BULK_OPERATIONS_MIN_API_VERSION,
 };
+use async_trait::async_trait;
 use cli_core::command::BaseCommand;
 use cli_core::error::CliError;
+use serde_json::Value;
 use std::path::PathBuf;
-use std::time::Duration;
+use tokio_util::sync::CancellationToken;
 
 use super::auth_helpers::admin_graphql_url;
 use crate::api::bulk_operations::BulkOperationsClient;
 use crate::session::ensure_authenticated_themes;
 
-fn read_query(query: &Option<String>, query_file: &Option<String>) -> Result<String, CliError> {
-    if let Some(q) = query {
-        return Ok(q.clone());
+struct BulkAdapter(BulkOperationsClient);
+
+#[async_trait]
+impl BulkAdminClient for BulkAdapter {
+    async fn run_query(&self, query: &str) -> Result<Value, AppError> {
+        self.0
+            .run_query(query)
+            .await
+            .map_err(|e| AppError::message(e.to_string()))
     }
-    if let Some(path) = query_file {
-        return std::fs::read_to_string(path).map_err(|e| CliError::abort(e.to_string()));
+
+    async fn run_mutation(
+        &self,
+        mutation: &str,
+        staged_upload_path: &str,
+    ) -> Result<Value, AppError> {
+        self.0
+            .run_mutation(mutation, staged_upload_path)
+            .await
+            .map_err(|e| AppError::message(e.to_string()))
     }
-    Err(CliError::abort(
-        "Provide --query or --query-file for the bulk operation",
-    ))
+
+    async fn staged_uploads_create(&self, input: Value) -> Result<Value, AppError> {
+        self.0
+            .staged_uploads_create(input)
+            .await
+            .map_err(|e| AppError::message(e.to_string()))
+    }
+
+    async fn get_by_id(&self, id: &str) -> Result<Value, AppError> {
+        self.0
+            .get_by_id(id)
+            .await
+            .map_err(|e| AppError::message(e.to_string()))
+    }
+
+    async fn list(
+        &self,
+        first: i64,
+        sort_key: &str,
+        query: Option<&str>,
+    ) -> Result<Value, AppError> {
+        self.0
+            .list(first, sort_key, query)
+            .await
+            .map_err(|e| AppError::message(e.to_string()))
+    }
+
+    async fn cancel(&self, id: &str) -> Result<Value, AppError> {
+        self.0
+            .cancel(id)
+            .await
+            .map_err(|e| AppError::message(e.to_string()))
+    }
 }
 
-fn extract_op_id(value: &serde_json::Value) -> Option<String> {
-    value
-        .pointer("/bulkOperationRunQuery/bulkOperation/id")
-        .or_else(|| value.pointer("/data/bulkOperationRunQuery/bulkOperation/id"))
-        .or_else(|| value.pointer("/bulkOperationRunMutation/bulkOperation/id"))
-        .or_else(|| value.pointer("/data/bulkOperationRunMutation/bulkOperation/id"))
-        .and_then(|v| v.as_str())
-        .map(str::to_string)
-}
-
-fn user_errors(value: &serde_json::Value) -> Vec<String> {
-    let paths = [
-        "/bulkOperationRunQuery/userErrors",
-        "/data/bulkOperationRunQuery/userErrors",
-        "/bulkOperationRunMutation/userErrors",
-        "/data/bulkOperationRunMutation/userErrors",
-        "/bulkOperationCancel/userErrors",
-        "/data/bulkOperationCancel/userErrors",
-        "/stagedUploadsCreate/userErrors",
-        "/data/stagedUploadsCreate/userErrors",
-    ];
-    for path in paths {
-        if let Some(arr) = value.pointer(path).and_then(|v| v.as_array()) {
-            let msgs: Vec<String> = arr
-                .iter()
-                .filter_map(|e| {
-                    e.get("message")
-                        .and_then(|m| m.as_str())
-                        .map(str::to_string)
-                })
-                .collect();
-            if !msgs.is_empty() {
-                return msgs;
-            }
-        }
-    }
-    Vec::new()
-}
-
-async fn status_via_client(
-    client: &BulkOperationsClient,
-    id: &str,
-) -> Result<BulkOperationStatus, CliError> {
-    let gid = normalize_bulk_operation_id(id);
-    let value = client
-        .get_by_id(&gid)
+async fn authenticated_client(
+    store: &str,
+    version: &str,
+) -> Result<BulkAdapter, CliError> {
+    let version = if version < BULK_OPERATIONS_MIN_API_VERSION {
+        BULK_OPERATIONS_MIN_API_VERSION
+    } else {
+        version
+    };
+    let session = ensure_authenticated_themes(store, None)
         .await
         .map_err(|e| CliError::abort(e.to_string()))?;
-    let node = value
-        .pointer("/node")
-        .or_else(|| value.pointer("/data/node"))
-        .ok_or_else(|| CliError::abort(format!("Bulk operation not found: {gid}")))?;
-    Ok(parse_bulk_operation_status(node))
+    let url = admin_graphql_url(&session.store_fqdn, version);
+    Ok(BulkAdapter(BulkOperationsClient::new(
+        url,
+        session.token,
+    )))
 }
 
-async fn watch_via_client(
-    client: &BulkOperationsClient,
-    id: &str,
-) -> Result<BulkOperationStatus, CliError> {
-    for _ in 0..120 {
-        let status = status_via_client(client, id).await?;
-        match status.status.as_str() {
-            "COMPLETED" | "FAILED" | "CANCELED" | "EXPIRED" => return Ok(status),
-            _ => tokio::time::sleep(Duration::from_secs(2)).await,
-        }
+fn print_operation(op: &BulkOperationStatus) {
+    println!("{}", format_bulk_operation_status(op));
+    println!("ID: {}", op.id);
+    println!("Status: {}", op.status);
+    if let Some(url) = op.url.as_deref().or(op.partial_data_url.as_deref()) {
+        println!("Download: {url}");
     }
-    Err(CliError::abort(
-        "Timed out waiting for bulk operation to complete",
-    ))
 }
 
 #[derive(Debug)]
@@ -145,86 +150,70 @@ impl BaseCommand for BulkExecute {
     }
 
     async fn run(&self) -> Result<(), CliError> {
-        let version = if self.version.as_str() < BULK_OPERATIONS_MIN_API_VERSION {
-            BULK_OPERATIONS_MIN_API_VERSION.to_string()
-        } else {
-            self.version.clone()
-        };
-        let session = ensure_authenticated_themes(&self.store, None)
-            .await
-            .map_err(|e| CliError::abort(e.to_string()))?;
-        let url = admin_graphql_url(&session.store_fqdn, &version);
-        let client = BulkOperationsClient::new(url.clone(), session.token.clone());
-
-        let query_text = read_query(&self.query, &self.query_file)?;
-        let is_mutation = query_text
-            .trim_start()
-            .to_lowercase()
-            .starts_with("mutation");
-
-        let raw = if is_mutation {
-            let jsonl = resolve_mutation_jsonl(
-                self.variables.as_deref(),
-                self.variable_file.as_ref().map(PathBuf::from).as_deref(),
-            )
-            .map_err(|e| CliError::abort(e.to_string()))?;
-
-            let staged = client
-                .staged_uploads_create(serde_json::json!([{
-                    "resource": "BULK_MUTATION_VARIABLES",
-                    "filename": "bulk_op_vars",
-                    "mimeType": "text/jsonl",
-                    "httpMethod": "POST",
-                }]))
-                .await
-                .map_err(|e| CliError::abort(e.to_string()))?;
-            let errs = user_errors(&staged);
-            if !errs.is_empty() {
-                return Err(CliError::abort(errs.join("; ")));
-            }
-            let (path, upload_url, form) = staged_upload_path_from_response(&staged)
-                .map_err(|e| CliError::abort(e.to_string()))?;
-            upload_staged_jsonl(&upload_url, &form, &jsonl)
-                .await
-                .map_err(|e| CliError::abort(e.to_string()))?;
-            client
-                .run_mutation(&query_text, &path)
-                .await
-                .map_err(|e| CliError::abort(e.to_string()))?
-        } else {
-            client
-                .run_query(&query_text)
-                .await
-                .map_err(|e| CliError::abort(e.to_string()))?
-        };
-
-        let errs = user_errors(&raw);
-        if !errs.is_empty() {
-            return Err(CliError::abort(errs.join("; ")));
-        }
-
-        let mut operation = None;
-        if let Some(id) = extract_op_id(&raw) {
-            operation = Some(if self.watch {
-                watch_via_client(&client, &id).await?
-            } else {
-                status_via_client(&client, &id).await?
+        let client = authenticated_client(&self.store, &self.version).await?;
+        let abort = CancellationToken::new();
+        let abort_watch = abort.clone();
+        if self.watch {
+            tokio::spawn(async move {
+                let _ = tokio::signal::ctrl_c().await;
+                abort_watch.cancel();
             });
         }
 
-        if let Some(ref path) = self.output_file {
-            let body = if let Some(ref op) = operation {
-                serde_json::to_string_pretty(op).unwrap_or_default()
-            } else {
-                serde_json::to_string_pretty(&raw).unwrap_or_default()
-            };
-            std::fs::write(path, body).map_err(|e| CliError::abort(e.to_string()))?;
+        let result = execute_bulk_operation(
+            &client,
+            ExecuteBulkOptions {
+                query: self.query.clone(),
+                query_file: self.query_file.as_ref().map(PathBuf::from),
+                variables: self.variables.clone(),
+                variable_file: self.variable_file.as_ref().map(PathBuf::from),
+                watch: self.watch,
+                output_file: self.output_file.as_ref().map(PathBuf::from),
+                api_version: self.version.clone(),
+                abort: Some(abort),
+                short_poll_timeout: None,
+            },
+        )
+        .await
+        .map_err(|e| CliError::abort(e.to_string()))?;
+
+        if result.aborted {
+            if let Some(op) = &result.operation {
+                println!(
+                    "Bulk operation {} is still running in the background.",
+                    op.id
+                );
+                println!(
+                    "Monitor its progress with:\nshopify app bulk status --id={}",
+                    extract_bulk_operation_id(&op.id)
+                );
+            }
+            return Ok(());
         }
 
-        if let Some(op) = operation {
-            println!("Bulk operation {} status={}", op.id, op.status);
-        } else {
-            println!("{}", serde_json::to_string_pretty(&raw).unwrap_or_default());
+        if let Some(ref body) = result.results {
+            if self.output_file.is_none() {
+                print!("{body}");
+                if !body.ends_with('\n') {
+                    println!();
+                }
+            } else {
+                println!("Results written to {}", self.output_file.as_deref().unwrap());
+            }
+            if result.results_had_user_errors {
+                println!("Bulk operation completed with errors. Check results for details.");
+            }
+        }
+
+        if let Some(op) = &result.operation {
+            println!("{}", result.headline);
+            if !self.watch && !matches!(op.status.as_str(), "COMPLETED" | "FAILED" | "CANCELED" | "EXPIRED") {
+                println!(
+                    "Monitor its progress with:\nshopify app bulk status --id={}",
+                    extract_bulk_operation_id(&op.id)
+                );
+            }
+            println!("ID: {}", op.id);
         }
         Ok(())
     }
@@ -256,21 +245,17 @@ impl BaseCommand for BulkCancel {
     }
 
     async fn run(&self) -> Result<(), CliError> {
-        let session = ensure_authenticated_themes(&self.store, None)
+        let client = authenticated_client(&self.store, &self.version).await?;
+        let (_, formatted) = cancel_bulk_operation(&client, &self.id)
             .await
             .map_err(|e| CliError::abort(e.to_string()))?;
-        let url = admin_graphql_url(&session.store_fqdn, &self.version);
-        let client = BulkOperationsClient::new(url, session.token);
-        let gid = normalize_bulk_operation_id(&self.id);
-        let value = client
-            .cancel(&gid)
-            .await
-            .map_err(|e| CliError::abort(e.to_string()))?;
-        let errs = user_errors(&value);
-        if !errs.is_empty() {
-            return Err(CliError::abort(errs.join("; ")));
+        println!("{}", formatted.headline);
+        if let Some(body) = formatted.body {
+            println!("{body}");
         }
-        println!("Cancelled bulk operation {gid}");
+        for line in formatted.details {
+            println!("{line}");
+        }
         Ok(())
     }
 }
@@ -307,35 +292,24 @@ impl BaseCommand for BulkStatus {
     }
 
     async fn run(&self) -> Result<(), CliError> {
-        let session = ensure_authenticated_themes(&self.store, None)
-            .await
-            .map_err(|e| CliError::abort(e.to_string()))?;
-        let url = admin_graphql_url(&session.store_fqdn, &self.version);
-        let client = BulkOperationsClient::new(url.clone(), session.token.clone());
+        let client = authenticated_client(&self.store, &self.version).await?;
 
         if let Some(ref id) = self.id {
-            let status = status_via_client(&client, id).await?;
+            let status = get_bulk_operation_status(&client, id)
+                .await
+                .map_err(|e| CliError::abort(e.to_string()))?;
             if self.json {
                 println!(
                     "{}",
                     serde_json::to_string_pretty(&status).unwrap_or_default()
                 );
             } else {
-                println!("{}  {}", status.id, status.status);
+                print_operation(&status);
             }
         } else {
-            let value = client
-                .list()
+            let list = list_bulk_operations(&client)
                 .await
                 .map_err(|e| CliError::abort(e.to_string()))?;
-            let nodes = value
-                .pointer("/bulkOperations/nodes")
-                .or_else(|| value.pointer("/data/bulkOperations/nodes"))
-                .and_then(|v| v.as_array())
-                .cloned()
-                .unwrap_or_default();
-            let list: Vec<BulkOperationStatus> =
-                nodes.iter().map(parse_bulk_operation_status).collect();
             if self.json {
                 println!(
                     "{}",
@@ -343,7 +317,7 @@ impl BaseCommand for BulkStatus {
                 );
             } else {
                 for op in list {
-                    println!("{}  {}", op.id, op.status);
+                    println!("{}", format_bulk_operation_list_row(&op));
                 }
             }
         }

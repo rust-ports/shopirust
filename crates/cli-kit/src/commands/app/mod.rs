@@ -92,14 +92,14 @@ pub enum AppVersionsSubcommand {
 pub enum AppBulkSubcommand {
     /// Execute a bulk GraphQL operation
     Execute {
-        #[arg(long = "store", env = "SHOPIFY_FLAG_STORE")]
+        #[arg(short = 's', long = "store", env = "SHOPIFY_FLAG_STORE")]
         store: String,
-        #[arg(long = "query")]
+        #[arg(short = 'q', long = "query")]
         query: Option<String>,
         #[arg(long = "query-file")]
         query_file: Option<String>,
-        #[arg(long = "variables")]
-        variables: Option<String>,
+        #[arg(short = 'v', long = "variables", action = clap::ArgAction::Append)]
+        variables: Vec<String>,
         #[arg(long = "variable-file")]
         variable_file: Option<String>,
         #[arg(long = "watch")]
@@ -111,7 +111,7 @@ pub enum AppBulkSubcommand {
     },
     /// Cancel a bulk GraphQL operation
     Cancel {
-        #[arg(long = "store", env = "SHOPIFY_FLAG_STORE")]
+        #[arg(short = 's', long = "store", env = "SHOPIFY_FLAG_STORE")]
         store: String,
         #[arg(long = "id", required = true)]
         id: String,
@@ -120,7 +120,7 @@ pub enum AppBulkSubcommand {
     },
     /// Show status of bulk GraphQL operations
     Status {
-        #[arg(long = "store", env = "SHOPIFY_FLAG_STORE")]
+        #[arg(short = 's', long = "store", env = "SHOPIFY_FLAG_STORE")]
         store: String,
         #[arg(long = "id")]
         id: Option<String>,
@@ -791,7 +791,11 @@ impl TopicCommand for AppTopic {
                 store,
                 query,
                 query_file,
-                variables,
+                if variables.is_empty() {
+                    None
+                } else {
+                    Some(variables.join("\n"))
+                },
                 variable_file,
                 watch,
                 output_file,
@@ -1231,6 +1235,26 @@ mod tests {
             AppSubcommand::Bulk(AppBulkSubcommand::Execute { store, query, .. }) => {
                 assert_eq!(store, "shop.myshopify.com");
                 assert_eq!(query.as_deref(), Some("{ shop { name } }"));
+            }
+            other => panic!("expected Bulk Execute, got {other:?}"),
+        }
+        match parse(&[
+            "app",
+            "bulk",
+            "execute",
+            "-s",
+            "shop.myshopify.com",
+            "-q",
+            "mutation { x }",
+            "-v",
+            r#"{"id":"1"}"#,
+            "-v",
+            r#"{"id":"2"}"#,
+        ])
+        .unwrap()
+        {
+            AppSubcommand::Bulk(AppBulkSubcommand::Execute { variables, .. }) => {
+                assert_eq!(variables.len(), 2);
             }
             other => panic!("expected Bulk Execute, got {other:?}"),
         }

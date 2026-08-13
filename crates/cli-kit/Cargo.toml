@@ -13,6 +13,7 @@ theme = { path = "../theme" }
 app = { path = "../app" }
 async-trait = "0.1"
 tokio.workspace = true
+tokio-util = { version = "0.7", features = ["rt"] }
 reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true
