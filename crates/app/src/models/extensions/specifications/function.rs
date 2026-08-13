@@ -32,6 +32,7 @@ pub fn function_specification() -> ExtensionSpecification {
         uid_strategy: UidStrategy::Uuid,
         graph_ql_type: None,
         dependency: None,
+        json_schema: None,
     }
 }
 

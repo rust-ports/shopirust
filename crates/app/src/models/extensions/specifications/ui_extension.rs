@@ -30,6 +30,7 @@ pub fn ui_extension_specification() -> ExtensionSpecification {
         uid_strategy: UidStrategy::Uuid,
         graph_ql_type: None,
         dependency: Some("@shopify/checkout-ui-extensions".into()),
+        json_schema: None,
     }
 }
 

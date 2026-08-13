@@ -17,5 +17,6 @@ pub fn theme_specification() -> ExtensionSpecification {
         uid_strategy: UidStrategy::Uuid,
         graph_ql_type: Some("theme_app_extension".into()),
         dependency: None,
+        json_schema: None,
     }
 }

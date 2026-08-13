@@ -29,8 +29,76 @@ pub type LocalParser = fn(&Value) -> ParseConfigurationResult;
 
 const BASE_PROPERTIES: &[&str] = &["type", "handle", "uid", "path", "extensions"];
 
-/// Validate `subject` against a JSON Schema object (required keys + property types).
+/// Validate `subject` against a JSON Schema object.
+///
+/// Uses the `jsonschema` crate for draft-07 (`$ref`, `allOf`, `enum`, …) and
+/// falls back to the lightweight required/type checker if compilation fails.
 pub fn json_schema_validate(subject: &Value, schema: &Value) -> ParseConfigurationResult {
+    if let Ok(validator) = jsonschema::validator_for(schema) {
+        let errors: Vec<SchemaError> = validator
+            .iter_errors(subject)
+            .map(|e| {
+                let message = map_jsonschema_message(&e.to_string());
+                let mut path = instance_path_to_vec(&e.instance_path.to_string());
+                if path.is_empty() {
+                    if let Some(name) = required_property_name(&message) {
+                        path.push(name);
+                    }
+                }
+                SchemaError { path, message }
+            })
+            .collect();
+        return if errors.is_empty() {
+            ParseConfigurationResult {
+                state: ParseState::Ok,
+                data: Some(subject.clone()),
+                errors: None,
+            }
+        } else {
+            ParseConfigurationResult {
+                state: ParseState::Error,
+                data: None,
+                errors: Some(errors),
+            }
+        };
+    }
+    json_schema_validate_simple(subject, schema)
+}
+
+fn instance_path_to_vec(path: &str) -> Vec<String> {
+    path.split('/')
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .collect()
+}
+
+fn required_property_name(message: &str) -> Option<String> {
+    message
+        .strip_prefix("must have required property '")
+        .and_then(|s| s.strip_suffix("'"))
+        .map(str::to_string)
+}
+
+fn map_jsonschema_message(message: &str) -> String {
+    // jsonschema: `"name" is a required property` → AJV-style message used in tests.
+    let trimmed = message.trim();
+    if let Some(name) = trimmed
+        .strip_prefix('"')
+        .and_then(|s| s.split_once("\" is a required property"))
+        .map(|(n, _)| n)
+    {
+        return format!("must have required property '{name}'");
+    }
+    if let Some(rest) = trimmed.strip_prefix('"') {
+        if let Some((_, after)) = rest.split_once("\" is not of type ") {
+            let ty = after.trim().trim_matches('"');
+            return format!("must be {ty}");
+        }
+    }
+    message.to_string()
+}
+
+fn json_schema_validate_simple(subject: &Value, schema: &Value) -> ParseConfigurationResult {
     let mut errors = Vec::new();
     if let Some(required) = schema.get("required").and_then(|v| v.as_array()) {
         for key in required {
@@ -71,6 +139,67 @@ pub fn json_schema_validate(subject: &Value, schema: &Value) -> ParseConfigurati
             data: None,
             errors: Some(errors),
         }
+    }
+}
+
+#[cfg(test)]
+mod draft07_tests {
+    use super::*;
+
+    #[test]
+    fn validates_enum_and_ref() {
+        let schema = serde_json::json!({
+            "$defs": {
+                "mode": { "type": "string", "enum": ["online", "offline"] }
+            },
+            "type": "object",
+            "properties": {
+                "mode": { "$ref": "#/$defs/mode" }
+            },
+            "required": ["mode"]
+        });
+        let ok = json_schema_validate(&serde_json::json!({"mode": "online"}), &schema);
+        assert_eq!(ok.state, ParseState::Ok);
+        let bad = json_schema_validate(&serde_json::json!({"mode": "nope"}), &schema);
+        assert_eq!(bad.state, ParseState::Error);
+    }
+
+    #[test]
+    fn validates_all_of_any_of_nested_required_and_pattern() {
+        let schema = serde_json::json!({
+            "allOf": [
+                {
+                    "type": "object",
+                    "properties": {
+                        "name": { "type": "string", "pattern": "^[A-Z]" }
+                    },
+                    "required": ["name"]
+                },
+                {
+                    "anyOf": [
+                        { "properties": { "kind": { "const": "a" } }, "required": ["kind"] },
+                        { "properties": { "kind": { "const": "b" } }, "required": ["kind"] }
+                    ]
+                }
+            ],
+            "properties": {
+                "nested": {
+                    "type": "object",
+                    "required": ["id"],
+                    "properties": { "id": { "type": "string" } }
+                }
+            }
+        });
+        let ok = json_schema_validate(
+            &serde_json::json!({"name": "Alpha", "kind": "a", "nested": {"id": "1"}}),
+            &schema,
+        );
+        assert_eq!(ok.state, ParseState::Ok);
+        let missing = json_schema_validate(
+            &serde_json::json!({"name": "alpha", "kind": "z"}),
+            &schema,
+        );
+        assert_eq!(missing.state, ParseState::Error);
     }
 }
 

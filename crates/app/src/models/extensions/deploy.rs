@@ -204,9 +204,15 @@ pub fn validate_configuration(
         }
         "flow_action" => {
             require_string(&config, "name")?;
-            require_string(&config, "runtime_url")?;
+            let runtime_url = require_string(&config, "runtime_url")?;
+            crate::services::flow::validate_flow_action_url(&runtime_url)?;
+            validate_flow_extension(&config, crate::services::flow::types::FlowExtensionType::FlowAction)?;
         }
-        "flow_trigger" | "flow_template" | "editor_extension_collection" => {
+        "flow_trigger" => {
+            require_string(&config, "name")?;
+            validate_flow_extension(&config, crate::services::flow::types::FlowExtensionType::FlowTrigger)?;
+        }
+        "flow_template" | "editor_extension_collection" => {
             require_string(&config, "name")?;
         }
         "branding" => {
@@ -227,7 +233,71 @@ pub fn validate_configuration(
         "theme" => validate_theme_extension(directory)?,
         _ => {}
     }
+
+    if let Some(ref schema) = spec.json_schema {
+        let result = crate::utilities::json_schema::json_schema_validate(&config, schema);
+        if result.state == crate::utilities::json_schema::ParseState::Error {
+            let msg = result
+                .errors
+                .unwrap_or_default()
+                .into_iter()
+                .map(|e| e.message)
+                .collect::<Vec<_>>()
+                .join("; ");
+            return Err(AppError::message(msg));
+        }
+    }
     Ok(())
+}
+
+fn validate_flow_extension(
+    config: &Value,
+    ext_type: crate::services::flow::types::FlowExtensionType,
+) -> Result<(), AppError> {
+    use crate::services::flow::{
+        validate_custom_configuration_page_config, validate_field_shape,
+        validate_return_type_config, validate_trigger_schema_presence,
+    };
+    let handle = config
+        .get("handle")
+        .and_then(|v| v.as_str())
+        .unwrap_or("flow");
+    let fields = flow_config_fields(config);
+    for (i, field) in fields.iter().enumerate() {
+        validate_field_shape(field, ext_type, handle, i)?;
+    }
+    let schema = config.get("schema").and_then(|v| v.as_str());
+    match ext_type {
+        crate::services::flow::types::FlowExtensionType::FlowAction => {
+            validate_custom_configuration_page_config(
+                config.get("config_page_url").and_then(|v| v.as_str()),
+                config
+                    .get("config_page_preview_url")
+                    .and_then(|v| v.as_str()),
+                config.get("validation_url").and_then(|v| v.as_str()),
+            )?;
+            validate_return_type_config(
+                config.get("return_type_ref").and_then(|v| v.as_str()),
+                schema,
+            )?;
+        }
+        crate::services::flow::types::FlowExtensionType::FlowTrigger => {
+            validate_trigger_schema_presence(&fields, schema)?;
+        }
+    }
+    Ok(())
+}
+
+fn flow_config_fields(config: &Value) -> Vec<crate::services::flow::types::ConfigField> {
+    config
+        .pointer("/settings/fields")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| serde_json::from_value(v.clone()).ok())
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 /// Patch local config with app-dev URLs (app_access / app_home / app_proxy / flow_action).
@@ -563,30 +633,52 @@ async fn deploy_flow_action(
     ctx: &DeployConfigContext,
 ) -> Result<Option<Value>, AppError> {
     let app_url = application_url(ctx);
-    let resolve = |key: &str| -> Option<String> {
-        config
-            .get(key)
-            .and_then(|v| v.as_str())
-            .map(|u| prepend_application_url(u, &app_url))
+    let resolve = |key: &str| -> Result<Option<String>, AppError> {
+        let Some(raw) = config.get(key).and_then(|v| v.as_str()) else {
+            return Ok(None);
+        };
+        Ok(Some(crate::services::flow::resolve_flow_action_url(
+            key,
+            raw,
+            Some(app_url.as_str()).filter(|s| !s.is_empty()),
+        )?))
     };
-    let schema_patch = load_schema_patch(directory, config.get("schema"))?;
-    let fields = serialize_flow_fields(config.pointer("/settings/fields"));
+    let schema_rel = config.get("schema").and_then(|v| v.as_str());
+    let schema_patch = crate::services::flow::load_schema_from_path(directory, schema_rel)?;
+    let schema_patch = if schema_patch.is_empty() {
+        None
+    } else {
+        Some(schema_patch)
+    };
+    let fields = crate::services::flow::serialize_fields(
+        crate::services::flow::types::FlowExtensionType::FlowAction,
+        Some(&flow_config_fields(config)),
+    )?;
     Ok(Some(json!({
         "title": config.get("name"),
         "description": config.get("description"),
-        "url": resolve("runtime_url"),
+        "url": resolve("runtime_url")?,
         "fields": fields,
-        "validation_url": resolve("validation_url"),
-        "custom_configuration_page_url": resolve("config_page_url"),
-        "custom_configuration_page_preview_url": resolve("config_page_preview_url"),
+        "validation_url": resolve("validation_url")?,
+        "custom_configuration_page_url": resolve("config_page_url")?,
+        "custom_configuration_page_preview_url": resolve("config_page_preview_url")?,
         "schema_patch": schema_patch,
         "return_type_ref": config.get("return_type_ref"),
     })))
 }
 
 async fn deploy_flow_trigger(config: &Value, directory: &Path) -> Result<Option<Value>, AppError> {
-    let schema_patch = load_schema_patch(directory, config.get("schema"))?;
-    let fields = serialize_flow_fields(config.pointer("/settings/fields"));
+    let schema_rel = config.get("schema").and_then(|v| v.as_str());
+    let schema_patch = crate::services::flow::load_schema_from_path(directory, schema_rel)?;
+    let schema_patch = if schema_patch.is_empty() {
+        None
+    } else {
+        Some(schema_patch)
+    };
+    let fields = crate::services::flow::serialize_fields(
+        crate::services::flow::types::FlowExtensionType::FlowTrigger,
+        Some(&flow_config_fields(config)),
+    )?;
     Ok(Some(json!({
         "title": config.get("name"),
         "description": config.get("description"),
@@ -646,27 +738,6 @@ async fn deploy_contract(
         }
     }
     Ok(Some(parsed))
-}
-
-fn serialize_flow_fields(fields: Option<&Value>) -> Value {
-    let Some(Value::Array(items)) = fields else {
-        return Value::Array(vec![]);
-    };
-    Value::Array(items.clone())
-}
-
-fn load_schema_patch(directory: &Path, schema: Option<&Value>) -> Result<Option<String>, AppError> {
-    let Some(rel) = schema.and_then(|v| v.as_str()) else {
-        return Ok(None);
-    };
-    let path = directory.join(rel);
-    if !path.is_file() {
-        return Err(AppError::message(format!(
-            "Schema file not found: {}",
-            path.display()
-        )));
-    }
-    Ok(Some(fs::read_to_string(path)?))
 }
 
 fn dependency_version(directory: &Path, package: &str) -> Option<String> {
@@ -803,6 +874,7 @@ mod tests {
             uid_strategy: UidStrategy::Uuid,
             graph_ql_type: None,
             dependency: None,
+            json_schema: None,
         }
     }
 

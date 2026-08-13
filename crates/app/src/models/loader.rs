@@ -2,7 +2,9 @@ use crate::error::AppError;
 use crate::models::app::{AppConfiguration, AppHiddenConfig};
 use crate::models::config_file_naming::get_app_configuration_file_name;
 use crate::models::extensions::extension_instance::ExtensionInstance;
-use crate::models::extensions::specification::create_extension_specification;
+use crate::models::extensions::specification::{
+    create_extension_specification, ExtensionFeature,
+};
 use crate::models::extensions::specifications::{
     is_config_specification, APP_SCHEMA_KEYS, CONFIG_SPEC_ORDER,
 };
@@ -154,6 +156,10 @@ fn load_from_config_path(
                 .map(|s| s.to_string_lossy().into_owned())
         })
         .unwrap_or_else(|| "app".into());
+
+    if let Some(ref url) = configuration.application_url {
+        validate_application_url(url)?;
+    }
 
     let mut errors = Vec::new();
     let mut extensions = load_folder_extensions(directory, &configuration, &mut errors)?;
@@ -429,6 +435,17 @@ fn build_extension_instance(
         .and_then(|v| v.as_str())
         .map(str::to_string);
     instance.entry_path = find_entry_path(directory, &instance);
+    let needs_entry = instance
+        .specification
+        .features
+        .contains(&ExtensionFeature::SingleJsEntryPath)
+        || instance.is_function_extension();
+    if needs_entry && instance.entry_path.is_none() {
+        return Err(AppError::message(format!(
+            "Couldn't find an index.{{js,jsx,ts,tsx}} source file in {}",
+            directory.display()
+        )));
+    }
     Ok(instance)
 }
 
@@ -509,6 +526,7 @@ fn create_config_extension_instances(
 
         if spec_id == "webhooks" {
             if let Some(subs) = section.get("subscriptions").and_then(|v| v.as_array()) {
+                validate_webhook_subscriptions(subs, errors);
                 for (idx, sub) in subs.iter().enumerate() {
                     let topics = extract_webhook_topics(sub);
                     if topics.is_empty() {
@@ -591,6 +609,51 @@ fn config_module_instance(
         obj,
         specification,
     ))
+}
+
+fn validate_application_url(url: &str) -> Result<(), AppError> {
+    match url::Url::parse(url) {
+        Ok(parsed) if parsed.scheme() == "http" || parsed.scheme() == "https" => Ok(()),
+        _ => Err(AppError::message(format!(
+            "application_url must be a valid HTTP(S) URL, got '{url}'"
+        ))),
+    }
+}
+
+fn validate_webhook_uri(uri: &str) -> Result<(), String> {
+    if uri.starts_with('/')
+        || uri.starts_with("https://")
+        || uri.starts_with("http://")
+        || uri.starts_with("pubsub://")
+        || uri.starts_with("arn:aws:events:")
+    {
+        Ok(())
+    } else {
+        Err(format!(
+            "Invalid webhook uri '{uri}'. Must be https, a relative path, pubsub://, or an EventBridge ARN."
+        ))
+    }
+}
+
+fn validate_webhook_subscriptions(subs: &[toml::Value], errors: &mut Vec<String>) {
+    let mut seen = HashSet::new();
+    for sub in subs {
+        if let Some(uri) = sub.get("uri").and_then(|v| v.as_str()) {
+            if let Err(msg) = validate_webhook_uri(uri) {
+                errors.push(msg);
+            }
+        }
+        let filter = sub.get("filter").and_then(|v| v.as_str()).unwrap_or("");
+        let uri = sub.get("uri").and_then(|v| v.as_str()).unwrap_or("");
+        for topic in extract_webhook_topics(sub) {
+            let key = format!("{topic}|{uri}|{filter}");
+            if !seen.insert(key) {
+                errors.push(format!(
+                    "Duplicate webhook subscription for topic '{topic}' and uri '{uri}'"
+                ));
+            }
+        }
+    }
 }
 
 fn extract_webhook_topics(sub: &toml::Value) -> Vec<String> {
@@ -1099,6 +1162,8 @@ extension_directories = ["custom_extensions"]
             "type = \"function\"\nhandle = \"foo\"\n",
         )
         .unwrap();
+        fs::create_dir_all(ext.join("src")).unwrap();
+        fs::write(ext.join("src/index.js"), "export default {};\n").unwrap();
         let app = load_app(LoadAppOptions {
             directory: dir.path().to_path_buf(),
             config_name: None,
@@ -1233,6 +1298,8 @@ port = 3001
             "type = \"function\"\nhandle = \"discount\"\nname = \"Discount\"\napi_version = \"2024-10\"\n",
         )
         .unwrap();
+        fs::create_dir_all(ext.join("src")).unwrap();
+        fs::write(ext.join("src/index.js"), "export default {};\n").unwrap();
         let app = load_app(LoadAppOptions {
             directory: dir.path().to_path_buf(),
             config_name: None,
@@ -1265,6 +1332,8 @@ module = "./src/Checkout.jsx"
 "#,
         )
         .unwrap();
+        fs::create_dir_all(ext.join("src")).unwrap();
+        fs::write(ext.join("src/index.jsx"), "export default {};\n").unwrap();
         let app = load_app(LoadAppOptions {
             directory: dir.path().to_path_buf(),
             config_name: None,
@@ -1394,5 +1463,148 @@ embedded = true
         })
         .unwrap();
         assert_eq!(app.all_extensions().len(), app.extensions.len());
+    }
+
+    #[test]
+    fn rejects_invalid_application_url() {
+        let dir = tempdir().unwrap();
+        write_app(dir.path(), "name = \"Demo\"\napplication_url = \"not-a-url\"\n");
+        let err = load_app(LoadAppOptions {
+            directory: dir.path().to_path_buf(),
+            config_name: None,
+            ignore_unknown_extensions: true,
+        })
+        .unwrap_err();
+        assert!(err.to_string().contains("application_url"));
+    }
+
+    #[test]
+    fn rejects_invalid_webhook_uri() {
+        let dir = tempdir().unwrap();
+        write_app(
+            dir.path(),
+            r#"
+name = "Demo"
+application_url = "https://example.com"
+[webhooks]
+api_version = "2024-10"
+[[webhooks.subscriptions]]
+topics = ["orders/create"]
+uri = "ftp://nope"
+"#,
+        );
+        let app = load_app(LoadAppOptions {
+            directory: dir.path().to_path_buf(),
+            config_name: None,
+            ignore_unknown_extensions: true,
+        })
+        .unwrap();
+        assert!(app.errors.iter().any(|e| e.contains("Invalid webhook uri")));
+    }
+
+    #[test]
+    fn accepts_pubsub_and_eventbridge_webhook_uris() {
+        let dir = tempdir().unwrap();
+        write_app(
+            dir.path(),
+            r#"
+name = "Demo"
+application_url = "https://example.com"
+[webhooks]
+api_version = "2024-10"
+[[webhooks.subscriptions]]
+topics = ["orders/create"]
+uri = "pubsub://project:topic"
+[[webhooks.subscriptions]]
+topics = ["orders/updated"]
+uri = "arn:aws:events:us-east-1::event-source/aws.partner/shopify.com/123/app"
+"#,
+        );
+        let app = load_app(LoadAppOptions {
+            directory: dir.path().to_path_buf(),
+            config_name: None,
+            ignore_unknown_extensions: true,
+        })
+        .unwrap();
+        assert!(
+            !app.errors.iter().any(|e| e.contains("Invalid webhook uri")),
+            "unexpected errors: {:?}",
+            app.errors
+        );
+    }
+
+    #[test]
+    fn rejects_duplicate_webhook_subscriptions() {
+        let dir = tempdir().unwrap();
+        write_app(
+            dir.path(),
+            r#"
+name = "Demo"
+application_url = "https://example.com"
+[webhooks]
+api_version = "2024-10"
+[[webhooks.subscriptions]]
+topics = ["orders/create"]
+uri = "/hooks"
+[[webhooks.subscriptions]]
+topics = ["orders/create"]
+uri = "/hooks"
+"#,
+        );
+        let app = load_app(LoadAppOptions {
+            directory: dir.path().to_path_buf(),
+            config_name: None,
+            ignore_unknown_extensions: true,
+        })
+        .unwrap();
+        assert!(app.errors.iter().any(|e| e.contains("Duplicate webhook")));
+    }
+
+    #[test]
+    fn ui_extension_requires_source() {
+        let dir = tempdir().unwrap();
+        write_app(
+            dir.path(),
+            "name = \"Demo\"\napplication_url = \"https://e.com\"\n",
+        );
+        let ext_dir = dir.path().join("extensions/my-ui");
+        fs::create_dir_all(&ext_dir).unwrap();
+        fs::write(
+            ext_dir.join("shopify.extension.toml"),
+            "name = \"My UI\"\ntype = \"ui_extension\"\nhandle = \"my-ui\"\n",
+        )
+        .unwrap();
+        let app = load_app(LoadAppOptions {
+            directory: dir.path().to_path_buf(),
+            config_name: None,
+            ignore_unknown_extensions: true,
+        })
+        .unwrap();
+        assert!(app
+            .errors
+            .iter()
+            .any(|e| e.contains("Couldn't find an index")));
+    }
+
+    #[test]
+    fn include_config_on_deploy_parses() {
+        let dir = tempdir().unwrap();
+        write_app(
+            dir.path(),
+            "name = \"Demo\"\napplication_url = \"https://e.com\"\n[build]\ninclude_config_on_deploy = false\n",
+        );
+        let app = load_app(LoadAppOptions {
+            directory: dir.path().to_path_buf(),
+            config_name: None,
+            ignore_unknown_extensions: true,
+        })
+        .unwrap();
+        assert_eq!(
+            app.configuration
+                .build
+                .as_ref()
+                .and_then(|b| b.include_config_on_deploy),
+            Some(false)
+        );
     }
 }

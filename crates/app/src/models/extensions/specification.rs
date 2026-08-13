@@ -53,6 +53,9 @@ pub struct ExtensionSpecification {
     pub uid_strategy: UidStrategy,
     pub graph_ql_type: Option<String>,
     pub dependency: Option<String>,
+    /// Remote App Management `validationSchema.jsonSchema`, if attached.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub json_schema: Option<Value>,
 }
 
 impl ExtensionSpecification {
@@ -113,6 +116,23 @@ pub fn create_extension_specification(identifier: &str) -> Option<ExtensionSpeci
     crate::models::extensions::specifications::lookup(identifier)
 }
 
+/// Copy AM `validationSchema.jsonSchema` onto matching local specs.
+pub fn apply_remote_json_schemas(
+    specs: &mut [ExtensionSpecification],
+    remote: &[cli_api::RemoteSpecification],
+) {
+    for spec in specs {
+        if let Some(remote) = remote.iter().find(|r| {
+            r.identifier == spec.identifier
+                || spec.additional_identifiers.iter().any(|a| a == &r.identifier)
+        }) {
+            if let Some(schema) = &remote.validation_schema {
+                spec.json_schema = Some(schema.clone());
+            }
+        }
+    }
+}
+
 /// Parse a minimal TOML/JSON extension config object.
 pub fn parse_base_config(value: &Value) -> Result<HashMap<String, Value>, String> {
     value
@@ -157,5 +177,26 @@ mod tests {
     fn webhook_subscription_is_dynamic() {
         let spec = create_extension_specification("webhook_subscription").unwrap();
         assert_eq!(spec.uid_strategy, UidStrategy::Dynamic);
+    }
+
+    #[test]
+    fn apply_remote_json_schemas_copies_contract() {
+        let mut specs = vec![create_extension_specification("ui_extension").unwrap()];
+        let remote = vec![cli_api::RemoteSpecification {
+            identifier: "ui_extension".into(),
+            name: "UI".into(),
+            experience: "extension".into(),
+            options: None,
+            validation_schema: Some(serde_json::json!({
+                "type": "object",
+                "required": ["name"]
+            })),
+        }];
+        apply_remote_json_schemas(&mut specs, &remote);
+        assert!(specs[0].json_schema.is_some());
+        assert_eq!(
+            specs[0].json_schema.as_ref().unwrap()["required"][0],
+            "name"
+        );
     }
 }

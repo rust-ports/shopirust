@@ -40,4 +40,57 @@ mod tests {
         assert_eq!(out["url"], "https://app.example/flow/run");
         assert_eq!(out["title"], "Action");
     }
+
+    #[tokio::test]
+    async fn deploy_serializes_settings_fields_and_schema() {
+        let spec = create_extension_specification("flow_action").unwrap();
+        let dir = tempdir().unwrap();
+        std::fs::write(dir.path().join("schema.graphql"), "extend type Query { x: String }")
+            .unwrap();
+        let mut cfg = HashMap::new();
+        cfg.insert("name".into(), json!("Action"));
+        cfg.insert("handle".into(), json!("action"));
+        cfg.insert("runtime_url".into(), json!("https://app.example/run"));
+        cfg.insert(
+            "settings".into(),
+            json!({
+                "fields": [{
+                    "key": "order_id",
+                    "name": "Order ID",
+                    "type": "single_line_text_field"
+                }]
+            }),
+        );
+        cfg.insert("schema".into(), json!("./schema.graphql"));
+        let ctx = DeployConfigContext::default();
+        let out = build_deploy_config(&spec, &cfg, dir.path(), &ctx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(out["fields"].is_array());
+        assert!(!out["fields"].as_array().unwrap().is_empty());
+        assert!(out["schema_patch"]
+            .as_str()
+            .unwrap()
+            .contains("extend type Query"));
+    }
+
+    #[test]
+    fn json_schema_rejects_invalid_config() {
+        let mut spec = create_extension_specification("flow_action").unwrap();
+        spec.json_schema = Some(json!({
+            "type": "object",
+            "required": ["name", "runtime_url"],
+            "properties": {
+                "name": { "type": "string" },
+                "runtime_url": { "type": "string", "pattern": "^https://" }
+            }
+        }));
+        let mut cfg = HashMap::new();
+        cfg.insert("name".into(), json!("Action"));
+        cfg.insert("handle".into(), json!("action"));
+        cfg.insert("runtime_url".into(), json!("/relative"));
+        let err = validate_configuration(&spec, &cfg, Path::new(".")).unwrap_err();
+        assert!(!err.to_string().is_empty());
+    }
 }

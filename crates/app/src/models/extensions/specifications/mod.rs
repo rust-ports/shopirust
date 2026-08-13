@@ -73,6 +73,7 @@ fn ext_spec(
         uid_strategy: UidStrategy::Uuid,
         graph_ql_type: None,
         dependency: None,
+        json_schema: None,
     }
 }
 
@@ -91,6 +92,7 @@ fn config_spec(identifier: &str) -> ExtensionSpecification {
         uid_strategy: UidStrategy::Single,
         graph_ql_type: None,
         dependency: None,
+        json_schema: None,
     }
 }
 
