@@ -87,7 +87,7 @@ pub use flow::{
 };
 pub use function::{
     build_function_extension as build_function_extension_async, build_graphql_types,
-    choose_function, download_binary, function_info, function_logs_dir, function_runner_binary,
+    choose_function, choose_function_export, download_binary, function_info, function_logs_dir, function_runner_binary,
     generate_schema_service, get_or_generate_schema_path, replay, run_function,
     FunctionBuildOptions, FunctionInfoFormat, FunctionInfoOptions, ReplayOptions,
     RunFunctionOptions, SchemaDefinitionFetcher, PREFERRED_FUNCTION_RUNNER_VERSION,

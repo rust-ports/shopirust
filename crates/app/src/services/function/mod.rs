@@ -19,7 +19,9 @@ pub use build::{
     build_function_extension, build_graphql_types, imported_wasm_modules, js_exports,
     run_trampoline, run_wasm_opt, validate_shopify_function_package_version, FunctionBuildOptions,
 };
-pub use common::{choose_function, function_logs_dir, get_or_generate_schema_path};
+pub use common::{
+    choose_function, choose_function_export, function_logs_dir, get_or_generate_schema_path,
+};
 pub use info::{function_info, FunctionInfoFormat, FunctionInfoOptions};
 pub use replay::{replay, FunctionRunData, ReplayOptions};
 pub use runner::{run_function, RunFunctionOptions};

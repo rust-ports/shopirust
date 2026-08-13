@@ -71,27 +71,19 @@ pub async fn build_function_extension(
         return Ok(dest);
     }
 
-    // Cargo wasm build
+    // Cargo wasm build (WASI first, then wasm32-unknown-unknown).
     if ext.directory.join("Cargo.toml").exists() {
         if let Some(ref typegen) = ext.typegen_command() {
             run_typegen_command(ext, typegen)?;
         }
-        let status = Command::new("cargo")
-            .args(["build", "--release", "--target", "wasm32-wasip1"])
-            .current_dir(&ext.directory)
-            .status();
-        if let Ok(s) = status {
-            if s.success() {
-                if let Some(wasm) = find_cargo_wasm(ext) {
-                    let dest = ext.function_output_path();
-                    if let Some(parent) = dest.parent() {
-                        fs::create_dir_all(parent)?;
-                    }
-                    fs::copy(&wasm, &dest)?;
-                    post_process_wasm(ext, &dest).await?;
-                    return Ok(dest);
-                }
+        if let Some(wasm) = cargo_build_wasm(ext) {
+            let dest = ext.function_output_path();
+            if let Some(parent) = dest.parent() {
+                fs::create_dir_all(parent)?;
             }
+            fs::copy(&wasm, &dest)?;
+            post_process_wasm(ext, &dest).await?;
+            return Ok(dest);
         }
     }
 
@@ -113,19 +105,45 @@ pub async fn build_function_extension(
     )))
 }
 
+const CARGO_WASM_TARGETS: &[&str] = &["wasm32-wasip1", "wasm32-unknown-unknown"];
+
+fn cargo_build_wasm(ext: &ExtensionInstance) -> Option<PathBuf> {
+    for target in CARGO_WASM_TARGETS {
+        let status = Command::new("cargo")
+            .args(["build", "--release", "--target", target])
+            .current_dir(&ext.directory)
+            .status();
+        if let Ok(s) = status {
+            if s.success() {
+                if let Some(wasm) = find_cargo_wasm(ext, target) {
+                    return Some(wasm);
+                }
+            }
+        }
+    }
+    None
+}
+
 fn find_existing_wasm(ext: &ExtensionInstance) -> Option<PathBuf> {
-    let candidates = [
+    let crate_name = ext.handle.replace('-', "_");
+    let mut candidates = vec![
         ext.directory.join("dist/index.wasm"),
         ext.directory.join("index.wasm"),
-        ext.directory
-            .join("target/wasm32-wasip1/release")
-            .join(format!("{}.wasm", ext.handle.replace('-', "_"))),
     ];
+    for target in CARGO_WASM_TARGETS {
+        candidates.push(
+            ext.directory
+                .join("target")
+                .join(target)
+                .join("release")
+                .join(format!("{crate_name}.wasm")),
+        );
+    }
     candidates.into_iter().find(|p| p.exists())
 }
 
-fn find_cargo_wasm(ext: &ExtensionInstance) -> Option<PathBuf> {
-    let dir = ext.directory.join("target/wasm32-wasip1/release");
+fn find_cargo_wasm(ext: &ExtensionInstance, target: &str) -> Option<PathBuf> {
+    let dir = ext.directory.join("target").join(target).join("release");
     let entries = fs::read_dir(dir).ok()?;
     for entry in entries.flatten() {
         if entry.path().extension().and_then(|e| e.to_str()) == Some("wasm") {
@@ -954,5 +972,19 @@ mod tests {
         let wit = wit_for_exports(&["run-a".into(), "run-b".into()]);
         assert!(wit.contains("export %run-a: func();"));
         assert!(wit.contains("world shopify-function"));
+    }
+
+    #[test]
+    fn find_cargo_wasm_unknown_unknown_fallback() {
+        let dir = tempdir().unwrap();
+        let release = dir
+            .path()
+            .join("target/wasm32-unknown-unknown/release");
+        fs::create_dir_all(&release).unwrap();
+        fs::write(release.join("my_fn.wasm"), b"\0asm").unwrap();
+        let ext = make_ext(dir.path(), json!({}));
+        let found = find_cargo_wasm(&ext, "wasm32-unknown-unknown").unwrap();
+        assert!(found.ends_with("my_fn.wasm"));
+        assert!(find_existing_wasm(&ext).is_some());
     }
 }

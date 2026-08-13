@@ -3,10 +3,11 @@
 use app::load_app;
 use app::models::loader::LoadAppOptions;
 use app::services::function::{
-    build_function_extension, build_graphql_types, choose_function, download_binary, function_info,
-    function_runner_binary, generate_schema_service, get_or_generate_schema_path, replay,
-    run_function, FunctionBuildOptions, FunctionInfoFormat, FunctionInfoOptions, ReplayOptions,
-    RunFunctionOptions, SchemaDefinitionFetcher, PREFERRED_FUNCTION_RUNNER_VERSION,
+    build_function_extension, build_graphql_types, choose_function, choose_function_export,
+    download_binary, function_info, function_runner_binary, generate_schema_service,
+    get_or_generate_schema_path, replay, run_function, FunctionBuildOptions, FunctionInfoFormat,
+    FunctionInfoOptions, ReplayOptions, RunFunctionOptions, SchemaDefinitionFetcher,
+    PREFERRED_FUNCTION_RUNNER_VERSION,
 };
 use app::services::linked_app_context;
 use app::AppError;
@@ -150,7 +151,8 @@ impl BaseCommand for FunctionBuild {
     async fn run(&self) -> Result<(), CliError> {
         let _ = self.reset;
         let app = load_local_app(&self.path, self.config.as_deref())?;
-        let fun = choose_function(&app, &PathBuf::from(&self.path))
+        let prompter = CliKitPrompter;
+        let fun = choose_function(&app, &PathBuf::from(&self.path), Some(&prompter))
             .map_err(|e| CliError::abort(e.to_string()))?;
         build_function_extension(&fun, FunctionBuildOptions { use_tasks: true })
             .await
@@ -203,7 +205,8 @@ impl BaseCommand for FunctionInfo {
 
     async fn run(&self) -> Result<(), CliError> {
         let app = load_local_app(&self.path, self.config.as_deref())?;
-        let fun = choose_function(&app, &PathBuf::from(&self.path))
+        let prompter = CliKitPrompter;
+        let fun = choose_function(&app, &PathBuf::from(&self.path), Some(&prompter))
             .map_err(|e| CliError::abort(e.to_string()))?;
 
         let runner = function_runner_binary(PREFERRED_FUNCTION_RUNNER_VERSION)
@@ -326,28 +329,16 @@ impl BaseCommand for FunctionReplay {
     }
 
     async fn run(&self) -> Result<(), CliError> {
-        let client = authenticated_developer_platform().await?;
+        let _ = (&self.client_id, self.reset);
         let prompter = CliKitPrompter;
-        let ctx = linked_app_context(
-            linked_ctx_options(
-                &self.path,
-                self.config.clone(),
-                self.client_id.clone(),
-                self.reset,
-            ),
-            client.as_ref(),
-            Some(&prompter),
-        )
-        .await
-        .map_err(|e| CliError::abort(e.to_string()))?;
-
-        let fun = choose_function(&ctx.app, &PathBuf::from(&self.path))
+        let app = load_local_app(&self.path, self.config.as_deref())?;
+        let fun = choose_function(&app, &PathBuf::from(&self.path), Some(&prompter))
             .map_err(|e| CliError::abort(e.to_string()))?;
 
         replay(
             &fun,
             ReplayOptions {
-                app_directory: ctx.app.directory.clone(),
+                app_directory: app.directory.clone(),
                 json: self.json,
                 watch: self.watch,
                 log: self.log.clone(),
@@ -394,8 +385,6 @@ impl FunctionRun {
     }
 }
 
-const DEFAULT_FUNCTION_EXPORT: &str = "_start";
-
 #[async_trait::async_trait]
 impl BaseCommand for FunctionRun {
     fn name() -> &'static str {
@@ -411,27 +400,12 @@ impl BaseCommand for FunctionRun {
     async fn run(&self) -> Result<(), CliError> {
         let _ = self.reset;
         let app = load_local_app(&self.path, self.config.as_deref())?;
-        let fun = choose_function(&app, &PathBuf::from(&self.path))
+        let prompter = CliKitPrompter;
+        let fun = choose_function(&app, &PathBuf::from(&self.path), Some(&prompter))
             .map_err(|e| CliError::abort(e.to_string()))?;
 
-        let function_export = if let Some(ref export) = self.export {
-            export.clone()
-        } else {
-            let targeting = fun.targeting();
-            if targeting.len() > 1 {
-                // Prefer first export; interactive prompt deferred.
-                targeting
-                    .first()
-                    .and_then(|t| t.export.clone())
-                    .unwrap_or_else(|| DEFAULT_FUNCTION_EXPORT.into())
-            } else {
-                targeting
-                    .first()
-                    .and_then(|t| t.export.clone())
-                    .filter(|s| !s.is_empty())
-                    .unwrap_or_else(|| DEFAULT_FUNCTION_EXPORT.into())
-            }
-        };
+        let function_export = choose_function_export(&fun, self.export.as_deref(), Some(&prompter))
+            .map_err(|e| CliError::abort(e.to_string()))?;
 
         let query_path = fun
             .targeting()
@@ -524,7 +498,7 @@ impl BaseCommand for FunctionSchema {
         .await
         .map_err(|e| CliError::abort(e.to_string()))?;
 
-        let fun = choose_function(&ctx.app, &PathBuf::from(&self.path))
+        let fun = choose_function(&ctx.app, &PathBuf::from(&self.path), Some(&prompter))
             .map_err(|e| CliError::abort(e.to_string()))?;
 
         let api_key = ctx
@@ -597,7 +571,8 @@ impl BaseCommand for FunctionTypegen {
     async fn run(&self) -> Result<(), CliError> {
         let _ = self.reset;
         let app = load_local_app(&self.path, self.config.as_deref())?;
-        let fun = choose_function(&app, &PathBuf::from(&self.path))
+        let prompter = CliKitPrompter;
+        let fun = choose_function(&app, &PathBuf::from(&self.path), Some(&prompter))
             .map_err(|e| CliError::abort(e.to_string()))?;
         build_graphql_types(&fun)
             .await

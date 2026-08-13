@@ -84,7 +84,7 @@ impl AppLogsPoller {
         F: FnMut() -> Fut,
         Fut: Future<Output = Result<String, AppError>>,
     {
-        let raw = match backend {
+        let fetched = match backend {
             PollBackend::Platform {
                 client,
                 organization_id,
@@ -96,9 +96,26 @@ impl AppLogsPoller {
                     None,
                 )
                 .await
-                .map_err(|e| AppError::message(e.to_string()))?,
+                .map_err(|e| AppError::message(e.to_string())),
             PollBackend::Http { base_url } => {
-                poll_app_logs_http(base_url, &self.jwt_token, self.cursor.as_deref(), None).await?
+                poll_app_logs_http(base_url, &self.jwt_token, self.cursor.as_deref(), None).await
+            }
+        };
+
+        // Transport errors (timeouts, DNS, connection reset) retry — they must not abort the loop.
+        let raw = match fetched {
+            Ok(raw) => raw,
+            Err(e) => {
+                emit_poll_error_line(0, &[e.to_string()], POLLING_ERROR_RETRY_INTERVAL_MS);
+                return Ok(PollOnceResult {
+                    outcome: PollOutcome::Error {
+                        status: 0,
+                        errors: vec![e.to_string()],
+                    },
+                    retry_interval_ms: POLLING_ERROR_RETRY_INTERVAL_MS,
+                    next_jwt_token: None,
+                    resubscribe_result: ResubscribeResult::NotAttempted,
+                });
             }
         };
 
@@ -122,6 +139,7 @@ impl AppLogsPoller {
                 self.jwt_token = token.clone();
             }
 
+            emit_poll_error_line(raw.status, &raw.errors, handled.retry_interval_ms);
             return Ok(PollOnceResult {
                 outcome: PollOutcome::Error {
                     status: raw.status,
@@ -282,6 +300,16 @@ where
         next_jwt_token,
         resubscribe_result,
     })
+}
+
+fn emit_poll_error_line(status: u16, errors: &[String], retry_interval_ms: u64) {
+    let line = serde_json::json!({
+        "error": true,
+        "status": status,
+        "message": errors.join(", "),
+        "retry_interval_ms": retry_interval_ms,
+    });
+    eprintln!("{line}");
 }
 
 /// Build poll URL with cursor (status/source URL filters unused — filtering is client-side).
@@ -501,5 +529,103 @@ mod tests {
             .unwrap();
         // empty batch still counts as one iteration; on_logs not called
         assert_eq!(seen, 0);
+    }
+
+    #[tokio::test]
+    async fn poll_http_429_throttles() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/app_logs/poll"))
+            .respond_with(ResponseTemplate::new(429).set_body_json(serde_json::json!({
+                "errors": ["rate limited"]
+            })))
+            .mount(&server)
+            .await;
+
+        let base = format!("{}/app_logs/poll", server.uri());
+        let mut poller = AppLogsPoller::new("jwt", PollFilters::default());
+        let backend = PollBackend::Http { base_url: base };
+        let result = poller
+            .poll_once(&backend, || async { Ok("jwt".into()) })
+            .await
+            .unwrap();
+        assert!(matches!(
+            result.outcome,
+            PollOutcome::Error { status: 429, .. }
+        ));
+        assert_eq!(result.retry_interval_ms, POLLING_THROTTLE_RETRY_INTERVAL_MS);
+    }
+
+    #[tokio::test]
+    async fn poll_http_5xx_retries_after_error_interval() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/app_logs/poll"))
+            .respond_with(ResponseTemplate::new(503).set_body_json(serde_json::json!({
+                "errors": ["unavailable"]
+            })))
+            .mount(&server)
+            .await;
+
+        let base = format!("{}/app_logs/poll", server.uri());
+        let mut poller = AppLogsPoller::new("jwt", PollFilters::default());
+        let backend = PollBackend::Http { base_url: base };
+        let result = poller
+            .poll_once(&backend, || async { Ok("jwt".into()) })
+            .await
+            .unwrap();
+        assert!(matches!(
+            result.outcome,
+            PollOutcome::Error { status: 503, .. }
+        ));
+        assert_eq!(result.retry_interval_ms, POLLING_ERROR_RETRY_INTERVAL_MS);
+    }
+
+    #[tokio::test]
+    async fn transport_error_retries_instead_of_aborting() {
+        let mut poller = AppLogsPoller::new("jwt", PollFilters::default());
+        let backend = PollBackend::Http {
+            base_url: "http://127.0.0.1:1/app_logs/poll".into(),
+        };
+        let result = poller
+            .poll_once(&backend, || async { Ok("jwt".into()) })
+            .await
+            .unwrap();
+        match result.outcome {
+            PollOutcome::Error { status, errors } => {
+                assert_eq!(status, 0);
+                assert!(!errors.is_empty());
+            }
+            PollOutcome::Success { .. } => panic!("expected transport error"),
+        }
+        assert_eq!(result.retry_interval_ms, POLLING_ERROR_RETRY_INTERVAL_MS);
+    }
+
+    #[tokio::test]
+    async fn session_expired_after_five_resubscribe_failures() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/app_logs/poll"))
+            .respond_with(ResponseTemplate::new(401).set_body_json(serde_json::json!({
+                "errors": ["unauthorized"]
+            })))
+            .mount(&server)
+            .await;
+
+        let base = format!("{}/app_logs/poll", server.uri());
+        let mut poller = AppLogsPoller::new("jwt", PollFilters::default());
+        let backend = PollBackend::Http { base_url: base };
+        let err = poller
+            .run_loop(
+                &backend,
+                Some(MAX_CONSECUTIVE_RESUBSCRIBE_FAILURES as usize),
+                false,
+                || async { Err(AppError::message("resubscribe failed")) },
+                |_logs| async { Ok(()) },
+            )
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("expired"));
+        assert!(poller.session_expired());
     }
 }

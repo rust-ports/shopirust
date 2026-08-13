@@ -113,7 +113,7 @@ impl BaseCommand for Logs {
             },
             max_iterations: None,
             sleep_between: true,
-            write_files: false,
+            write_files: true,
         };
 
         stream_logs(&ctx, client.as_ref(), &primary, options)

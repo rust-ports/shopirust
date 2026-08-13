@@ -34,7 +34,7 @@ impl Default for LogsOptions {
             format: Format::Text,
             max_iterations: None,
             sleep_between: true,
-            write_files: false,
+            write_files: true,
         }
     }
 }
@@ -290,5 +290,6 @@ mod tests {
         assert!(matches!(opts.format, Format::Text));
         assert!(opts.sleep_between);
         assert!(opts.max_iterations.is_none());
+        assert!(opts.write_files);
     }
 }

@@ -3,10 +3,11 @@
 use crate::error::AppError;
 use crate::models::extensions::extension_instance::ExtensionInstance;
 use crate::models::loader::LoadedApp;
+use crate::prompts::{PromptItem, Prompter};
 use crate::services::function::schema::{generate_schema_service, SchemaDefinitionFetcher};
-use is_terminal::IsTerminal;
-use std::io::stdin;
 use std::path::{Path, PathBuf};
+
+const DEFAULT_FUNCTION_EXPORT: &str = "_start";
 
 /// Directory where `app dev` writes function run logs (`.shopify/logs` under the app root).
 pub fn function_logs_dir(app_directory: &Path) -> PathBuf {
@@ -14,7 +15,13 @@ pub fn function_logs_dir(app_directory: &Path) -> PathBuf {
 }
 
 /// Pick a function extension from the app, preferring one whose directory matches `path`.
-pub fn choose_function(app: &LoadedApp, path: &Path) -> Result<ExtensionInstance, AppError> {
+///
+/// Multiple functions: interactive [`Prompter::select`] when provided; otherwise error.
+pub fn choose_function(
+    app: &LoadedApp,
+    path: &Path,
+    prompter: Option<&dyn Prompter>,
+) -> Result<ExtensionInstance, AppError> {
     let all: Vec<&ExtensionInstance> = app
         .all_extensions()
         .iter()
@@ -41,17 +48,57 @@ pub fn choose_function(app: &LoadedApp, path: &Path) -> Result<ExtensionInstance
         ));
     }
 
-    if stdin().is_terminal() {
-        // Non-interactive selection without a full prompt UI: require --path.
-        // Callers that want a prompt can list handles themselves.
-        eprintln!("Multiple functions found:");
-        for fun in &all {
-            eprintln!("  - {} ({})", fun.handle, fun.directory.display());
-        }
+    if let Some(prompter) = prompter {
+        let items: Vec<PromptItem> = all
+            .iter()
+            .map(|fun| {
+                PromptItem::new(fun.handle.clone(), fun.handle.clone())
+                    .with_hint(fun.directory.display().to_string())
+            })
+            .collect();
+        let handle = prompter.select("Select a function to run", &items)?;
+        return all
+            .into_iter()
+            .find(|fun| fun.handle == handle)
+            .cloned()
+            .ok_or_else(|| AppError::message(format!("Unknown function '{handle}'.")));
     }
 
     Err(AppError::message(
-        "Run this command from a function directory or use `--path` to specify a function directory.",
+        "Multiple functions found. Run this command from a function directory or use `--path`.",
+    ))
+}
+
+/// Resolve a function export: `--export` flag, single targeting entry, or a select prompt.
+pub fn choose_function_export(
+    ext: &ExtensionInstance,
+    flag: Option<&str>,
+    prompter: Option<&dyn Prompter>,
+) -> Result<String, AppError> {
+    if let Some(export) = flag.filter(|s| !s.is_empty()) {
+        return Ok(export.to_string());
+    }
+    let exports: Vec<String> = ext
+        .targeting()
+        .into_iter()
+        .filter_map(|t| t.export)
+        .filter(|s| !s.is_empty())
+        .collect();
+    if exports.len() <= 1 {
+        return Ok(exports
+            .into_iter()
+            .next()
+            .unwrap_or_else(|| DEFAULT_FUNCTION_EXPORT.into()));
+    }
+    if let Some(prompter) = prompter {
+        let items: Vec<PromptItem> = exports
+            .iter()
+            .map(|e| PromptItem::new(e.clone(), e.clone()))
+            .collect();
+        return prompter.select("Select a function export", &items);
+    }
+    Err(AppError::message(
+        "Multiple function exports found. Pass `--export`.",
     ))
 }
 
@@ -105,6 +152,8 @@ mod tests {
                 ),
             )
             .unwrap();
+            fs::create_dir_all(ext.join("src")).unwrap();
+            fs::write(ext.join("src/index.js"), "export default {};\n").unwrap();
         }
     }
 
@@ -118,7 +167,7 @@ mod tests {
             ignore_unknown_extensions: false,
         })
         .unwrap();
-        let chosen = choose_function(&app, dir.path()).unwrap();
+        let chosen = choose_function(&app, dir.path(), None).unwrap();
         assert_eq!(chosen.handle, "only-fn");
     }
 
@@ -133,7 +182,7 @@ mod tests {
         })
         .unwrap();
         let fn_dir = dir.path().join("extensions/b");
-        let chosen = choose_function(&app, &fn_dir).unwrap();
+        let chosen = choose_function(&app, &fn_dir, None).unwrap();
         assert_eq!(chosen.handle, "b");
     }
 
@@ -147,7 +196,59 @@ mod tests {
             ignore_unknown_extensions: false,
         })
         .unwrap();
-        assert!(choose_function(&app, dir.path()).is_err());
+        assert!(choose_function(&app, dir.path(), None).is_err());
+    }
+
+    #[test]
+    fn choose_prompts_when_multiple() {
+        use crate::prompts::InjectedPrompter;
+        let dir = tempdir().unwrap();
+        write_app_with_functions(dir.path(), &["a", "b"]);
+        let app = load_app(LoadAppOptions {
+            directory: dir.path().to_path_buf(),
+            config_name: None,
+            ignore_unknown_extensions: false,
+        })
+        .unwrap();
+        let p = InjectedPrompter::new();
+        p.push_select("b");
+        let chosen = choose_function(&app, dir.path(), Some(&p)).unwrap();
+        assert_eq!(chosen.handle, "b");
+    }
+
+    #[test]
+    fn choose_export_prompts_when_multiple() {
+        use crate::models::extensions::create_extension_specification;
+        use crate::prompts::InjectedPrompter;
+        use serde_json::json;
+        use std::collections::HashMap;
+        let spec = create_extension_specification("function").unwrap();
+        let mut cfg = HashMap::new();
+        cfg.insert(
+            "targeting".into(),
+            json!([
+                { "target": "cart.transform.run", "export": "run" },
+                { "target": "cart.transform.run", "export": "run-b" }
+            ]),
+        );
+        let ext = ExtensionInstance::new(
+            "fn",
+            PathBuf::from("."),
+            PathBuf::from("shopify.extension.toml"),
+            cfg,
+            spec,
+        );
+        let p = InjectedPrompter::new();
+        p.push_select("run-b");
+        assert_eq!(
+            choose_function_export(&ext, None, Some(&p)).unwrap(),
+            "run-b"
+        );
+        assert_eq!(
+            choose_function_export(&ext, Some("run"), None).unwrap(),
+            "run"
+        );
+        assert!(choose_function_export(&ext, None, None).is_err());
     }
 
     #[tokio::test]

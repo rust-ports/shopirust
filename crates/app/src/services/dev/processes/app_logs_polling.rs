@@ -3,9 +3,11 @@
 use super::types::{DevProcess, DevProcessKind};
 use crate::error::AppError;
 use crate::services::app_logs::{
-    format_log_text, subscribe_to_app_logs, AppLogsPoller, PollBackend, PollFilters,
+    format_log_text, subscribe_to_app_logs, write_app_logs_to_file, AppLogsPoller, PollBackend,
+    PollFilters,
 };
 use cli_api::DeveloperPlatformClient;
+use std::path::PathBuf;
 use tokio_util::sync::CancellationToken;
 
 #[derive(Clone)]
@@ -14,6 +16,8 @@ pub struct AppLogsPollingOptions {
     pub api_key: String,
     pub shop_ids: Vec<i64>,
     pub store_name: String,
+    /// When set, persist JSON log files under this directory (`.shopify/logs`).
+    pub logs_dir: Option<PathBuf>,
 }
 
 /// Build a process that idles until cancel (client is not `'static`).
@@ -48,6 +52,7 @@ pub async fn run_app_logs_polling(
     let shop_ids = opts.shop_ids.clone();
     let api_key = opts.api_key.clone();
     let org_id = opts.organization_id.clone();
+    let logs_dir = opts.logs_dir.clone();
 
     let loop_fut = poller.run_loop(
         &backend,
@@ -61,11 +66,15 @@ pub async fn run_app_logs_polling(
         },
         |logs| {
             let store_name = store_name.clone();
+            let logs_dir = logs_dir.clone();
             let owned: Vec<_> = logs.to_vec();
             async move {
                 for log in &owned {
                     let line = format_log_text(log, &store_name);
                     print!("{line}");
+                    if let Some(ref dir) = logs_dir {
+                        let _ = write_app_logs_to_file(log, &store_name, dir);
+                    }
                 }
                 Ok(())
             }

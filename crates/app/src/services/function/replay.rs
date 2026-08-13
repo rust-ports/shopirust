@@ -8,6 +8,7 @@ use serde::Deserialize;
 use serde_json::Value;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::time::{Duration, SystemTime};
 
 const LOG_SELECTOR_LIMIT: usize = 100;
 
@@ -15,7 +16,7 @@ const LOG_SELECTOR_LIMIT: usize = 100;
 pub struct ReplayOptions {
     pub app_directory: PathBuf,
     pub json: bool,
-    /// When true, re-run once (full watch TUI deferred). Prefer `--log` for CI.
+    /// When true, re-run whenever `dist/index.wasm` mtime changes.
     pub watch: bool,
     pub log: Option<String>,
 }
@@ -58,23 +59,64 @@ pub async fn replay(ext: &ExtensionInstance, options: ReplayOptions) -> Result<(
         .clone()
         .ok_or_else(|| AppError::message("Selected log has no input payload to replay."))?;
     let run_export = selected.payload.export.clone();
-
-    if options.watch {
-        eprintln!(
-            "Watch mode: running once. Pass --no-watch or use --log for non-interactive replay."
-        );
-    }
+    let input_json = serde_json::to_string(&input)?;
 
     run_function(
         ext,
         RunFunctionOptions {
-            input: Some(serde_json::to_string(&input)?),
-            export: run_export,
+            input: Some(input_json.clone()),
+            export: run_export.clone(),
             json: options.json,
             ..Default::default()
         },
     )
-    .await
+    .await?;
+
+    if !options.watch {
+        return Ok(());
+    }
+
+    let wasm = ext.function_output_path();
+    let mut last_mtime = wasm_mtime(&wasm);
+    eprintln!(
+        "Watching {} for changes (Ctrl+C to stop).",
+        wasm.display()
+    );
+    loop {
+        tokio::select! {
+            _ = tokio::signal::ctrl_c() => break,
+            _ = tokio::time::sleep(Duration::from_millis(500)) => {
+                let current = wasm_mtime(&wasm);
+                if wasm_mtime_changed(last_mtime, current) {
+                    last_mtime = current;
+                    eprintln!("Detected wasm change, replaying…");
+                    run_function(
+                        ext,
+                        RunFunctionOptions {
+                            input: Some(input_json.clone()),
+                            export: run_export.clone(),
+                            json: options.json,
+                            ..Default::default()
+                        },
+                    )
+                    .await?;
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+pub fn wasm_mtime(path: &Path) -> Option<SystemTime> {
+    fs::metadata(path).and_then(|m| m.modified()).ok()
+}
+
+pub fn wasm_mtime_changed(previous: Option<SystemTime>, current: Option<SystemTime>) -> bool {
+    match (previous, current) {
+        (Some(prev), Some(now)) => now > prev,
+        (None, Some(_)) => true,
+        _ => false,
+    }
 }
 
 fn parse_log_filename(filename: &str) -> Option<LogFileMetadata> {
@@ -292,5 +334,16 @@ mod tests {
             get_identifier_from_filename("20240522_150641_827Z_extensions_fn_abcdef.json"),
             "abcdef"
         );
+    }
+
+    #[test]
+    fn wasm_mtime_changed_detects_newer() {
+        let older = SystemTime::UNIX_EPOCH;
+        let newer = older + Duration::from_secs(1);
+        assert!(wasm_mtime_changed(Some(older), Some(newer)));
+        assert!(!wasm_mtime_changed(Some(newer), Some(older)));
+        assert!(!wasm_mtime_changed(Some(newer), Some(newer)));
+        assert!(wasm_mtime_changed(None, Some(newer)));
+        assert!(!wasm_mtime_changed(None, None));
     }
 }

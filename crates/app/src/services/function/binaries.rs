@@ -5,6 +5,8 @@ use flate2::read::GzDecoder;
 use std::fs::{self, File};
 use std::io::{copy, Write};
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
+use tokio::sync::Mutex;
 
 pub const PREFERRED_FUNCTION_RUNNER_VERSION: &str = "9.1.2";
 pub const PREFERRED_JAVY_VERSION: &str = "7.0.1";
@@ -218,8 +220,16 @@ pub fn trampoline_binary(version: &str) -> Result<DownloadableBinary, AppError> 
     })
 }
 
+static DOWNLOAD_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+
 /// Download a binary if not already present. Writes via a temp file then renames.
+/// Concurrent callers share a lock so two `perform_download`s cannot clobber the same path.
 pub async fn download_binary(bin: &DownloadableBinary) -> Result<(), AppError> {
+    if bin.path.is_file() {
+        return Ok(());
+    }
+    let lock = DOWNLOAD_LOCK.get_or_init(|| Mutex::new(()));
+    let _guard = lock.lock().await;
     if bin.path.is_file() {
         return Ok(());
     }
