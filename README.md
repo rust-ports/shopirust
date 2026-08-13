@@ -121,7 +121,7 @@ cargo run -p cli-kit -- app build --path ./my-app --skip-dependencies-installati
 # Deploy without rebuilding extensions already on disk
 cargo run -p cli-kit -- app deploy --path ./my-app --no-build --allow-updates --allow-deletes
 
-# Full deploy (builds first), create version but do not release
+# Full deploy (builds first). `--no-release` maps to Partners skipPublish (does not call AM release()).
 cargo run -p cli-kit -- app deploy --path ./my-app --no-release --message "test deploy" --allow-updates
 
 cargo run -p cli-kit -- app versions list --path ./my-app
@@ -142,7 +142,10 @@ cargo run -p cli-kit -- app function info --path ./extensions/my-function --json
 cargo run -p cli-kit -- app function typegen --path ./extensions/my-function
 cargo run -p cli-kit -- app function schema --path ./extensions/my-function
 cargo run -p cli-kit -- app function run --path ./extensions/my-function --input ./input.json
-cargo run -p cli-kit -- app function replay --path ./extensions/my-function --log <id> --watch=false
+# Replay does not require a linked app — logs are read from `.shopify/logs`.
+# `--watch` re-runs when `dist/index.wasm` mtime changes.
+cargo run -p cli-kit -- app function replay --path ./extensions/my-function --log <id>
+cargo run -p cli-kit -- app function replay --path ./extensions/my-function --watch
 ```
 
 ### Admin GraphQL: execute + bulk
@@ -159,11 +162,11 @@ cargo run -p cli-kit -- app execute \
   --query-file ./query.graphql \
   --output-file ./result.json
 
-# Bulk query
+# Bulk query (with --watch, results download to --output-file or stdout when COMPLETED)
 cargo run -p cli-kit -- app bulk execute \
   --store my-store.myshopify.com \
   --query '{ products { edges { node { id } } } }' \
-  --watch
+  --watch --output-file ./bulk.jsonl
 
 # Bulk mutation (needs --variables or --variable-file JSONL)
 cargo run -p cli-kit -- app bulk execute \
@@ -212,6 +215,7 @@ cargo run -p cli-kit -- app webhook trigger \
   --address arn:aws:events:us-east-1::event-source/aws.partner/shopify.com/1/source
 
 cargo run -p cli-kit -- app logs sources --path ./my-app
+# Streams logs and writes JSON files under `.shopify/logs` (used by function replay).
 cargo run -p cli-kit -- app logs --store my-store.myshopify.com --path ./my-app
 
 # Localhost tunnel mode (no cloudflared)
@@ -221,12 +225,19 @@ cargo run -p cli-kit -- app dev --use-localhost \
 cargo run -p cli-kit -- app dev clean --path ./my-app --store my-store.myshopify.com
 ```
 
+Refresh vendored Polaris console assets from an upstream Shopify/cli checkout:
+
+```bash
+make console-assets UPSTREAM_CLI=/path/to/shopify/cli
+```
+
+`app dev` sends a live `APP_UNINSTALLED` sample (HMAC-signed) when the remote app changed, with a synthetic fallback. TTY sessions show concurrent prefixed logs, a status table, and shortcuts `p` (preview), `g` (GraphiQL), `q`/Ctrl+C (abort).
+
 ## Not ready / out of scope (do not expect parity yet)
 
-- Full Polaris `ui-extensions-dev-console` static asset bundle (dev console is a functional HTML/WS stub)
+- Pixel-identical Ink DevSessionUI / Replay React components
 - Store / Hydrogen surfaces
 - CLI meta (`upgrade`, `cache`, notifications, did-you-mean)
-- Full Partners parity for release / signed upload / versions (App Management is the primary path)
 - Playwright-class E2E suite
 ## Regenerate GraphQL
 
