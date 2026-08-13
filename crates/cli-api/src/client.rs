@@ -73,6 +73,11 @@ pub trait DeveloperPlatformClient: Send + Sync {
         &self,
         app: &MinimalAppIdentifiers,
     ) -> Result<AssetUrlSchema, CliApiError>;
+    /// Create a remote extension registration (Partners). App Management returns a local uid.
+    async fn create_extension(
+        &self,
+        input: &crate::types::ExtensionCreateInput,
+    ) -> Result<crate::types::CreatedExtension, CliApiError>;
     async fn deploy(&self, input: Value) -> Result<Value, CliApiError>;
     async fn release(
         &self,
@@ -307,6 +312,17 @@ mod tests {
             Ok(AssetUrlSchema {
                 asset_url: None,
                 user_errors: vec![],
+            })
+        }
+        async fn create_extension(
+            &self,
+            input: &crate::types::ExtensionCreateInput,
+        ) -> Result<crate::types::CreatedExtension, CliApiError> {
+            Ok(crate::types::CreatedExtension {
+                id: input.handle.clone(),
+                uuid: input.handle.clone(),
+                type_name: input.type_name.clone(),
+                title: input.title.clone(),
             })
         }
         async fn deploy(&self, _: Value) -> Result<Value, CliApiError> {

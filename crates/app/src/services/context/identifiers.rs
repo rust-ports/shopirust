@@ -91,10 +91,21 @@ pub async fn ensure_deployment_ids_presence(
                     extensions.entry(handle.clone()).or_insert_with(|| uid.clone());
                 }
             }
-        } else {
+        } else if let Some(ext) = ctx.app.extensions.iter().find(|e| &e.handle == handle) {
+            let created = client
+                .create_extension(&cli_api::ExtensionCreateInput {
+                    api_key: ctx.remote_app.api_key.clone(),
+                    type_name: client.to_extension_graphql_type(ext.type_name()),
+                    title: ext.handle.clone(),
+                    config: "{}".into(),
+                    context: None,
+                    handle: ext.handle.clone(),
+                })
+                .await
+                .map_err(|e| AppError::message(e.to_string()))?;
             extensions
                 .entry(handle.clone())
-                .or_insert_with(|| format!("pending:{handle}"));
+                .or_insert(created.uuid);
         }
     }
     for ext in &ctx.app.extensions {
@@ -102,10 +113,6 @@ pub async fn ensure_deployment_ids_presence(
             extensions
                 .entry(ext.handle.clone())
                 .or_insert_with(|| uid.clone());
-        } else if !atomic {
-            extensions
-                .entry(ext.handle.clone())
-                .or_insert_with(|| format!("local:{}", ext.handle));
         }
     }
 
@@ -232,7 +239,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn partners_invents_pending_ids() {
+    async fn partners_creates_extension_ids() {
         let dir = tempdir().unwrap();
         fs::write(
             dir.path().join("shopify.app.toml"),
@@ -266,7 +273,8 @@ mod tests {
         .unwrap();
         assert_eq!(
             ids.extensions.get("brand-new").map(String::as_str),
-            Some("pending:brand-new")
+            Some("created:brand-new")
         );
+        assert_eq!(client.created_extensions.lock().unwrap().len(), 1);
     }
 }

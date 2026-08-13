@@ -59,6 +59,7 @@ impl AppManagementPlatformClient {
                 "uidStrategy": spec.uid_strategy,
                 "features": spec.features,
             })),
+            validation_schema: spec.validation_schema.and_then(|v| v.json_schema),
         }
     }
 
@@ -522,6 +523,19 @@ impl DeveloperPlatformClient for AppManagementPlatformClient {
                     message: e.message.unwrap_or_default(),
                 })
                 .collect(),
+        })
+    }
+
+    async fn create_extension(
+        &self,
+        input: &cli_api::types::ExtensionCreateInput,
+    ) -> Result<cli_api::types::CreatedExtension, CliApiError> {
+        // App Management assigns UUIDs on atomic deploy; return the local handle/uid.
+        Ok(cli_api::types::CreatedExtension {
+            id: input.handle.clone(),
+            uuid: input.handle.clone(),
+            type_name: input.type_name.clone(),
+            title: input.title.clone(),
         })
     }
 

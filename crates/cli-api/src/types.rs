@@ -148,6 +148,8 @@ pub struct RemoteSpecification {
     pub name: String,
     pub experience: String,
     pub options: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub validation_schema: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -171,6 +173,27 @@ pub struct ExtensionTemplatesResult {
 pub struct AssetUrlSchema {
     pub asset_url: Option<String>,
     pub user_errors: Vec<UserError>,
+}
+
+/// Input for Partners `extensionCreate` (AM returns a local uid without a mutation).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExtensionCreateInput {
+    pub api_key: String,
+    pub type_name: String,
+    pub title: String,
+    pub config: String,
+    pub context: Option<String>,
+    pub handle: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreatedExtension {
+    pub id: String,
+    pub uuid: String,
+    pub type_name: String,
+    pub title: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

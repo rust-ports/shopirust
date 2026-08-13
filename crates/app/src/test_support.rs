@@ -19,10 +19,13 @@ pub struct MockClient {
     pub specifications: Vec<RemoteSpecification>,
     pub registrations: Value,
     pub templates: Vec<ExtensionTemplate>,
-    /// When false, mimics Partners (invents `pending:{handle}` ids).
+    /// When false, mimics Partners (`create_extension` instead of atomic deploy).
     pub atomic: bool,
     pub update_urls_calls: Mutex<Vec<Value>>,
     pub update_urls_user_errors: Vec<String>,
+    pub created_extensions: Mutex<Vec<cli_api::ExtensionCreateInput>>,
+    pub signed_upload_url: Option<String>,
+    pub deploy_calls: Mutex<Vec<Value>>,
 }
 
 impl MockClient {
@@ -220,11 +223,27 @@ impl DeveloperPlatformClient for MockClient {
         _: &MinimalAppIdentifiers,
     ) -> Result<AssetUrlSchema, CliApiError> {
         Ok(AssetUrlSchema {
-            asset_url: None,
+            asset_url: self
+                .signed_upload_url
+                .clone()
+                .or_else(|| Some("https://upload.example/signed".into())),
             user_errors: vec![],
         })
     }
-    async fn deploy(&self, _: Value) -> Result<Value, CliApiError> {
+    async fn create_extension(
+        &self,
+        input: &cli_api::ExtensionCreateInput,
+    ) -> Result<cli_api::CreatedExtension, CliApiError> {
+        self.created_extensions.lock().unwrap().push(input.clone());
+        Ok(cli_api::CreatedExtension {
+            id: format!("id:{}", input.handle),
+            uuid: format!("created:{}", input.handle),
+            type_name: input.type_name.clone(),
+            title: input.title.clone(),
+        })
+    }
+    async fn deploy(&self, input: Value) -> Result<Value, CliApiError> {
+        self.deploy_calls.lock().unwrap().push(input);
         Ok(Value::Null)
     }
     async fn release(

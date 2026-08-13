@@ -100,6 +100,7 @@ pub struct ValidationError {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct UserError {
+    #[serde(default)]
     pub field: Vec<String>,
     pub message: String,
     pub category: Option<String>,
@@ -199,6 +200,44 @@ struct CreateAppResponse {
 #[serde(rename_all = "camelCase")]
 struct DeployResponse {
     app_deploy: DeployResult,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ExtensionCreateRegistration {
+    pub id: String,
+    pub uuid: String,
+    #[serde(rename = "type")]
+    pub type_name: String,
+    pub title: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ExtensionCreateResult {
+    pub extension_registration: Option<ExtensionCreateRegistration>,
+    #[serde(default)]
+    pub user_errors: Vec<UserError>,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ExtensionCreateResponse {
+    extension_create: ExtensionCreateResult,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct SignedUploadUrlResult {
+    pub signed_upload_url: Option<String>,
+    #[serde(default)]
+    pub user_errors: Vec<UserError>,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SignedUploadUrlResponse {
+    app_version_generate_signed_upload_url: SignedUploadUrlResult,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -333,6 +372,44 @@ mutation AppCreate($org: Int!, $title: String!, $appUrl: Url!, $redir: [Url]!, $
       embedded
       disabledFlags
     }
+    userErrors {
+      field
+      message
+    }
+  }
+}
+"#;
+
+const EXTENSION_CREATE_MUTATION: &str = r#"
+mutation ExtensionCreate(
+  $apiKey: String!
+  $type: ExtensionType!
+  $title: String!
+  $config: JSON!
+  $context: String
+  $handle: String
+) {
+  extensionCreate(
+    input: {apiKey: $apiKey, type: $type, title: $title, config: $config, context: $context, handle: $handle}
+  ) {
+    extensionRegistration {
+      id
+      uuid
+      type
+      title
+    }
+    userErrors {
+      field
+      message
+    }
+  }
+}
+"#;
+
+const GENERATE_SIGNED_UPLOAD_URL_MUTATION: &str = r#"
+mutation GenerateSignedUploadUrl($apiKey: String!, $bundleFormat: Int!) {
+  appVersionGenerateSignedUploadUrl(input: {apiKey: $apiKey, bundleFormat: $bundleFormat}) {
+    signedUploadUrl
     userErrors {
       field
       message
@@ -573,15 +650,58 @@ impl PartnersClient {
         api_key: &str,
         bundle_url: &str,
     ) -> Result<DeployResult, GraphqlRequestError> {
-        let vars = serde_json::json!({
+        self.deploy_app_input(serde_json::json!({
             "apiKey": api_key,
             "bundleUrl": bundle_url,
-        });
+        }))
+        .await
+    }
+
+    /// Deploy with full Partners `appDeploy` variables (`appModules`, `skipPublish`, …).
+    pub async fn deploy_app_input(
+        &self,
+        vars: serde_json::Value,
+    ) -> Result<DeployResult, GraphqlRequestError> {
         let resp: DeployResponse = self
             .graphql
             .query_with_variables(APP_DEPLOY_MUTATION, Some(vars))
             .await?;
         Ok(resp.app_deploy)
+    }
+
+    pub async fn create_extension(
+        &self,
+        input: &cli_api::types::ExtensionCreateInput,
+    ) -> Result<ExtensionCreateResult, GraphqlRequestError> {
+        let vars = serde_json::json!({
+            "apiKey": input.api_key,
+            "type": input.type_name,
+            "title": input.title,
+            "config": input.config,
+            "context": input.context,
+            "handle": input.handle,
+        });
+        let resp: ExtensionCreateResponse = self
+            .graphql
+            .query_with_variables(EXTENSION_CREATE_MUTATION, Some(vars))
+            .await?;
+        Ok(resp.extension_create)
+    }
+
+    pub async fn generate_signed_upload_url(
+        &self,
+        api_key: &str,
+        bundle_format: i64,
+    ) -> Result<SignedUploadUrlResult, GraphqlRequestError> {
+        let vars = serde_json::json!({
+            "apiKey": api_key,
+            "bundleFormat": bundle_format,
+        });
+        let resp: SignedUploadUrlResponse = self
+            .graphql
+            .query_with_variables(GENERATE_SIGNED_UPLOAD_URL_MUTATION, Some(vars))
+            .await?;
+        Ok(resp.app_version_generate_signed_upload_url)
     }
 
     /// Update the application URL and redirect URL whitelist for an app.

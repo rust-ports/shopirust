@@ -295,26 +295,63 @@ impl DeveloperPlatformClient for PartnersPlatformClient {
 
     async fn generate_signed_upload_url(
         &self,
-        _app: &MinimalAppIdentifiers,
+        app: &MinimalAppIdentifiers,
     ) -> Result<AssetUrlSchema, CliApiError> {
-        Err(CliApiError::unsupported(
-            ClientName::Partners.as_str(),
-            "generate_signed_upload_url",
-        ))
+        let result = self
+            .inner
+            .generate_signed_upload_url(&app.api_key, 1)
+            .await
+            .map_err(Self::map_err)?;
+        Ok(AssetUrlSchema {
+            asset_url: result.signed_upload_url,
+            user_errors: result
+                .user_errors
+                .into_iter()
+                .map(|e| cli_api::types::UserError {
+                    field: if e.field.is_empty() {
+                        None
+                    } else {
+                        Some(e.field)
+                    },
+                    message: e.message,
+                })
+                .collect(),
+        })
+    }
+
+    async fn create_extension(
+        &self,
+        input: &cli_api::types::ExtensionCreateInput,
+    ) -> Result<cli_api::types::CreatedExtension, CliApiError> {
+        let result = self
+            .inner
+            .create_extension(input)
+            .await
+            .map_err(Self::map_err)?;
+        if !result.user_errors.is_empty() {
+            let msg = result
+                .user_errors
+                .into_iter()
+                .map(|e| e.message)
+                .collect::<Vec<_>>()
+                .join(", ");
+            return Err(CliApiError::message(msg));
+        }
+        let reg = result.extension_registration.ok_or_else(|| {
+            CliApiError::message("extensionCreate returned no registration")
+        })?;
+        Ok(cli_api::types::CreatedExtension {
+            id: reg.id,
+            uuid: reg.uuid,
+            type_name: reg.type_name,
+            title: reg.title,
+        })
     }
 
     async fn deploy(&self, input: Value) -> Result<Value, CliApiError> {
-        let api_key = input
-            .get("apiKey")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| CliApiError::message("deploy requires apiKey"))?;
-        let bundle_url = input
-            .get("bundleUrl")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| CliApiError::message("deploy requires bundleUrl"))?;
         let result = self
             .inner
-            .deploy_app(api_key, bundle_url)
+            .deploy_app_input(input)
             .await
             .map_err(Self::map_err)?;
         serde_json::to_value(result).map_err(|e| CliApiError::message(e.to_string()))

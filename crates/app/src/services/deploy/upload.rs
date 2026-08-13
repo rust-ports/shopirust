@@ -12,6 +12,7 @@ pub struct UploadExtensionsBundleOptions {
     pub version: Option<String>,
     pub no_release: bool,
     pub source_control_url: Option<String>,
+    pub app_modules: Vec<Value>,
 }
 
 #[derive(Debug, Clone)]
@@ -61,10 +62,15 @@ pub async fn upload_extensions_bundle(
             "metadata": metadata,
         })
     } else {
-        json!({
-            "apiKey": ctx.remote_app.api_key,
-            "bundleUrl": upload_url,
-        })
+        partners_deploy_input(
+            &ctx.remote_app.api_key,
+            &upload_url,
+            &options.app_modules,
+            options.no_release,
+            options.message.as_deref(),
+            options.version.as_deref(),
+            options.source_control_url.as_deref(),
+        )
     };
 
     let raw = client
@@ -103,11 +109,41 @@ pub async fn upload_extensions_bundle(
     })
 }
 
+pub(crate) fn partners_deploy_input(
+    api_key: &str,
+    bundle_url: &str,
+    app_modules: &[Value],
+    skip_publish: bool,
+    message: Option<&str>,
+    version_tag: Option<&str>,
+    commit_reference: Option<&str>,
+) -> Value {
+    json!({
+        "apiKey": api_key,
+        "bundleUrl": bundle_url,
+        "appModules": app_modules.iter().map(strip_uid_from_module).collect::<Vec<_>>(),
+        "skipPublish": skip_publish,
+        "message": message,
+        "versionTag": version_tag,
+        "commitReference": commit_reference,
+    })
+}
+
+fn strip_uid_from_module(module: &Value) -> Value {
+    let mut clone = module.clone();
+    if let Some(obj) = clone.as_object_mut() {
+        obj.remove("uid");
+    }
+    clone
+}
+
 fn extract_errors(raw: &Value) -> Vec<String> {
     for path in [
         "/userErrors",
         "/version/userErrors",
         "/appVersionCreate/userErrors",
+        "/appDeploy/userErrors",
+        "/data/appDeploy/userErrors",
         "/user_errors",
     ] {
         if let Some(arr) = raw.pointer(path).and_then(|v| v.as_array()) {
@@ -132,6 +168,16 @@ fn extract_errors(raw: &Value) -> Vec<String> {
             .collect();
     }
     Vec::new()
+}
+
+/// Human-readable Partners deploy error (version-tag-taken vs generic validation).
+pub fn format_partners_deploy_error(message: &str) -> String {
+    let lower = message.to_lowercase();
+    if lower.contains("version tag") || lower.contains("version_tag") || lower.contains("taken") {
+        format!("Version tag already taken: {message}")
+    } else {
+        format!("Validation: {message}")
+    }
 }
 
 pub(crate) fn extract_version_id(raw: &Value) -> Option<String> {
@@ -171,5 +217,46 @@ mod tests {
             .as_deref(),
             Some("v3")
         );
+    }
+
+    #[test]
+    fn strips_uid_from_partners_modules() {
+        let stripped = strip_uid_from_module(&serde_json::json!({
+            "handle": "x",
+            "uid": "abc",
+            "type": "theme"
+        }));
+        assert!(stripped.get("uid").is_none());
+        assert_eq!(stripped.get("handle").and_then(|v| v.as_str()), Some("x"));
+    }
+
+    #[test]
+    fn formats_version_tag_taken() {
+        assert!(format_partners_deploy_error("Version tag already taken").contains("Version tag"));
+        assert!(format_partners_deploy_error("invalid config").contains("Validation"));
+    }
+
+    #[test]
+    fn extracts_app_deploy_user_errors() {
+        let raw = serde_json::json!({
+            "appDeploy": { "userErrors": [{ "message": "nope" }] }
+        });
+        assert_eq!(extract_errors(&raw), vec!["nope".to_string()]);
+    }
+
+    #[test]
+    fn partners_input_sets_skip_publish_and_strips_uid() {
+        let input = partners_deploy_input(
+            "key",
+            "https://bundle",
+            &[serde_json::json!({"handle":"h","uid":"u","type":"theme"})],
+            true,
+            Some("msg"),
+            Some("1.0.0"),
+            None,
+        );
+        assert_eq!(input.get("skipPublish"), Some(&serde_json::json!(true)));
+        assert!(input["appModules"][0].get("uid").is_none());
+        assert_eq!(input.get("versionTag"), Some(&serde_json::json!("1.0.0")));
     }
 }

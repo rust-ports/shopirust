@@ -13,8 +13,14 @@ use crate::services::context::identifiers::{
     ensure_deployment_ids_presence, persist_identifiers, EnsureIdsOptions,
 };
 use crate::services::context::LinkedAppContext;
-use crate::services::deploy::upload::{upload_extensions_bundle, UploadExtensionsBundleOptions};
-use cli_api::DeveloperPlatformClient;
+use crate::services::deploy::upload::{
+    format_partners_deploy_error, upload_extensions_bundle, UploadExtensionsBundleOptions,
+};
+use crate::services::import_extensions::{
+    filter_out_imported_extensions, import_extensions, ExtensionRegistration,
+    ImportExtensionsOptions,
+};
+use cli_api::{DeveloperPlatformClient, MinimalAppIdentifiers};
 use std::fs;
 use std::path::Path;
 
@@ -45,6 +51,8 @@ pub async fn deploy(
     options: DeployOptions,
     prompter: Option<&dyn Prompter>,
 ) -> Result<DeployResult, AppError> {
+    import_extensions_if_needed(ctx, client, prompter).await?;
+
     let ids = ensure_deployment_ids_presence(
         ctx,
         client,
@@ -74,32 +82,41 @@ pub async fn deploy(
     let bundle_dir = ctx.app.directory.join(".shopify").join("deploy-bundle");
     prepare_bundle_directory(&bundle_dir, &ctx.app.extensions, options.no_build)?;
 
+    let include_config = ctx
+        .app
+        .configuration
+        .build
+        .as_ref()
+        .and_then(|b| b.include_config_on_deploy)
+        .unwrap_or(true);
+    let mut modules = Vec::new();
+    let app_config_json =
+        serde_json::to_value(&ctx.app.configuration).unwrap_or(serde_json::json!({}));
+    for e in &ctx.app.extensions {
+        if !include_on_deploy(e, include_config) {
+            continue;
+        }
+        e.validate()?;
+        let deploy_ctx = crate::models::extensions::DeployConfigContext {
+            app_configuration: Some(app_config_json.clone()),
+            api_key: ctx.remote_app.api_key.clone(),
+            module_id: ids.extensions.get(&e.handle).cloned(),
+        };
+        let config = e.deploy_config(&deploy_ctx).await?.unwrap_or_default();
+        modules.push(serde_json::json!({
+            "uuid": ids.extensions.get(&e.handle).cloned().unwrap_or_default(),
+            "handle": e.handle,
+            "type": e.type_name(),
+            "uid": e.uid.clone().unwrap_or_default(),
+            "config": config,
+        }));
+    }
+
     write_manifest_to_bundle(
         &AppManifest {
             name: ctx.app.name.clone(),
             handle: None,
-            modules: {
-                let mut modules = Vec::new();
-                let app_config_json =
-                    serde_json::to_value(&ctx.app.configuration).unwrap_or(serde_json::json!({}));
-                for e in &ctx.app.extensions {
-                    e.validate()?;
-                    let deploy_ctx = crate::models::extensions::DeployConfigContext {
-                        app_configuration: Some(app_config_json.clone()),
-                        api_key: ctx.remote_app.api_key.clone(),
-                        module_id: ids.extensions.get(&e.handle).cloned(),
-                    };
-                    let config = e.deploy_config(&deploy_ctx).await?.unwrap_or_default();
-                    modules.push(serde_json::json!({
-                        "uuid": ids.extensions.get(&e.handle).cloned().unwrap_or_default(),
-                        "handle": e.handle,
-                        "type": e.type_name(),
-                        "uid": e.uid.clone().unwrap_or_default(),
-                        "config": config,
-                    }));
-                }
-                modules
-            },
+            modules: modules.clone(),
         },
         &bundle_dir,
     )?;
@@ -117,13 +134,23 @@ pub async fn deploy(
             version: options.version.clone(),
             no_release: options.no_release,
             source_control_url: options.source_control_url.clone(),
+            app_modules: modules,
         },
     )
     .await?;
 
     persist_identifiers(&ctx.app.directory, &ids)?;
 
-    let success = upload.user_errors.is_empty();
+    let user_errors = if client.supports_atomic_deployments() {
+        upload.user_errors
+    } else {
+        upload
+            .user_errors
+            .iter()
+            .map(|m| format_partners_deploy_error(m))
+            .collect()
+    };
+    let success = user_errors.is_empty();
     Ok(DeployResult {
         success,
         version_id: upload.version_id,
@@ -134,9 +161,111 @@ pub async fn deploy(
                 "App deployed and released.".into()
             }
         } else {
-            format!("Deploy failed: {}", upload.user_errors.join(", "))
+            format!("Deploy failed: {}", user_errors.join(", "))
         },
-        user_errors: upload.user_errors,
+        user_errors,
+    })
+}
+
+pub(crate) fn include_on_deploy(
+    ext: &ExtensionInstance,
+    include_config: bool,
+) -> bool {
+    include_config || !ext.specification.is_app_config()
+}
+
+async fn import_extensions_if_needed(
+    ctx: &LinkedAppContext,
+    client: &dyn DeveloperPlatformClient,
+    prompter: Option<&dyn Prompter>,
+) -> Result<(), AppError> {
+    if !client.supports_dashboard_managed_extensions() && client.supports_atomic_deployments() {
+        // App Management: still block if dashboard-managed leftovers exist.
+    }
+    let identifiers = MinimalAppIdentifiers {
+        api_key: ctx.remote_app.api_key.clone(),
+        organization_id: ctx
+            .remote_app
+            .organization_id
+            .clone()
+            .unwrap_or_else(|| ctx.organization.id.clone()),
+        id: ctx.remote_app.id.clone(),
+    };
+    let regs = client
+        .app_extension_registrations(&identifiers)
+        .await
+        .map_err(|e| AppError::message(e.to_string()))?;
+    let dashboard = regs
+        .pointer("/dashboardManagedExtensionRegistrations")
+        .or_else(|| regs.pointer("/app/dashboardManagedExtensionRegistrations"))
+        .or_else(|| regs.pointer("/data/app/dashboardManagedExtensionRegistrations"))
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+    if dashboard.is_empty() {
+        return Ok(());
+    }
+    let pending: Vec<ExtensionRegistration> = dashboard.iter().filter_map(parse_dashboard_registration).collect();
+    let env_uuids = std::collections::HashMap::new();
+    let pending = filter_out_imported_extensions(&ctx.app, &pending, &env_uuids);
+    let local: std::collections::HashSet<String> = ctx
+        .app
+        .extensions
+        .iter()
+        .filter_map(|e| e.uid.clone())
+        .collect();
+    let pending: Vec<_> = pending
+        .into_iter()
+        .filter(|e| !local.contains(&e.uuid))
+        .collect();
+    if pending.is_empty() {
+        return Ok(());
+    }
+    if client.supports_atomic_deployments() {
+        return Err(AppError::message(
+            "Dashboard-managed extensions must be imported before deploy. Run `shopify app import-extensions`.",
+        ));
+    }
+    let confirmed = match prompter {
+        Some(p) => p.confirm(&format!(
+            "Import {} dashboard-managed extension(s) before deploy?",
+            pending.len()
+        ))?,
+        None => false,
+    };
+    if !confirmed {
+        return Err(AppError::message(
+            "Deploy cancelled: dashboard extensions not imported.",
+        ));
+    }
+    import_extensions(
+        &ctx.app,
+        ImportExtensionsOptions {
+            extensions: pending,
+            extension_types: vec![],
+            all: true,
+            overwrite_existing: false,
+            app_embedded: ctx.app.configuration.embedded.unwrap_or(false),
+        },
+    )?;
+    Ok(())
+}
+
+fn parse_dashboard_registration(value: &serde_json::Value) -> Option<ExtensionRegistration> {
+    Some(ExtensionRegistration {
+        uuid: value.get("uuid")?.as_str()?.to_string(),
+        title: value
+            .get("title")
+            .and_then(|v| v.as_str())
+            .unwrap_or("extension")
+            .to_string(),
+        type_name: value
+            .get("type")
+            .and_then(|v| v.as_str())
+            .unwrap_or("theme")
+            .to_string(),
+        draft_version: None,
+        active_version: None,
     })
 }
 
@@ -200,6 +329,7 @@ fn copy_path(src: &Path, dest: &Path) -> Result<(), AppError> {
 
 #[cfg(test)]
 mod tests {
+    use super::parse_dashboard_registration;
     use crate::prompts::deploy_release::{
         should_skip_confirmation_prompt, DeployConfirmOptions,
     };
@@ -233,6 +363,45 @@ mod tests {
     #[test]
     fn confirm_deploy_allow_updates_skips() {
         assert!(should_skip_confirmation_prompt(&opts(true, false, false, false), &with_updates()).unwrap());
+    }
+
+    #[test]
+    fn parses_dashboard_registration() {
+        let parsed = parse_dashboard_registration(&serde_json::json!({
+            "uuid": "u1",
+            "title": "My Theme",
+            "type": "theme_app_extension"
+        }))
+        .unwrap();
+        assert_eq!(parsed.uuid, "u1");
+        assert_eq!(parsed.type_name, "theme_app_extension");
+    }
+
+    #[test]
+    fn include_on_deploy_filters_config_extensions() {
+        use crate::models::extensions::create_extension_specification;
+        use crate::models::extensions::extension_instance::ExtensionInstance;
+        use std::collections::HashMap;
+        use std::path::PathBuf;
+
+        let branding = ExtensionInstance::new(
+            "branding",
+            PathBuf::from("."),
+            PathBuf::from("shopify.app.toml"),
+            HashMap::new(),
+            create_extension_specification("branding").unwrap(),
+        );
+        let ui = ExtensionInstance::new(
+            "my-ui",
+            PathBuf::from("."),
+            PathBuf::from("shopify.extension.toml"),
+            HashMap::new(),
+            create_extension_specification("ui_extension").unwrap(),
+        );
+        assert!(!super::include_on_deploy(&branding, false));
+        assert!(super::include_on_deploy(&branding, true));
+        assert!(super::include_on_deploy(&ui, false));
+        assert!(super::include_on_deploy(&ui, true));
     }
 
     #[test]
