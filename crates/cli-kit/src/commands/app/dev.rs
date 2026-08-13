@@ -8,7 +8,10 @@ use cli_core::command::BaseCommand;
 use cli_core::error::CliError;
 use std::path::PathBuf;
 
-use super::auth_helpers::{authenticated_developer_platform, linked_ctx_options};
+use super::auth_helpers::{
+    authenticated_developer_platform, authenticated_webhooks_client, linked_ctx_options,
+};
+use super::webhook::webhooks_sample_client;
 use super::prompter::CliKitPrompter;
 use crate::constants::app_management_fqdn;
 use crate::session::ensure_authenticated;
@@ -135,6 +138,10 @@ impl BaseCommand for Dev {
             start_tunnel_if_needed(&tunnel).await?;
 
         let (app_dev_token, app_dev_graphql_url) = app_dev_credentials().await?;
+        let webhook_sample_client = authenticated_webhooks_client(&ctx.organization.id)
+            .await
+            .ok()
+            .map(webhooks_sample_client);
 
         let result = dev(
             &ctx,
@@ -156,6 +163,7 @@ impl BaseCommand for Dev {
                 graphiql_key: self.graphiql_key.clone(),
                 app_dev_token,
                 app_dev_graphql_url,
+                webhook_sample_client,
             },
         )
         .await;

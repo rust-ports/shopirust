@@ -16,7 +16,13 @@ use super::auth_helpers::{
 use super::prompter::CliKitPrompter;
 use crate::api::webhooks::WebhooksClient;
 
-struct WebhooksAdapter(WebhooksClient);
+pub(crate) struct WebhooksAdapter(pub WebhooksClient);
+
+pub(crate) fn webhooks_sample_client(
+    client: WebhooksClient,
+) -> std::sync::Arc<dyn WebhookSampleClient> {
+    std::sync::Arc::new(WebhooksAdapter(client))
+}
 
 #[async_trait]
 impl WebhookSampleClient for WebhooksAdapter {

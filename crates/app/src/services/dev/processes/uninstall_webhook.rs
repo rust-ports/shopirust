@@ -4,11 +4,14 @@ use super::types::{DevProcess, DevProcessKind};
 use crate::error::AppError;
 use crate::models::loader::WebInstance;
 use crate::services::webhook::{
-    deliver_webhook_http, resolve_sample_payload, DeliverWebhookOptions,
+    send_app_uninstalled_webhook, send_uninstall_webhook_to_app_server, SendUninstallWebhookOptions,
+    WebhookSampleClient,
 };
+use std::sync::Arc;
+use std::time::Duration;
 use tokio_util::sync::CancellationToken;
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct UninstallWebhookOptions {
     pub store_fqdn: String,
     pub api_secret: String,
@@ -16,6 +19,9 @@ pub struct UninstallWebhookOptions {
     pub backend_port: u16,
     pub frontend_port: u16,
     pub webs: Vec<WebInstance>,
+    /// Live sample client from `app dev`. Synthetic payload is used when this is `None`
+    /// or when the live fetch fails.
+    pub sample_client: Option<Arc<dyn WebhookSampleClient>>,
 }
 
 pub fn front_and_backend<'a>(
@@ -66,51 +72,74 @@ async fn run_uninstall(
         "Sending APP_UNINSTALLED webhook to {address} (store={})",
         opts.store_fqdn
     );
-    let sample = resolve_sample_payload("app/uninstalled", "2024-10");
-    let mut headers: serde_json::Value =
-        serde_json::from_str(&sample.headers).unwrap_or_else(|_| serde_json::json!({}));
-    if let Some(obj) = headers.as_object_mut() {
-        obj.insert(
-            "X-Shopify-Shop-Domain".into(),
-            serde_json::Value::String(opts.store_fqdn.clone()),
-        );
-        obj.insert(
-            "X-Shopify-Topic".into(),
-            serde_json::Value::String("app/uninstalled".into()),
-        );
-    }
-    let headers_json = headers.to_string();
 
-    // Wait briefly so the app server can come up, then retry on connection refused.
-    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    let send_opts = SendUninstallWebhookOptions {
+        address: address.clone(),
+        store_fqdn: opts.store_fqdn.clone(),
+        shared_secret: opts.api_secret.clone(),
+        initial_delay: Duration::from_secs(3),
+        retry_delay: Duration::from_secs(5),
+        max_attempts: 3,
+    };
+
+    let live_ok = if let Some(client) = &opts.sample_client {
+        tokio::select! {
+            _ = abort.cancelled() => return Ok(()),
+            result = send_uninstall_webhook_to_app_server(send_opts.clone(), client.as_ref()) => {
+                match result {
+                    Ok(true) => true,
+                    Ok(false) => {
+                        tracing::info!(target: "app_dev", "Live uninstall sample did not deliver; falling back to synthetic payload");
+                        false
+                    }
+                    Err(e) => {
+                        tracing::info!(target: "app_dev", "Live uninstall sample failed ({e}); falling back to synthetic payload");
+                        false
+                    }
+                }
+            }
+        }
+    } else {
+        false
+    };
+    if live_ok {
+        tracing::info!(target: "app_dev", "APP_UNINSTALLED webhook delivered");
+        return Ok(());
+    }
+
+    if opts.sample_client.is_none() && send_opts.initial_delay > Duration::ZERO {
+        tokio::select! {
+            _ = abort.cancelled() => return Ok(()),
+            _ = tokio::time::sleep(send_opts.initial_delay) => {}
+        }
+    }
+
     let mut last_err = None;
-    for attempt in 0..3 {
+    for attempt in 0..send_opts.max_attempts {
         if abort.is_cancelled() {
             return Ok(());
         }
-        match deliver_webhook_http(DeliverWebhookOptions {
-            address: address.clone(),
-            body: sample.sample_payload.clone(),
-            headers_json: headers_json.clone(),
-            shared_secret: Some(opts.api_secret.clone()),
-        })
-        .await
-        {
-            Ok(result) if result.success => {
+        match send_app_uninstalled_webhook(&address, &opts.store_fqdn, &opts.api_secret).await {
+            Ok(true) => {
                 tracing::info!(target: "app_dev", "APP_UNINSTALLED webhook delivered");
                 return Ok(());
             }
-            Ok(result) => {
-                last_err = Some(format!("HTTP {}", result.status.unwrap_or(0)));
+            Ok(false) => {
+                last_err = Some("HTTP delivery failed".into());
+                break;
             }
             Err(e) => {
                 last_err = Some(e.to_string());
-                if attempt < 2 {
+                if attempt + 1 < send_opts.max_attempts {
                     tracing::info!(
                         target: "app_dev",
-                        "App isn't responding yet, retrying in 2 seconds"
+                        "App isn't responding yet, retrying in {} seconds",
+                        send_opts.retry_delay.as_secs()
                     );
-                    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                    tokio::select! {
+                        _ = abort.cancelled() => return Ok(()),
+                        _ = tokio::time::sleep(send_opts.retry_delay) => {}
+                    }
                 }
             }
         }
@@ -141,43 +170,39 @@ mod tests {
         }
     }
 
-    #[test]
-    fn skips_when_remote_not_updated() {
-        let proc = setup_send_uninstall_webhook_process(UninstallWebhookOptions {
+    fn opts(
+        updated: bool,
+        webs: Vec<WebInstance>,
+    ) -> UninstallWebhookOptions {
+        UninstallWebhookOptions {
             store_fqdn: "shop.myshopify.com".into(),
             api_secret: "sec".into(),
-            remote_app_updated: false,
+            remote_app_updated: updated,
             backend_port: 3457,
             frontend_port: 3000,
-            webs: vec![web("backend", Some("/hooks"))],
-        });
+            webs,
+            sample_client: None,
+        }
+    }
+
+    #[test]
+    fn skips_when_remote_not_updated() {
+        let proc = setup_send_uninstall_webhook_process(opts(
+            false,
+            vec![web("backend", Some("/hooks"))],
+        ));
         assert!(proc.is_none());
     }
 
     #[test]
     fn skips_without_web_processes() {
-        let proc = setup_send_uninstall_webhook_process(UninstallWebhookOptions {
-            store_fqdn: "shop.myshopify.com".into(),
-            api_secret: "sec".into(),
-            remote_app_updated: true,
-            backend_port: 3457,
-            frontend_port: 3000,
-            webs: vec![],
-        });
+        let proc = setup_send_uninstall_webhook_process(opts(true, vec![]));
         assert!(proc.is_none());
     }
 
     #[test]
     fn selects_when_updated_and_web_present() {
-        let proc = setup_send_uninstall_webhook_process(UninstallWebhookOptions {
-            store_fqdn: "shop.myshopify.com".into(),
-            api_secret: "sec".into(),
-            remote_app_updated: true,
-            backend_port: 3457,
-            frontend_port: 3000,
-            webs: vec![web("frontend", None)],
-        });
+        let proc = setup_send_uninstall_webhook_process(opts(true, vec![web("frontend", None)]));
         assert!(proc.is_some());
     }
-
 }

@@ -2,7 +2,9 @@
 
 use super::app_logs_polling::{setup_app_logs_polling_process, AppLogsPollingOptions};
 use super::app_watcher::setup_app_watcher_process;
-use super::dev_session::{setup_dev_session_process, DevSessionClient, DevSessionProcessOptions};
+use super::dev_session::{
+    setup_dev_session_process, DevSessionClient, DevSessionProcessOptions, DevSessionStatusManager,
+};
 use super::draftable_extension::{setup_draftable_extensions_process, DraftableExtensionOptions};
 use super::graphiql::{setup_graphiql_server_process, GraphiqlOptions};
 use super::previewable_extension::{
@@ -21,10 +23,11 @@ use crate::models::loader::LoadedApp;
 use crate::services::dev::app_events::AppEventWatcher;
 use crate::services::dev::extension::get_websocket_url;
 use crate::services::dev::tunnel_mode::get_available_tcp_port;
+use crate::services::webhook::WebhookSampleClient;
 use cli_api::OrganizationApp;
 use std::sync::Arc;
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct SetupDevProcessFlags {
     pub subscription_product_url: Option<String>,
     pub checkout_cart_url: Option<String>,
@@ -38,6 +41,7 @@ pub struct SetupDevProcessFlags {
     /// Bearer token for app_dev GraphQL (empty → soft-skip create).
     pub app_dev_token: String,
     pub app_dev_graphql_url: String,
+    pub webhook_sample_client: Option<Arc<dyn WebhookSampleClient>>,
 }
 
 pub struct SetupDevProcessesResult {
@@ -45,6 +49,7 @@ pub struct SetupDevProcessesResult {
     pub preview_url: String,
     pub graphiql_url: Option<String>,
     pub app_watcher: Arc<AppEventWatcher>,
+    pub status: Arc<DevSessionStatusManager>,
 }
 
 /// Select and configure concurrent processes (unit-testable without spawning).
@@ -65,6 +70,7 @@ pub async fn setup_dev_processes(
     let scopes = local_app.configuration.scopes().join(",");
 
     let app_watcher = Arc::new(AppEventWatcher::new(local_app.clone()));
+    let status = Arc::new(DevSessionStatusManager::new());
 
     let any_previewable = local_app.extensions.iter().any(|e| e.is_previewable());
     let dev_console_url = format!("{}/extensions/dev-console", network.proxy_url);
@@ -151,6 +157,7 @@ pub async fn setup_dev_processes(
                 app_preview_url: preview_url.clone(),
             },
             app_watcher.clone(),
+            status.clone(),
         ));
     } else {
         processes.push(setup_draftable_extensions_process(
@@ -177,6 +184,7 @@ pub async fn setup_dev_processes(
         backend_port: network.backend_port,
         frontend_port: network.frontend_port,
         webs: local_app.webs.clone(),
+        sample_client: flags.webhook_sample_client.clone(),
     }) {
         processes.push(p);
     }
@@ -187,6 +195,7 @@ pub async fn setup_dev_processes(
             api_key: api_key.clone(),
             shop_ids: vec![shop_id],
             store_name: store_fqdn.to_string(),
+            logs_dir: Some(local_app.directory.join(".shopify").join("logs")),
         }));
     }
 
@@ -222,6 +231,7 @@ pub async fn setup_dev_processes(
         preview_url,
         graphiql_url,
         app_watcher,
+        status,
     }
 }
 
@@ -319,6 +329,7 @@ mod tests {
                 remote_app_updated: false,
                 app_dev_token: String::new(),
                 app_dev_graphql_url: "https://example/graphql".into(),
+                webhook_sample_client: None,
             },
         )
         .await;
@@ -360,6 +371,7 @@ mod tests {
                 remote_app_updated: true,
                 app_dev_token: String::new(),
                 app_dev_graphql_url: "https://example/graphql".into(),
+                webhook_sample_client: None,
             },
         )
         .await;
@@ -400,6 +412,7 @@ mod tests {
                 remote_app_updated: false,
                 app_dev_token: String::new(),
                 app_dev_graphql_url: "https://example/graphql".into(),
+                webhook_sample_client: None,
             },
         )
         .await;

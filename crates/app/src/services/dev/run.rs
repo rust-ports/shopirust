@@ -4,6 +4,8 @@ use crate::error::AppError;
 use crate::local_storage::{get_cached_app_info, set_cached_app_info, CachedAppInfo};
 use crate::prompts::Prompter;
 use crate::services::context::LinkedAppContext;
+use crate::services::webhook::WebhookSampleClient;
+use std::sync::Arc;
 use crate::services::dependencies::install_app_dependencies;
 use crate::services::dev::mkcert::{generate_certificate, MkcertPlatform};
 use crate::services::dev::notify::DevNotifier;
@@ -25,7 +27,7 @@ use serde_json::json;
 use std::path::PathBuf;
 use tokio_util::sync::CancellationToken;
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct DevOptions {
     pub directory: PathBuf,
     pub update: bool,
@@ -43,6 +45,7 @@ pub struct DevOptions {
     pub graphiql_key: Option<String>,
     pub app_dev_token: String,
     pub app_dev_graphql_url: String,
+    pub webhook_sample_client: Option<Arc<dyn WebhookSampleClient>>,
 }
 
 /// Run `app dev`: prepare network → setup processes → run until Ctrl+C.
@@ -231,15 +234,22 @@ pub async fn dev_with_prompter(
             remote_app_updated,
             app_dev_token: options.app_dev_token.clone(),
             app_dev_graphql_url: options.app_dev_graphql_url.clone(),
+            webhook_sample_client: options.webhook_sample_client.clone(),
         },
     )
     .await;
 
-    println!("Preview URL: {}", setup.preview_url);
-    if let Some(ref gurl) = setup.graphiql_url {
-        println!("GraphiQL URL: {gurl}");
+    let tty = is_terminal::is_terminal(std::io::stdin())
+        && is_terminal::is_terminal(std::io::stdout());
+    let prefixes: Vec<String> = setup.processes.iter().map(|p| p.prefix.clone()).collect();
+
+    if !tty {
+        println!("Preview URL: {}", setup.preview_url);
+        if let Some(ref gurl) = setup.graphiql_url {
+            println!("GraphiQL URL: {gurl}");
+        }
+        println!("Press Ctrl+C to stop\n");
     }
-    println!("Press Ctrl+C to stop\n");
 
     let cancel = CancellationToken::new();
     let cancel_ctrlc = cancel.clone();
@@ -256,6 +266,7 @@ pub async fn dev_with_prompter(
                 api_key: ctx.remote_app.api_key.clone(),
                 shop_ids: vec![shop_id],
                 store_name: store.shop_domain.clone(),
+                logs_dir: Some(ctx.app.directory.join(".shopify").join("logs")),
             };
             let _ = run_app_logs_polling(cancel.clone(), client, opts).await;
         } else {
@@ -263,12 +274,19 @@ pub async fn dev_with_prompter(
         }
     };
 
+    let col = crate::services::dev::tui::prefix_column_size(&prefixes);
     let mut handles = Vec::new();
     for proc in setup.processes {
         if proc.kind == crate::services::dev::processes::DevProcessKind::AppLogsPolling {
             continue;
         }
         let prefix = proc.prefix.clone();
+        if tty {
+            eprintln!(
+                "{}",
+                crate::services::dev::tui::format_prefixed_line(&prefix, "started", col)
+            );
+        }
         let ctx_proc = DevProcessContext {
             abort: cancel.clone(),
             prefix: prefix.clone(),
@@ -281,9 +299,26 @@ pub async fn dev_with_prompter(
         }));
     }
 
-    tokio::select! {
-        _ = cancel.cancelled() => {}
-        _ = logs_fut => {}
+    if tty {
+        let tui = crate::services::dev::tui::run_dev_tui(
+            crate::services::dev::tui::DevTuiOptions {
+                preview_url: setup.preview_url.clone(),
+                graphiql_url: setup.graphiql_url.clone(),
+                prefixes,
+                status: setup.status.clone(),
+            },
+            cancel.clone(),
+        );
+        tokio::select! {
+            _ = cancel.cancelled() => {}
+            _ = logs_fut => {}
+            _ = tui => {}
+        }
+    } else {
+        tokio::select! {
+            _ = cancel.cancelled() => {}
+            _ = logs_fut => {}
+        }
     }
 
     if let Some(ref target) = options.notify {

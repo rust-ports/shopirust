@@ -59,7 +59,11 @@ pub fn build_extension_router(state: ServerState) -> Router {
 
     Router::new()
         .route("/", get(redirect_root))
-        .route("/extensions/dev-console", get(dev_console_stub))
+        .route("/extensions/dev-console", get(dev_console_index))
+        .route(
+            "/extensions/dev-console/assets/*asset",
+            get(dev_console_asset),
+        )
         .route(
             "/extensions/:extension_id/assets/*asset_path",
             get(extension_asset),
@@ -105,60 +109,37 @@ async fn redirect_root() -> Redirect {
     Redirect::temporary("/extensions/dev-console")
 }
 
-async fn dev_console_stub() -> impl IntoResponse {
-    (
-        StatusCode::OK,
-        [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
-        r#"<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>Shopify Dev Console</title>
-  <style>
-    :root { color-scheme: light dark; font-family: ui-sans-serif, system-ui, sans-serif; }
-    body { margin: 0; padding: 2rem; line-height: 1.5; }
-    h1 { font-size: 1.5rem; margin: 0 0 0.5rem; }
-    .muted { opacity: 0.7; }
-    #status { margin-top: 1rem; padding: 0.75rem 1rem; border-radius: 8px; background: #1111; border: 1px solid #8884; }
-    #log { margin-top: 1rem; font-family: ui-monospace, monospace; font-size: 12px; white-space: pre-wrap; max-height: 40vh; overflow: auto; }
-    code { background: #8882; padding: 0.1em 0.35em; border-radius: 4px; }
-  </style>
-</head>
-<body>
-  <h1>Dev console</h1>
-  <p class="muted">Minimal Rust-port console. Connects to the extension WebSocket at <code>/extensions</code>.</p>
-  <div id="status">Connecting…</div>
-  <div id="log"></div>
-  <script>
-    const statusEl = document.getElementById('status');
-    const logEl = document.getElementById('log');
-    function log(msg) {
-      logEl.textContent += msg + '\n';
-      logEl.scrollTop = logEl.scrollHeight;
+#[derive(rust_embed::Embed)]
+#[folder = "assets/dev-console"]
+struct DevConsoleAssets;
+
+fn embed_response(path: &str) -> Response {
+    match DevConsoleAssets::get(path) {
+        Some(file) => {
+            let mime = mime_guess::from_path(path)
+                .first_or_octet_stream()
+                .to_string();
+            (
+                StatusCode::OK,
+                [(header::CONTENT_TYPE, mime)],
+                file.data.into_owned(),
+            )
+                .into_response()
+        }
+        None => StatusCode::NOT_FOUND.into_response(),
     }
-    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = proto + '//' + location.host + '/extensions';
-    const ws = new WebSocket(wsUrl);
-    ws.addEventListener('open', () => {
-      statusEl.textContent = 'WebSocket connected: ' + wsUrl;
-      try {
-        ws.send(JSON.stringify({ event: 'connected', data: { client: 'rust-dev-console' } }));
-      } catch (e) { log('send error: ' + e); }
-    });
-    ws.addEventListener('message', (ev) => {
-      log('← ' + ev.data);
-      try {
-        const msg = JSON.parse(ev.data);
-        if (msg && msg.event) statusEl.textContent = 'Last event: ' + msg.event;
-      } catch (_) {}
-    });
-    ws.addEventListener('close', () => { statusEl.textContent = 'WebSocket closed'; });
-    ws.addEventListener('error', () => { statusEl.textContent = 'WebSocket error (is the extension server running?)'; });
-  </script>
-</body>
-</html>"#,
-    )
+}
+
+async fn dev_console_index() -> impl IntoResponse {
+    embed_response("index.html")
+}
+
+async fn dev_console_asset(Path(asset): Path<String>) -> impl IntoResponse {
+    let nested = format!("extensions/dev-console/assets/{asset}");
+    if DevConsoleAssets::get(&nested).is_some() {
+        return embed_response(&nested);
+    }
+    embed_response(&format!("assets/{asset}"))
 }
 
 async fn extensions_payload(State(state): State<ServerState>) -> impl IntoResponse {
@@ -430,6 +411,69 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .uri("/extensions/dev-1/assets/../../etc/passwd")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn dev_console_index_200() {
+        let dir = tempdir().unwrap();
+        let app = build_extension_router(test_state(dir.path()));
+        let res = app
+            .oneshot(
+                Request::builder()
+                    .uri("/extensions/dev-console")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let ct = res
+            .headers()
+            .get(header::CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("");
+        assert!(ct.contains("text/html"), "content-type={ct}");
+    }
+
+    #[tokio::test]
+    async fn dev_console_asset_content_type() {
+        let dir = tempdir().unwrap();
+        let app = build_extension_router(test_state(dir.path()));
+        let res = app
+            .oneshot(
+                Request::builder()
+                    .uri("/extensions/dev-console/assets/index.js")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let ct = res
+            .headers()
+            .get(header::CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("");
+        assert!(
+            ct.contains("javascript") || ct.contains("ecmascript"),
+            "content-type={ct}"
+        );
+    }
+
+    #[tokio::test]
+    async fn dev_console_unknown_asset_404() {
+        let dir = tempdir().unwrap();
+        let app = build_extension_router(test_state(dir.path()));
+        let res = app
+            .oneshot(
+                Request::builder()
+                    .uri("/extensions/dev-console/assets/missing-file.wasm")
                     .body(Body::empty())
                     .unwrap(),
             )

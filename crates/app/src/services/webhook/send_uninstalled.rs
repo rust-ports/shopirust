@@ -92,7 +92,7 @@ async fn trigger_webhook_with_retry(
             body,
             headers_json,
             &options.store_fqdn,
-            None,
+            Some(&options.shared_secret),
         )
         .await
         {
@@ -195,6 +195,32 @@ mod tests {
         // sorted versions: 2024-10, 2024-07, unstable → index 1 is 2024-07
         assert_eq!(calls[0].api_version, "2024-07");
         assert_eq!(calls[0].delivery_method, DELIVERY_METHOD_LOCALHOST);
+        assert_eq!(calls[0].shared_secret, "sharedSecret");
+    }
+
+    #[tokio::test]
+    async fn live_path_signs_hmac() {
+        use crate::services::webhook::delivery::compute_webhook_hmac;
+        let server = MockServer::start().await;
+        let body = r#"{ "sampleField": "SampleValue" }"#;
+        let hmac = compute_webhook_hmac("sharedSecret", body.as_bytes());
+        Mock::given(method("POST"))
+            .and(path("/test/path"))
+            .and(header("X-Shopify-Hmac-SHA256", hmac.as_str()))
+            .respond_with(ResponseTemplate::new(200))
+            .mount(&server)
+            .await;
+
+        let sample = MockWebhookClient::success_direct(body, "{}");
+        let client = MockWebhookClient::with_lists(vec!["2024-10".into()], vec![])
+            .with_sample(sample);
+        let result = send_uninstall_webhook_to_app_server(
+            zero_delay(format!("{}/test/path", server.uri())),
+            &client,
+        )
+        .await
+        .unwrap();
+        assert!(result);
     }
 
     #[tokio::test]

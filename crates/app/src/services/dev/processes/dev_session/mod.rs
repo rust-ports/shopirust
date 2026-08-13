@@ -1,8 +1,12 @@
 //! Dev session create / update / delete scaffolding.
 
 mod process;
+mod status;
 
 pub use process::{setup_dev_session_process, DevSessionProcessOptions};
+pub use status::{
+    inherited_module_uids, DevSessionExtensionRow, DevSessionStatus, DevSessionStatusManager,
+};
 
 use crate::error::AppError;
 use serde::Deserialize;

@@ -7,6 +7,7 @@ pub mod notify;
 pub mod port_warnings;
 pub mod processes;
 pub mod run;
+pub mod tui;
 pub mod tunnel_mode;
 pub mod urls;
 

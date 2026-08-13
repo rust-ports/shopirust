@@ -18,7 +18,10 @@ pub use app_logs_polling::{
     run_app_logs_polling, setup_app_logs_polling_process, AppLogsPollingOptions,
 };
 pub use app_watcher::setup_app_watcher_process;
-pub use dev_session::{setup_dev_session_process, DevSessionClient, DevSessionProcessOptions};
+pub use dev_session::{
+    setup_dev_session_process, DevSessionClient, DevSessionProcessOptions, DevSessionStatus,
+    DevSessionStatusManager,
+};
 pub use draftable_extension::{setup_draftable_extensions_process, DraftableExtensionOptions};
 pub use graphiql::{setup_graphiql_server_process, GraphiqlOptions};
 pub use proxy::{

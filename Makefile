@@ -14,7 +14,10 @@ OUT_GRAPHQL ?= crates/cli-kit/src/api/generated/graphql
 
 APP_SURFACES := app-management partners bulk-operations functions app-dev webhooks
 
-.PHONY: help codegen-verify-upstream codegen-app codegen-admin codegen codegen-check
+CONSOLE_SRC ?= $(UPSTREAM_CLI)/packages/ui-extensions-dev-console
+CONSOLE_OUT ?= crates/app/assets/dev-console
+
+.PHONY: help codegen-verify-upstream codegen-app codegen-admin codegen codegen-check console-assets
 
 help:
 	@echo "GraphQL codegen targets"
@@ -24,6 +27,7 @@ help:
 	@echo "  make codegen-admin        Regenerate admin modules only"
 	@echo "  make codegen-check        codegen + cargo check -p cli-kit"
 	@echo "  make codegen-verify-upstream  Fail if upstream paths are missing"
+	@echo "  make console-assets       Build ui-extensions-dev-console → crates/app/assets/dev-console"
 	@echo ""
 	@echo "Variables (override on the command line):"
 	@echo "  UPSTREAM_CLI=$(UPSTREAM_CLI)"
@@ -76,3 +80,15 @@ codegen: codegen-app codegen-admin
 
 codegen-check: codegen
 	cargo check -p cli-kit
+
+console-assets:
+	@if [ ! -d "$(CONSOLE_SRC)" ]; then \
+		echo "error: ui-extensions-dev-console not found: $(CONSOLE_SRC)"; \
+		echo "hint: make console-assets UPSTREAM_CLI=/path/to/shopify/cli"; \
+		exit 1; \
+	fi
+	cd "$(CONSOLE_SRC)" && pnpm vite build
+	rm -rf "$(CONSOLE_OUT)"
+	mkdir -p "$(CONSOLE_OUT)"
+	cp -R "$(UPSTREAM_CLI)/packages/app/assets/dev-console/." "$(CONSOLE_OUT)/"
+	@echo "Vendored dev-console assets → $(CONSOLE_OUT)"
