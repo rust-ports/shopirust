@@ -1,4 +1,4 @@
-//! Theme app extension host process — optional stub.
+//! Theme app extension host — delegates to `crates/theme` extension server.
 
 use super::types::{DevProcess, DevProcessKind};
 use crate::error::AppError;
@@ -16,32 +16,88 @@ pub struct ThemeAppExtensionOptions {
 pub fn setup_preview_theme_app_extensions_process(
     opts: ThemeAppExtensionOptions,
 ) -> Option<DevProcess> {
-    let has_theme = opts
+    let theme_ext = opts
         .extensions
         .iter()
-        .any(|e| e.type_name() == "theme" || e.type_name() == "theme_app_extension");
-    if !has_theme {
-        return None;
-    }
+        .find(|e| e.type_name() == "theme" || e.type_name() == "theme_app_extension")
+        .cloned()?;
 
     Some(DevProcess::new(
         "theme-extensions",
         DevProcessKind::ThemeAppExtension,
-        move |ctx| run_theme_ext(ctx.abort, opts),
+        move |ctx| run_theme_ext(ctx.abort, opts, theme_ext),
     ))
 }
 
 async fn run_theme_ext(
     abort: CancellationToken,
     opts: ThemeAppExtensionOptions,
+    extension: ExtensionInstance,
 ) -> Result<(), AppError> {
+    let port = opts
+        .theme_extension_port
+        .unwrap_or(theme::theme_ext::DEFAULT_THEME_EXT_PORT);
+    let theme_id = opts
+        .theme
+        .as_deref()
+        .and_then(|t| t.parse::<i64>().ok())
+        .unwrap_or(1);
+
     tracing::info!(
         target: "app_dev",
-        "theme app extension stub (store={}, theme={:?}, port={:?})",
+        "theme app extension host on http://127.0.0.1:{port} (store={}, theme={:?})",
         opts.store_fqdn,
-        opts.theme,
-        opts.theme_extension_port
+        opts.theme
     );
+
+    let ctx = theme::theme_ext::build_theme_extension_context(
+        extension.directory.clone(),
+        theme_id,
+        Some(port),
+    );
+    let handle = theme::theme_ext::run_theme_extension_server(ctx)
+        .await
+        .map_err(|e| AppError::message(e.to_string()))?;
+
     abort.cancelled().await;
+    handle.close().await;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::extensions::create_extension_specification;
+    use std::collections::HashMap;
+    use std::path::PathBuf;
+
+    #[test]
+    fn skips_without_theme_extension() {
+        let proc = setup_preview_theme_app_extensions_process(ThemeAppExtensionOptions {
+            store_fqdn: "shop.myshopify.com".into(),
+            theme: None,
+            theme_extension_port: None,
+            extensions: vec![],
+        });
+        assert!(proc.is_none());
+    }
+
+    #[test]
+    fn selects_theme_extension() {
+        let spec = create_extension_specification("theme").unwrap();
+        let ext = ExtensionInstance::new(
+            "theme-ext",
+            PathBuf::from("/app/extensions/theme"),
+            PathBuf::from("/app/extensions/theme/shopify.extension.toml"),
+            HashMap::new(),
+            spec,
+        );
+        let proc = setup_preview_theme_app_extensions_process(ThemeAppExtensionOptions {
+            store_fqdn: "shop.myshopify.com".into(),
+            theme: Some("123".into()),
+            theme_extension_port: Some(9293),
+            extensions: vec![ext],
+        });
+        assert!(proc.is_some());
+    }
 }

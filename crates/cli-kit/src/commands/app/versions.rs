@@ -1,11 +1,11 @@
 use app::services::{
-    linked_app_context, version_list, LinkedAppContextOptions, VersionListOptions,
+    linked_app_context, version_list, VersionListOptions,
 };
 use cli_core::command::BaseCommand;
 use cli_core::error::CliError;
-use std::path::PathBuf;
 
-use super::auth_helpers::authenticated_developer_platform;
+use super::auth_helpers::{authenticated_developer_platform, linked_ctx_options};
+use super::prompter::CliKitPrompter;
 
 #[derive(Debug)]
 pub struct VersionsList {
@@ -13,6 +13,7 @@ pub struct VersionsList {
     config: Option<String>,
     client_id: Option<String>,
     json: bool,
+    reset: bool,
 }
 
 impl VersionsList {
@@ -21,12 +22,14 @@ impl VersionsList {
         config: Option<String>,
         client_id: Option<String>,
         json: bool,
+        reset: bool,
     ) -> Self {
         Self {
             path,
             config,
             client_id,
             json,
+            reset,
         }
     }
 }
@@ -45,13 +48,16 @@ impl BaseCommand for VersionsList {
 
     async fn run(&self) -> Result<(), CliError> {
         let client = authenticated_developer_platform().await?;
+        let prompter = CliKitPrompter;
         let ctx = linked_app_context(
-            LinkedAppContextOptions {
-                directory: PathBuf::from(&self.path),
-                config_name: self.config.clone(),
-                client_id: self.client_id.clone(),
-            },
+            linked_ctx_options(
+                &self.path,
+                self.config.clone(),
+                self.client_id.clone(),
+                self.reset,
+            ),
             client.as_ref(),
+            Some(&prompter),
         )
         .await
         .map_err(|e| CliError::abort(e.to_string()))?;

@@ -5,13 +5,36 @@ use crate::models::extensions::specification::{
 };
 use std::sync::OnceLock;
 
+mod admin_link;
+mod app_config_app_access;
+mod app_config_app_home;
+mod app_config_app_proxy;
+mod app_config_branding;
+mod app_config_events;
+mod app_config_pos;
+mod app_config_privacy;
+mod app_config_webhook;
+mod checkout_ui;
+mod editor_extension_collection;
+mod flow_action;
 mod function;
+mod payments;
+mod tax_calculation;
 mod theme;
 mod ui_extension;
+mod web_pixel;
 
 pub use function::{function_specification, FUNCTION_ALIASES};
+pub use payments::{
+    deploy_payments, validate_payments, CARD_PRESENT_TARGET, CREDIT_CARD_TARGET,
+    CUSTOM_CREDIT_CARD_TARGET, CUSTOM_ONSITE_TARGET, MAX_CHECKOUT_PAYMENT_METHOD_FIELDS,
+    OFFSITE_TARGET, REDEEMABLE_TARGET,
+};
 pub use theme::theme_specification;
-pub use ui_extension::ui_extension_specification;
+pub use ui_extension::{
+    deploy_ui_extension, get_should_render_target, ui_extension_specification,
+    validate_ui_extension,
+};
 
 fn capitalize_identifier(id: &str) -> String {
     id.replace('_', " ")

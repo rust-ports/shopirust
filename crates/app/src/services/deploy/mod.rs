@@ -2,6 +2,10 @@ pub mod upload;
 
 use crate::error::AppError;
 use crate::models::extensions::ExtensionInstance;
+use crate::prompts::deploy_release::{
+    deploy_or_release_confirmation_prompt, DeployConfirmOptions,
+};
+use crate::prompts::Prompter;
 use crate::services::bundle::{
     compress_bundle, default_bundle_path, write_manifest_to_bundle, AppManifest,
 };
@@ -39,17 +43,33 @@ pub async fn deploy(
     ctx: &LinkedAppContext,
     client: &dyn DeveloperPlatformClient,
     options: DeployOptions,
+    prompter: Option<&dyn Prompter>,
 ) -> Result<DeployResult, AppError> {
-    confirm_deploy(&options)?;
-
     let ids = ensure_deployment_ids_presence(
         ctx,
         client,
         EnsureIdsOptions {
             allow_updates: options.allow_updates || options.force,
         },
+        prompter,
     )
     .await?;
+
+    let confirmed = deploy_or_release_confirmation_prompt(
+        prompter,
+        &DeployConfirmOptions {
+            app_title: Some(ctx.remote_app.title.clone()),
+            release: !options.no_release,
+            force: options.force,
+            allow_updates: options.allow_updates,
+            allow_deletes: options.allow_deletes,
+            is_tty: options.is_tty,
+        },
+        &ids.breakdown,
+    )?;
+    if !confirmed {
+        return Err(AppError::message("Deploy cancelled."));
+    }
 
     let bundle_dir = ctx.app.directory.join(".shopify").join("deploy-bundle");
     prepare_bundle_directory(&bundle_dir, &ctx.app.extensions, options.no_build)?;
@@ -120,20 +140,6 @@ pub async fn deploy(
     })
 }
 
-fn confirm_deploy(options: &DeployOptions) -> Result<(), AppError> {
-    if options.force || options.allow_updates {
-        return Ok(());
-    }
-    if !options.is_tty {
-        return Err(AppError::message(
-            "Non-interactive deploy requires --allow-updates (or --force via allow-updates+allow-deletes)",
-        ));
-    }
-    Err(AppError::message(
-        "Deploy aborted. Pass --allow-updates to confirm.",
-    ))
-}
-
 fn prepare_bundle_directory(
     bundle_dir: &Path,
     extensions: &[ExtensionInstance],
@@ -194,22 +200,43 @@ fn copy_path(src: &Path, dest: &Path) -> Result<(), AppError> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use crate::prompts::deploy_release::{
+        should_skip_confirmation_prompt, DeployConfirmOptions,
+    };
+    use crate::services::context::breakdown_extensions::ExtensionBreakdown;
+
+    fn opts(allow_updates: bool, allow_deletes: bool, force: bool, is_tty: bool) -> DeployConfirmOptions {
+        DeployConfirmOptions {
+            app_title: Some("Demo".into()),
+            release: true,
+            force,
+            allow_updates,
+            allow_deletes,
+            is_tty,
+        }
+    }
+
+    fn with_updates() -> ExtensionBreakdown {
+        ExtensionBreakdown {
+            to_create: vec!["new-ext".into()],
+            ..Default::default()
+        }
+    }
 
     #[test]
     fn confirm_deploy_requires_flag_non_tty() {
-        let err = confirm_deploy(&DeployOptions {
-            message: None,
-            version: None,
-            no_build: true,
-            no_release: false,
-            allow_updates: false,
-            allow_deletes: false,
-            force: false,
-            is_tty: false,
-            source_control_url: None,
-        })
-        .unwrap_err();
+        let err = should_skip_confirmation_prompt(&opts(false, false, false, false), &with_updates())
+            .unwrap_err();
         assert!(err.to_string().contains("--allow-updates"));
+    }
+
+    #[test]
+    fn confirm_deploy_allow_updates_skips() {
+        assert!(should_skip_confirmation_prompt(&opts(true, false, false, false), &with_updates()).unwrap());
+    }
+
+    #[test]
+    fn confirm_deploy_force_skips() {
+        assert!(should_skip_confirmation_prompt(&opts(false, false, true, false), &with_updates()).unwrap());
     }
 }

@@ -137,4 +137,34 @@ mod tests {
         let regs = parse_remote_registrations(&raw);
         assert_eq!(regs, vec![("my-ext".into(), "u-1".into())]);
     }
+
+    #[test]
+    fn parses_wrapped_partners_shape() {
+        let raw = serde_json::json!({
+            "app": {
+                "extensionRegistrations": [
+                    { "title": "cart-transform", "uuid": "uuid-ct" }
+                ]
+            }
+        });
+        let regs = parse_remote_registrations(&raw);
+        assert_eq!(regs, vec![("cart-transform".into(), "uuid-ct".into())]);
+    }
+
+    #[test]
+    fn parses_snake_case_key() {
+        let raw = serde_json::json!({
+            "extension_registrations": [
+                { "handle": "pos-ui", "id": "id-1" }
+            ]
+        });
+        let regs = parse_remote_registrations(&raw);
+        assert_eq!(regs, vec![("pos-ui".into(), "id-1".into())]);
+    }
+
+    #[test]
+    fn empty_payload_is_empty() {
+        assert!(parse_remote_registrations(&serde_json::json!({})).is_empty());
+        assert!(parse_remote_registrations(&serde_json::json!([])).is_empty());
+    }
 }

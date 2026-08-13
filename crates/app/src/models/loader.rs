@@ -27,6 +27,9 @@ pub struct WebInstance {
     pub configuration_path: PathBuf,
     pub roles: Vec<String>,
     pub name: Option<String>,
+    pub auth_callback_path: Vec<String>,
+    pub webhooks_path: Option<String>,
+    pub port: Option<u16>,
 }
 
 #[derive(Debug, Clone)]
@@ -40,6 +43,8 @@ pub struct LoadedApp {
     pub identifiers: Identifiers,
     pub name: String,
     pub errors: Vec<String>,
+    /// URLs patched for the current `app dev` session (not written to TOML on AM).
+    pub dev_application_urls: Option<crate::services::dev::urls::ApplicationUrls>,
 }
 
 impl LoadedApp {
@@ -53,6 +58,29 @@ impl LoadedApp {
 
     pub fn all_extensions(&self) -> &[ExtensionInstance] {
         &self.extensions
+    }
+
+    /// Patch config-module URLs for this `app dev` session (AM path; not written to TOML).
+    pub fn set_dev_application_urls(
+        &mut self,
+        urls: crate::services::dev::urls::ApplicationUrls,
+    ) {
+        let app_dev = crate::models::extensions::deploy::AppDevUrls {
+            application_url: Some(urls.application_url.clone()),
+            redirect_url_whitelist: Some(urls.redirect_url_whitelist.clone()),
+            app_proxy: urls.app_proxy.as_ref().map(|p| {
+                crate::models::extensions::deploy::AppProxyUrls {
+                    url: p.proxy_url.clone(),
+                    subpath: p.proxy_sub_path.clone(),
+                    prefix: p.proxy_sub_path_prefix.clone(),
+                }
+            }),
+        };
+        for ext in &mut self.extensions {
+            ext.specification
+                .patch_with_app_dev_urls(&mut ext.configuration, &app_dev);
+        }
+        self.dev_application_urls = Some(urls);
     }
 }
 
@@ -158,6 +186,7 @@ fn load_from_config_path(
         identifiers,
         name,
         errors,
+        dev_application_urls: None,
     })
 }
 
@@ -697,12 +726,37 @@ fn parse_web(directory: &Path, configuration_path: &Path) -> Result<WebInstance,
         .get("name")
         .and_then(|v| v.as_str())
         .map(str::to_string);
+    let auth_callback_path = parse_auth_callback_path(value.get("auth_callback_path"));
+    let webhooks_path = value
+        .get("webhooks_path")
+        .and_then(|v| v.as_str())
+        .map(str::to_string);
+    let port = value.get("port").and_then(|v| {
+        v.as_integer()
+            .and_then(|i| u16::try_from(i).ok())
+            .or_else(|| v.as_str().and_then(|s| s.parse().ok()))
+    });
     Ok(WebInstance {
         directory: directory.to_path_buf(),
         configuration_path: configuration_path.to_path_buf(),
         roles,
         name,
+        auth_callback_path,
+        webhooks_path,
+        port,
     })
+}
+
+fn parse_auth_callback_path(value: Option<&toml::Value>) -> Vec<String> {
+    match value {
+        Some(toml::Value::String(s)) if !s.is_empty() => vec![s.clone()],
+        Some(toml::Value::Array(arr)) => arr
+            .iter()
+            .filter_map(|v| v.as_str().map(str::to_string))
+            .filter(|s| !s.is_empty())
+            .collect(),
+        _ => vec![],
+    }
 }
 
 fn toml_value_to_json(value: &toml::Value) -> Value {
@@ -1109,5 +1163,236 @@ extension_directories = ["custom_extensions"]
             .errors
             .iter()
             .any(|e| e.contains("Multiple webs") && e.contains("frontend")));
+    }
+
+    #[test]
+    fn parses_web_auth_callback_and_webhooks_path() {
+        let dir = tempdir().unwrap();
+        write_app(
+            dir.path(),
+            "name = \"Demo\"\napplication_url = \"https://e.com\"\n",
+        );
+        let web = dir.path().join("web");
+        fs::create_dir_all(&web).unwrap();
+        fs::write(
+            web.join("shopify.web.toml"),
+            r#"
+roles = ["backend"]
+auth_callback_path = ["/auth/callback", "/api/auth/callback"]
+webhooks_path = "/api/webhooks"
+port = 3001
+"#,
+        )
+        .unwrap();
+        let app = load_app(LoadAppOptions {
+            directory: dir.path().to_path_buf(),
+            config_name: None,
+            ignore_unknown_extensions: true,
+        })
+        .unwrap();
+        assert_eq!(app.webs.len(), 1);
+        assert_eq!(
+            app.webs[0].auth_callback_path,
+            vec!["/auth/callback", "/api/auth/callback"]
+        );
+        assert_eq!(app.webs[0].webhooks_path.as_deref(), Some("/api/webhooks"));
+        assert_eq!(app.webs[0].port, Some(3001));
+    }
+
+    #[test]
+    fn loads_named_config_file() {
+        let dir = tempdir().unwrap();
+        write_app(dir.path(), "name = \"Default\"\napplication_url = \"https://e.com\"\n");
+        fs::write(
+            dir.path().join("shopify.app.production.toml"),
+            "name = \"Prod\"\napplication_url = \"https://prod.example\"\nclient_id = \"gid://app/prod\"\n",
+        )
+        .unwrap();
+        let app = load_app(LoadAppOptions {
+            directory: dir.path().to_path_buf(),
+            config_name: Some("production".into()),
+            ignore_unknown_extensions: true,
+        })
+        .unwrap();
+        assert_eq!(app.name, "Prod");
+        assert_eq!(app.client_id(), Some("gid://app/prod"));
+        assert!(app.is_linked());
+    }
+
+    #[test]
+    fn loads_function_extension() {
+        let dir = tempdir().unwrap();
+        write_app(
+            dir.path(),
+            "name = \"Demo\"\napplication_url = \"https://e.com\"\n",
+        );
+        let ext = dir.path().join("extensions/discount");
+        fs::create_dir_all(&ext).unwrap();
+        fs::write(
+            ext.join("shopify.extension.toml"),
+            "type = \"function\"\nhandle = \"discount\"\nname = \"Discount\"\napi_version = \"2024-10\"\n",
+        )
+        .unwrap();
+        let app = load_app(LoadAppOptions {
+            directory: dir.path().to_path_buf(),
+            config_name: None,
+            ignore_unknown_extensions: true,
+        })
+        .unwrap();
+        assert!(app.extensions.iter().any(|e| e.is_function_extension()));
+    }
+
+    #[test]
+    fn loads_ui_extension() {
+        let dir = tempdir().unwrap();
+        write_app(
+            dir.path(),
+            "name = \"Demo\"\napplication_url = \"https://e.com\"\n",
+        );
+        let ext = dir.path().join("extensions/checkout-ui");
+        fs::create_dir_all(&ext).unwrap();
+        fs::write(
+            ext.join("shopify.extension.toml"),
+            r#"
+type = "ui_extension"
+handle = "checkout-ui"
+name = "Checkout UI"
+api_version = "2024-10"
+
+[[targeting]]
+target = "purchase.checkout.block.render"
+module = "./src/Checkout.jsx"
+"#,
+        )
+        .unwrap();
+        let app = load_app(LoadAppOptions {
+            directory: dir.path().to_path_buf(),
+            config_name: None,
+            ignore_unknown_extensions: true,
+        })
+        .unwrap();
+        let ui = app
+            .extensions
+            .iter()
+            .find(|e| e.specification.identifier == "ui_extension")
+            .unwrap();
+        assert_eq!(ui.handle, "checkout-ui");
+        assert!(ui.configuration.get("targeting").is_some());
+    }
+
+    #[test]
+    fn directory_name_used_when_name_missing() {
+        let dir = tempdir().unwrap();
+        write_app(dir.path(), "application_url = \"https://e.com\"\n");
+        let app = load_app(LoadAppOptions {
+            directory: dir.path().to_path_buf(),
+            config_name: None,
+            ignore_unknown_extensions: true,
+        })
+        .unwrap();
+        assert!(!app.name.is_empty());
+    }
+
+    #[test]
+    fn web_directories_override() {
+        let dir = tempdir().unwrap();
+        write_app(
+            dir.path(),
+            r#"
+name = "Demo"
+application_url = "https://e.com"
+web_directories = ["frontend"]
+"#,
+        );
+        let web = dir.path().join("frontend");
+        fs::create_dir_all(&web).unwrap();
+        fs::write(web.join("shopify.web.toml"), "roles = [\"frontend\"]\n").unwrap();
+        let ignored = dir.path().join("web");
+        fs::create_dir_all(&ignored).unwrap();
+        fs::write(ignored.join("shopify.web.toml"), "roles = [\"backend\"]\n").unwrap();
+        let app = load_app(LoadAppOptions {
+            directory: dir.path().to_path_buf(),
+            config_name: None,
+            ignore_unknown_extensions: true,
+        })
+        .unwrap();
+        assert_eq!(app.webs.len(), 1);
+        assert!(app.webs[0].roles.iter().any(|r| r == "frontend"));
+    }
+
+    #[test]
+    fn app_home_and_access_config_modules() {
+        let dir = tempdir().unwrap();
+        write_app(
+            dir.path(),
+            r#"
+name = "Demo"
+application_url = "https://example.com"
+
+[branding]
+name = "Brand"
+
+[pos]
+embedded = true
+"#,
+        );
+        let app = load_app(LoadAppOptions {
+            directory: dir.path().to_path_buf(),
+            config_name: None,
+            ignore_unknown_extensions: false,
+        })
+        .unwrap();
+        let ids: Vec<_> = app
+            .extensions
+            .iter()
+            .map(|e| e.specification.identifier.as_str())
+            .collect();
+        assert!(ids.contains(&"branding"));
+        assert!(ids.contains(&"point_of_sale"));
+    }
+
+    #[test]
+    fn identifiers_include_client_id() {
+        let dir = tempdir().unwrap();
+        write_app(
+            dir.path(),
+            "name = \"Demo\"\nclient_id = \"abc123\"\napplication_url = \"https://e.com\"\n",
+        );
+        let app = load_app(LoadAppOptions {
+            directory: dir.path().to_path_buf(),
+            config_name: None,
+            ignore_unknown_extensions: true,
+        })
+        .unwrap();
+        assert_eq!(app.identifiers.app, Some("abc123".into()));
+    }
+
+    #[test]
+    fn invalid_toml_errors() {
+        let dir = tempdir().unwrap();
+        fs::write(dir.path().join("shopify.app.toml"), "name = [unterminated\n").unwrap();
+        let err = load_app(LoadAppOptions {
+            directory: dir.path().to_path_buf(),
+            config_name: None,
+            ignore_unknown_extensions: true,
+        })
+        .unwrap_err();
+        assert!(!err.to_string().is_empty());
+    }
+
+    #[test]
+    fn all_extensions_returns_slice() {
+        let dir = tempdir().unwrap();
+        write_app(
+            dir.path(),
+            "name = \"Demo\"\napplication_url = \"https://e.com\"\n",
+        );
+        let app = load_app(LoadAppOptions {
+            directory: dir.path().to_path_buf(),
+            config_name: None,
+            ignore_unknown_extensions: true,
+        })
+        .unwrap();
+        assert_eq!(app.all_extensions().len(), app.extensions.len());
     }
 }

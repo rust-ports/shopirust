@@ -259,4 +259,38 @@ mod tests {
         let run = get_run_from_selector(dir.path(), "fn").unwrap();
         assert_eq!(run.payload.input.unwrap()["v"], 2);
     }
+
+    #[test]
+    fn selector_skips_runs_without_input() {
+        let dir = tempdir().unwrap();
+        fs::write(
+            dir.path()
+                .join("20240522_150641_827Z_extensions_fn_noinp1.json"),
+            r#"{"payload":{}}"#,
+        )
+        .unwrap();
+        fs::write(
+            dir.path()
+                .join("20240523_150641_827Z_extensions_fn_has002.json"),
+            r#"{"payload":{"input":{"ok":true}}}"#,
+        )
+        .unwrap();
+        let run = get_run_from_selector(dir.path(), "fn").unwrap();
+        assert_eq!(run.payload.input.unwrap()["ok"], true);
+    }
+
+    #[test]
+    fn selector_errors_when_empty() {
+        let dir = tempdir().unwrap();
+        let err = get_run_from_selector(dir.path(), "fn").unwrap_err();
+        assert!(err.to_string().contains("No logs found"));
+    }
+
+    #[test]
+    fn identifier_from_filename_takes_last_token() {
+        assert_eq!(
+            get_identifier_from_filename("20240522_150641_827Z_extensions_fn_abcdef.json"),
+            "abcdef"
+        );
+    }
 }

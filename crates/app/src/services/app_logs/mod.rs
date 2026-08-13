@@ -13,9 +13,9 @@ pub use poll::{
     POLLING_ERROR_RETRY_INTERVAL_MS, POLLING_INTERVAL_MS, POLLING_THROTTLE_RETRY_INTERVAL_MS,
 };
 pub use render::{
-    format_log_text, parse_app_log_payload, to_formatted_app_log_json, Format,
-    LOG_TYPE_FUNCTION_RUN, LOG_TYPE_REQUEST_EXECUTION, LOG_TYPE_REQUEST_EXECUTION_IN_BACKGROUND,
-    LOG_TYPE_RESPONSE_FROM_CACHE, ONE_MILLION,
+    camelcase_keys, format_log_text, parse_app_log_payload, snake_to_camel, to_formatted_app_log_json,
+    Format, LOG_TYPE_FUNCTION_RUN, LOG_TYPE_REQUEST_EXECUTION,
+    LOG_TYPE_REQUEST_EXECUTION_IN_BACKGROUND, LOG_TYPE_RESPONSE_FROM_CACHE, ONE_MILLION,
 };
 pub use sources::{format_sources_output, sources_for_app};
 pub use write::{write_app_logs_to_file, AppLogFile};

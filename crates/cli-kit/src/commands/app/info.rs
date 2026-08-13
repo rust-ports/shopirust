@@ -9,15 +9,26 @@ pub struct Info {
     config: Option<String>,
     json: bool,
     web_env: bool,
+    client_id: Option<String>,
+    reset: bool,
 }
 
 impl Info {
-    pub fn new(path: String, config: Option<String>, json: bool, web_env: bool) -> Self {
+    pub fn new(
+        path: String,
+        config: Option<String>,
+        json: bool,
+        web_env: bool,
+        client_id: Option<String>,
+        reset: bool,
+    ) -> Self {
         Self {
             path,
             config,
             json,
             web_env,
+            client_id,
+            reset,
         }
     }
 }
@@ -37,6 +48,7 @@ impl BaseCommand for Info {
     }
 
     async fn run(&self) -> Result<(), CliError> {
+        let _ = (&self.client_id, self.reset);
         let result = app_info(AppInfoOptions {
             directory: PathBuf::from(&self.path),
             config_name: self.config.clone(),

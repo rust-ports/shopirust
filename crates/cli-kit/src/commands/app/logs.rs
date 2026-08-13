@@ -1,14 +1,14 @@
 //! `shopify app logs` and `shopify app logs sources`.
 
 use app::services::{
-    linked_app_context, logs as stream_logs, print_log_sources, resolve_primary_store, Format,
-    LinkedAppContextOptions, LogsOptions,
+    linked_app_context, logs as stream_logs, print_log_sources, store_context, Format,
+    LogsOptions, StoreContextOptions,
 };
 use cli_core::command::BaseCommand;
 use cli_core::error::CliError;
-use std::path::PathBuf;
 
-use super::auth_helpers::authenticated_developer_platform;
+use super::auth_helpers::{authenticated_developer_platform, linked_ctx_options};
+use super::prompter::CliKitPrompter;
 use crate::util::fqdn::normalize_store_fqdn;
 
 #[derive(Debug)]
@@ -20,6 +20,7 @@ pub struct Logs {
     store: Vec<String>,
     source: Vec<String>,
     status: Option<String>,
+    reset: bool,
 }
 
 impl Logs {
@@ -31,6 +32,7 @@ impl Logs {
         store: Vec<String>,
         source: Vec<String>,
         status: Option<String>,
+        reset: bool,
     ) -> Self {
         Self {
             path,
@@ -40,6 +42,7 @@ impl Logs {
             store,
             source,
             status,
+            reset,
         }
     }
 }
@@ -58,13 +61,16 @@ impl BaseCommand for Logs {
 
     async fn run(&self) -> Result<(), CliError> {
         let client = authenticated_developer_platform().await?;
+        let prompter = CliKitPrompter;
         let ctx = linked_app_context(
-            LinkedAppContextOptions {
-                directory: PathBuf::from(&self.path),
-                config_name: self.config.clone(),
-                client_id: self.client_id.clone(),
-            },
+            linked_ctx_options(
+                &self.path,
+                self.config.clone(),
+                self.client_id.clone(),
+                self.reset,
+            ),
             client.as_ref(),
+            Some(&prompter),
         )
         .await
         .map_err(|e| CliError::abort(e.to_string()))?;
@@ -75,10 +81,15 @@ impl BaseCommand for Logs {
             .map(|s| normalize_store_fqdn(s, None))
             .collect();
 
-        let primary = resolve_primary_store(
+        let primary = store_context(
             &ctx,
             client.as_ref(),
-            store_fqdns.first().map(String::as_str),
+            StoreContextOptions {
+                store_fqdn: store_fqdns.first().cloned(),
+                force_reselect_store: self.reset,
+                ..Default::default()
+            },
+            Some(&prompter),
         )
         .await
         .map_err(|e| CliError::abort(e.to_string()))?;
@@ -117,14 +128,18 @@ pub struct LogsSources {
     path: String,
     config: Option<String>,
     client_id: Option<String>,
+    reset: bool,
 }
 
 impl LogsSources {
-    pub fn new(path: String, config: Option<String>, client_id: Option<String>) -> Self {
+    pub fn new(path: String, config: Option<String>, client_id: Option<String>,
+        reset: bool,
+    ) -> Self {
         Self {
             path,
             config,
             client_id,
+            reset,
         }
     }
 }
@@ -143,13 +158,16 @@ impl BaseCommand for LogsSources {
 
     async fn run(&self) -> Result<(), CliError> {
         let client = authenticated_developer_platform().await?;
+        let prompter = CliKitPrompter;
         let ctx = linked_app_context(
-            LinkedAppContextOptions {
-                directory: PathBuf::from(&self.path),
-                config_name: self.config.clone(),
-                client_id: self.client_id.clone(),
-            },
+            linked_ctx_options(
+                &self.path,
+                self.config.clone(),
+                self.client_id.clone(),
+                self.reset,
+            ),
             client.as_ref(),
+            Some(&prompter),
         )
         .await
         .map_err(|e| CliError::abort(e.to_string()))?;

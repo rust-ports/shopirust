@@ -20,6 +20,8 @@ pub struct ImportExtensions {
     extension_type: Option<String>,
     all: bool,
     overwrite: bool,
+    client_id: Option<String>,
+    reset: bool,
 }
 
 impl ImportExtensions {
@@ -30,6 +32,8 @@ impl ImportExtensions {
         extension_type: Option<String>,
         all: bool,
         overwrite: bool,
+        client_id: Option<String>,
+        reset: bool,
     ) -> Self {
         Self {
             path,
@@ -38,6 +42,8 @@ impl ImportExtensions {
             extension_type,
             all,
             overwrite,
+            client_id,
+            reset,
         }
     }
 }
@@ -55,6 +61,7 @@ impl BaseCommand for ImportExtensions {
     }
 
     async fn run(&self) -> Result<(), CliError> {
+        let _ = (&self.client_id, self.reset);
         let app = load_app(LoadAppOptions {
             directory: PathBuf::from(&self.path),
             config_name: self.config.clone(),

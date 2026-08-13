@@ -3,6 +3,9 @@
 use crate::error::AppError;
 use crate::models::loader::LoadedApp;
 use crate::utilities::liquid::recursive_liquid_template_copy;
+use cli_api::{
+    DeveloperPlatformClient, ExtensionTemplate, ExtensionTemplatesResult, MinimalAppIdentifiers,
+};
 use serde_json::json;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -25,6 +28,38 @@ pub struct GeneratedExtension {
     pub directory: PathBuf,
     pub handle: String,
     pub extension_type: String,
+}
+
+/// Fetch remote extension templates and filter by local specification identifiers.
+pub async fn fetch_extension_templates(
+    client: &dyn DeveloperPlatformClient,
+    app: &MinimalAppIdentifiers,
+    available_specifications: &[String],
+) -> Result<ExtensionTemplatesResult, AppError> {
+    let result = client
+        .template_specifications(app)
+        .await
+        .map_err(|e| AppError::message(e.to_string()))?;
+    let templates: Vec<ExtensionTemplate> = result
+        .templates
+        .into_iter()
+        .filter(|t| {
+            available_specifications.iter().any(|id| {
+                id == &t.identifier
+                    || t.types.iter().any(|ty| {
+                        ty.get("type")
+                            .and_then(|v| v.as_str())
+                            .is_some_and(|s| s == id)
+                    })
+            })
+        })
+        .collect();
+    Ok(ExtensionTemplatesResult { templates })
+}
+
+/// Resolve a flavor subdirectory inside a cloned template (or local tree).
+pub fn resolve_flavor_directory(root: &Path, flavor: Option<&str>) -> PathBuf {
+    resolve_flavor_subdir(root, flavor).unwrap_or_else(|_| root.to_path_buf())
 }
 
 /// Slugify for extension handles / directory names.
@@ -93,7 +128,7 @@ pub fn generate_extension(
             .as_deref()
             .unwrap_or(options.template.as_str());
         let template_src = if options.local_template {
-            PathBuf::from(template_url)
+            resolve_flavor_directory(&PathBuf::from(template_url), options.flavor.as_deref())
         } else {
             let download = tmp.join("download");
             clone_shallow(template_url, &download)?;
@@ -275,5 +310,87 @@ mod tests {
         )
         .unwrap_err();
         assert!(err.to_string().contains("already exists"));
+    }
+
+    #[test]
+    fn flavor_subdir_prefers_named_folder() {
+        let dir = tempdir().unwrap();
+        fs::create_dir_all(dir.path().join("typescript")).unwrap();
+        let resolved = resolve_flavor_directory(dir.path(), Some("typescript"));
+        assert!(resolved.ends_with("typescript"));
+    }
+
+    #[test]
+    fn generate_from_flavor_subdirectory() {
+        let dir = tempdir().unwrap();
+        let app = demo_app(dir.path());
+        let template = dir.path().join("tmpl");
+        fs::create_dir_all(template.join("typescript")).unwrap();
+        fs::write(
+            template.join("typescript/shopify.extension.toml.liquid"),
+            "type = \"{{type}}\"\nhandle = \"{{handle}}\"\nflavor = \"{{flavor}}\"\n",
+        )
+        .unwrap();
+        let generated = generate_extension(
+            &app,
+            GenerateExtensionOptions {
+                name: "Flavor Ext".into(),
+                extension_type: "ui_extension".into(),
+                flavor: Some("typescript".into()),
+                template: template.display().to_string(),
+                local_template: true,
+                clone_url: None,
+            },
+        )
+        .unwrap();
+        let toml = fs::read_to_string(
+            dir.path()
+                .join(&generated.directory)
+                .join("shopify.extension.toml"),
+        )
+        .unwrap();
+        assert!(toml.contains("flavor = \"typescript\""));
+        assert!(toml.contains("type = \"ui_extension\""));
+    }
+
+    #[test]
+    fn empty_name_is_rejected() {
+        let dir = tempdir().unwrap();
+        let app = demo_app(dir.path());
+        let err = ensure_extension_directory(&app, "   ").unwrap_err();
+        assert!(err.to_string().contains("cannot be empty"));
+    }
+
+    #[tokio::test]
+    async fn fetch_templates_filters_by_available_specs() {
+        use crate::test_support::MockClient;
+        use cli_api::ExtensionTemplate;
+        let mut client = MockClient::default();
+        client.templates = vec![
+            ExtensionTemplate {
+                identifier: "theme".into(),
+                name: "Theme app extension".into(),
+                group: Some("Online store".into()),
+                url: Some("https://github.com/Shopify/theme-ext".into()),
+                types: vec![],
+            },
+            ExtensionTemplate {
+                identifier: "unknown_remote".into(),
+                name: "Nope".into(),
+                group: None,
+                url: None,
+                types: vec![],
+            },
+        ];
+        let app = cli_api::MinimalAppIdentifiers {
+            id: "1".into(),
+            api_key: "k".into(),
+            organization_id: "org".into(),
+        };
+        let result = fetch_extension_templates(&client, &app, &["theme".into()])
+            .await
+            .unwrap();
+        assert_eq!(result.templates.len(), 1);
+        assert_eq!(result.templates[0].identifier, "theme");
     }
 }

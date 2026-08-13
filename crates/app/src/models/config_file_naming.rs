@@ -2,6 +2,9 @@ use crate::constants::APP_CONFIG_FILE;
 use regex_lite::Regex;
 use std::sync::OnceLock;
 
+/// Max slug length so `shopify.app.{slug}.toml` stays under common FS limits (upstream 238).
+pub const APP_CONFIG_MAX_SLUG_LEN: usize = 238;
+
 fn app_config_regex() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| Regex::new(r"^shopify\.app(\.[-\w]+)?\.toml$").expect("regex"))

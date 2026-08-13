@@ -6,6 +6,7 @@ pub mod dev_session;
 pub mod draftable_extension;
 pub mod graphiql;
 pub mod previewable_extension;
+pub mod proxy;
 pub mod setup;
 pub mod theme_app_extension;
 pub mod types;
@@ -20,6 +21,9 @@ pub use app_watcher::setup_app_watcher_process;
 pub use dev_session::{setup_dev_session_process, DevSessionClient, DevSessionProcessOptions};
 pub use draftable_extension::{setup_draftable_extensions_process, DraftableExtensionOptions};
 pub use graphiql::{setup_graphiql_server_process, GraphiqlOptions};
+pub use proxy::{
+    match_proxy_target, setup_proxy_server_process, ProxyServerOptions,
+};
 pub use previewable_extension::{
     setup_previewable_extensions_process, PreviewableExtensionOptions,
 };

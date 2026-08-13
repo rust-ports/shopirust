@@ -8,6 +8,7 @@ use super::graphiql::{setup_graphiql_server_process, GraphiqlOptions};
 use super::previewable_extension::{
     setup_previewable_extensions_process, PreviewableExtensionOptions,
 };
+use super::proxy::{setup_proxy_server_process, ProxyServerOptions};
 use super::theme_app_extension::{
     setup_preview_theme_app_extensions_process, ThemeAppExtensionOptions,
 };
@@ -15,6 +16,7 @@ use super::types::{DevProcess, DevProcessKind};
 use super::uninstall_webhook::{setup_send_uninstall_webhook_process, UninstallWebhookOptions};
 use super::utils::DevNetworkOptions;
 use super::web::setup_web_processes;
+use std::collections::BTreeMap;
 use crate::models::loader::LoadedApp;
 use crate::services::dev::app_events::AppEventWatcher;
 use crate::services::dev::extension::get_websocket_url;
@@ -106,6 +108,9 @@ pub async fn setup_dev_processes(
             app_url: app_preview_url.clone(),
             store_fqdn: store_fqdn.to_string(),
             key: graphiql_key,
+            api_key: api_key.clone(),
+            api_secret: api_secret.clone(),
+            graphql_url: None,
         }));
     }
 
@@ -170,6 +175,8 @@ pub async fn setup_dev_processes(
         api_secret: api_secret.clone(),
         remote_app_updated: flags.remote_app_updated,
         backend_port: network.backend_port,
+        frontend_port: network.frontend_port,
+        webs: local_app.webs.clone(),
     }) {
         processes.push(p);
     }
@@ -184,6 +191,31 @@ pub async fn setup_dev_processes(
     }
 
     processes.push(setup_app_watcher_process(app_watcher.clone()));
+
+    let mut proxy_rules = BTreeMap::new();
+    if local_app
+        .webs
+        .iter()
+        .any(|w| w.roles.iter().any(|r| r.eq_ignore_ascii_case("frontend")))
+    {
+        proxy_rules.insert(
+            "default".into(),
+            format!("http://localhost:{}", network.frontend_port),
+        );
+    }
+    if any_previewable {
+        proxy_rules.insert(
+            "/extensions".into(),
+            format!("http://localhost:{ext_port}"),
+        );
+    }
+    if !proxy_rules.is_empty() {
+        processes.push(setup_proxy_server_process(ProxyServerOptions {
+            port: network.proxy_port,
+            rules: proxy_rules,
+            localhost_cert: network.reverse_proxy_cert.clone(),
+        }));
+    }
 
     SetupDevProcessesResult {
         processes,
@@ -231,6 +263,7 @@ mod tests {
             identifiers: Identifiers::new(),
             name: "test-app".into(),
             errors: vec![],
+            dev_application_urls: None,
         }
     }
 
@@ -262,6 +295,7 @@ mod tests {
                 redirect_url_whitelist: vec![],
                 app_proxy: None,
             },
+            reverse_proxy_cert: None,
         }
     }
 
@@ -298,8 +332,18 @@ mod tests {
 
     #[tokio::test]
     async fn selects_draftable_when_no_dev_sessions() {
+        let mut app = empty_app();
+        app.webs.push(crate::models::loader::WebInstance {
+            directory: PathBuf::from("/tmp/app/web"),
+            configuration_path: PathBuf::from("/tmp/app/web/shopify.web.toml"),
+            roles: vec!["backend".into()],
+            name: Some("web".into()),
+            auth_callback_path: vec![],
+            webhooks_path: Some("/api/webhooks".into()),
+            port: None,
+        });
         let result = setup_dev_processes(
-            empty_app(),
+            app,
             &remote(),
             "shop.myshopify.com",
             "123",
@@ -324,5 +368,43 @@ mod tests {
         assert!(kinds.contains(&DevProcessKind::UninstallWebhook));
         assert!(!kinds.contains(&DevProcessKind::DevSession));
         assert!(!kinds.contains(&DevProcessKind::Graphiql));
+    }
+
+    #[tokio::test]
+    async fn selects_proxy_when_frontend_web_present() {
+        let mut app = empty_app();
+        app.webs.push(crate::models::loader::WebInstance {
+            directory: PathBuf::from("/tmp/app/web"),
+            configuration_path: PathBuf::from("/tmp/app/web/shopify.web.toml"),
+            roles: vec!["frontend".into()],
+            name: Some("web".into()),
+            auth_callback_path: vec!["/auth/callback".into()],
+            webhooks_path: Some("/api/webhooks".into()),
+            port: None,
+        });
+        let result = setup_dev_processes(
+            app,
+            &remote(),
+            "shop.myshopify.com",
+            "123",
+            &network(),
+            SetupDevProcessFlags {
+                subscription_product_url: None,
+                checkout_cart_url: None,
+                theme: None,
+                theme_extension_port: None,
+                graphiql_port: 3457,
+                graphiql_key: None,
+                enable_graphiql: false,
+                supports_dev_sessions: true,
+                remote_app_updated: false,
+                app_dev_token: String::new(),
+                app_dev_graphql_url: "https://example/graphql".into(),
+            },
+        )
+        .await;
+        let kinds = selected_process_kinds(&result.processes);
+        assert!(kinds.contains(&DevProcessKind::ProxyServer));
+        assert!(kinds.contains(&DevProcessKind::Web));
     }
 }

@@ -1,3 +1,6 @@
+use crate::api::generated::graphql::webhooks::available_topics::AVAILABLE_TOPICS_QUERY;
+use crate::api::generated::graphql::webhooks::cli_testing::CLI_TESTING_MUTATION;
+use crate::api::generated::graphql::webhooks::public_api_versions::PUBLIC_API_VERSIONS_QUERY;
 use crate::api::graphql::{CacheOptions, GraphqlClient, GraphqlRequestError, UnauthorizedHandler};
 use crate::api::rate_limiter::ApiRateLimiter;
 use crate::constants::app_management_fqdn;
@@ -11,80 +14,78 @@ fn webhooks_rate_limiter() -> ApiRateLimiter {
     LIMITER.get_or_init(ApiRateLimiter::shopify_default).clone()
 }
 
-const API_VERSIONS_QUERY: &str = r#"
-query WebhookApiVersions {
-  webhookApiVersions {
-    id
-    handle
-  }
-}
-"#;
-
-const TOPICS_QUERY: &str = r#"
-query WebhookTopics($apiVersion: String!) {
-  webhookTopics(apiVersion: $apiVersion) {
-    topic
-    description
-  }
-}
-"#;
-
-const SEND_SAMPLE_WEBHOOK_MUTATION: &str = r#"
-mutation SendSampleWebhook($topic: String!, $apiVersion: String!, $address: String!, $sharedSecret: String!) {
-  sendSampleWebhook(input: {topic: $topic, apiVersion: $apiVersion, address: $address, sharedSecret: $sharedSecret}) {
-    sampleWebhookId
-    userErrors {
-      field
-      message
-    }
-  }
-}
-"#;
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct WebhookApiVersion {
-    pub id: String,
-    pub handle: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct WebhookTopic {
+/// Variables for `cliTesting` / sample webhook delivery (upstream `SendSampleWebhookVariables`).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub struct SendSampleWebhookVariables {
     pub topic: String,
-    pub description: Option<String>,
+    pub api_version: String,
+    pub address: String,
+    pub delivery_method: String,
+    pub shared_secret: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub api_key: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub struct SampleWebhookResult {
-    pub sample_webhook_id: Option<String>,
+pub struct SampleWebhook {
+    pub sample_payload: String,
+    pub headers: String,
+    pub success: bool,
     pub user_errors: Vec<SampleWebhookUserError>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+impl Default for SampleWebhook {
+    fn default() -> Self {
+        Self {
+            sample_payload: "{}".into(),
+            headers: "{}".into(),
+            success: false,
+            user_errors: vec![],
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct SampleWebhookUserError {
-    pub field: Option<Vec<String>>,
-    pub message: Option<String>,
+    pub message: String,
+    #[serde(default)]
+    pub fields: Vec<String>,
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct ApiVersionsResponse {
-    webhook_api_versions: Vec<WebhookApiVersion>,
+struct PublicApiVersionsResponse {
+    public_api_versions: Vec<PublicApiVersionHandle>,
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct TopicsResponse {
-    webhook_topics: Vec<WebhookTopic>,
+struct PublicApiVersionHandle {
+    handle: String,
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct SendSampleWebhookResponse {
-    send_sample_webhook: SampleWebhookResult,
+struct AvailableTopicsResponse {
+    available_topics: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CliTestingResponse {
+    cli_testing: Option<CliTestingPayload>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CliTestingPayload {
+    headers: Option<String>,
+    sample_payload: Option<String>,
+    success: bool,
+    #[serde(default)]
+    errors: Vec<String>,
 }
 
 pub struct WebhooksClient {
@@ -150,39 +151,68 @@ impl WebhooksClient {
         client.query_with_variables(query, variables).await
     }
 
-    pub async fn api_versions(&self) -> Result<Vec<WebhookApiVersion>, GraphqlRequestError> {
-        let resp: ApiVersionsResponse = self
-            .request(API_VERSIONS_QUERY, None::<serde_json::Value>, None, None)
+    /// Public API version handles from the webhooks GraphQL API.
+    pub async fn api_versions(&self) -> Result<Vec<String>, GraphqlRequestError> {
+        let resp: PublicApiVersionsResponse = self
+            .request(
+                PUBLIC_API_VERSIONS_QUERY,
+                None::<serde_json::Value>,
+                None,
+                None,
+            )
             .await?;
-        Ok(resp.webhook_api_versions)
+        Ok(resp
+            .public_api_versions
+            .into_iter()
+            .map(|v| v.handle)
+            .collect())
     }
 
-    pub async fn topics(
-        &self,
-        api_version: &str,
-    ) -> Result<Vec<WebhookTopic>, GraphqlRequestError> {
+    /// Available webhook topics for an API version.
+    pub async fn topics(&self, api_version: &str) -> Result<Vec<String>, GraphqlRequestError> {
         let vars = serde_json::json!({ "apiVersion": api_version });
-        let resp: TopicsResponse = self.request(TOPICS_QUERY, Some(vars), None, None).await?;
-        Ok(resp.webhook_topics)
+        let resp: AvailableTopicsResponse = self
+            .request(AVAILABLE_TOPICS_QUERY, Some(vars), None, None)
+            .await?;
+        Ok(resp.available_topics.unwrap_or_default())
     }
 
+    /// Request a sample payload (localhost) or enqueue remote delivery (HTTP / Pub/Sub / EventBridge).
     pub async fn send_sample_webhook(
         &self,
-        topic: &str,
-        api_version: &str,
-        address: &str,
-        shared_secret: &str,
-    ) -> Result<SampleWebhookResult, GraphqlRequestError> {
+        variables: &SendSampleWebhookVariables,
+    ) -> Result<SampleWebhook, GraphqlRequestError> {
         let vars = serde_json::json!({
-            "topic": topic,
-            "apiVersion": api_version,
-            "address": address,
-            "sharedSecret": shared_secret,
+            "topic": variables.topic,
+            "apiVersion": variables.api_version,
+            "address": variables.address,
+            "deliveryMethod": variables.delivery_method,
+            "sharedSecret": variables.shared_secret,
+            "apiKey": variables.api_key,
         });
-        let resp: SendSampleWebhookResponse = self
-            .request(SEND_SAMPLE_WEBHOOK_MUTATION, Some(vars), None, None)
+        let resp: CliTestingResponse = self
+            .request(CLI_TESTING_MUTATION, Some(vars), None, None)
             .await?;
-        Ok(resp.send_sample_webhook)
+        Ok(map_cli_testing(resp.cli_testing))
+    }
+}
+
+fn map_cli_testing(cli: Option<CliTestingPayload>) -> SampleWebhook {
+    let Some(cli) = cli else {
+        return SampleWebhook::default();
+    };
+    SampleWebhook {
+        sample_payload: cli.sample_payload.unwrap_or_else(|| "{}".into()),
+        headers: cli.headers.unwrap_or_else(|| "{}".into()),
+        success: cli.success,
+        user_errors: cli
+            .errors
+            .into_iter()
+            .map(|message| SampleWebhookUserError {
+                message,
+                fields: vec![],
+            })
+            .collect(),
     }
 }
 
@@ -228,57 +258,43 @@ mod tests {
     }
 
     #[test]
-    fn webhook_api_version_deserialize() {
-        let json = serde_json::json!({"id": "1", "handle": "2024-07"});
-        let version: WebhookApiVersion = serde_json::from_value(json).unwrap();
-        assert_eq!(version.handle, "2024-07");
+    fn queries_match_generated_operations() {
+        assert!(PUBLIC_API_VERSIONS_QUERY.contains("publicApiVersions"));
+        assert!(AVAILABLE_TOPICS_QUERY.contains("availableTopics"));
+        assert!(CLI_TESTING_MUTATION.contains("cliTesting"));
     }
 
     #[test]
-    fn webhook_topic_deserialize() {
-        let json = serde_json::json!({"topic": "orders/create", "description": "Order created"});
-        let topic: WebhookTopic = serde_json::from_value(json).unwrap();
-        assert_eq!(topic.topic, "orders/create");
+    fn map_cli_testing_empty() {
+        let sample = map_cli_testing(None);
+        assert!(!sample.success);
+        assert_eq!(sample.sample_payload, "{}");
+        assert_eq!(sample.headers, "{}");
     }
 
     #[test]
-    fn sample_webhook_result_deserialize() {
-        let json = serde_json::json!({
-            "sampleWebhookId": "wh-123",
-            "userErrors": [{"field": ["topic"], "message": "invalid"}]
-        });
-        let result: SampleWebhookResult = serde_json::from_value(json).unwrap();
-        assert_eq!(result.sample_webhook_id, Some("wh-123".into()));
-        assert_eq!(result.user_errors.len(), 1);
+    fn map_cli_testing_errors() {
+        let sample = map_cli_testing(Some(CliTestingPayload {
+            headers: None,
+            sample_payload: None,
+            success: false,
+            errors: vec!["Invalid api_version".into()],
+        }));
+        assert!(!sample.success);
+        assert_eq!(sample.user_errors.len(), 1);
+        assert_eq!(sample.user_errors[0].message, "Invalid api_version");
     }
-
-    #[test]
-    fn api_versions_has_query() {
-        assert!(API_VERSIONS_QUERY.contains("webhookApiVersions"));
-    }
-
-    #[test]
-    fn topics_has_query() {
-        assert!(TOPICS_QUERY.contains("webhookTopics"));
-    }
-
-    #[test]
-    fn send_sample_webhook_has_mutation() {
-        assert!(SEND_SAMPLE_WEBHOOK_MUTATION.contains("sendSampleWebhook"));
-    }
-
-    // ===== Wiremock Tests =====
 
     #[tokio::test]
-    async fn api_versions_returns_list() {
+    async fn api_versions_returns_handles() {
         let mock_server = wiremock::MockServer::start().await;
         wiremock::Mock::given(wiremock::matchers::method("POST"))
             .respond_with(
                 wiremock::ResponseTemplate::new(200).set_body_json(serde_json::json!({
                     "data": {
-                        "webhookApiVersions": [
-                            { "id": "1", "handle": "2024-07" },
-                            { "id": "2", "handle": "2024-10" },
+                        "publicApiVersions": [
+                            { "handle": "2024-07" },
+                            { "handle": "2024-10" },
                         ]
                     },
                     "extensions": { "cost": { "actualQueryCost": null, "throttleStatus": null } }
@@ -289,8 +305,7 @@ mod tests {
 
         let client = mock_webhooks_client(&mock_server);
         let versions = client.api_versions().await.unwrap();
-        assert_eq!(versions.len(), 2);
-        assert_eq!(versions[0].handle, "2024-07");
+        assert_eq!(versions, vec!["2024-07", "2024-10"]);
     }
 
     #[tokio::test]
@@ -299,7 +314,7 @@ mod tests {
         wiremock::Mock::given(wiremock::matchers::method("POST"))
             .respond_with(
                 wiremock::ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                    "data": { "webhookApiVersions": [] },
+                    "data": { "publicApiVersions": [] },
                     "extensions": { "cost": { "actualQueryCost": null, "throttleStatus": null } }
                 })),
             )
@@ -318,10 +333,7 @@ mod tests {
             .respond_with(
                 wiremock::ResponseTemplate::new(200).set_body_json(serde_json::json!({
                     "data": {
-                        "webhookTopics": [
-                            { "topic": "orders/create", "description": "Order created" },
-                            { "topic": "products/update", "description": "Product updated" },
-                        ]
+                        "availableTopics": ["orders/create", "products/update"]
                     },
                     "extensions": { "cost": { "actualQueryCost": null, "throttleStatus": null } }
                 })),
@@ -331,20 +343,39 @@ mod tests {
 
         let client = mock_webhooks_client(&mock_server);
         let topics = client.topics("2024-07").await.unwrap();
-        assert_eq!(topics.len(), 2);
-        assert_eq!(topics[0].topic, "orders/create");
+        assert_eq!(topics, vec!["orders/create", "products/update"]);
     }
 
     #[tokio::test]
-    async fn send_sample_webhook_sends() {
+    async fn topics_null_is_empty() {
+        let mock_server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(wiremock::matchers::method("POST"))
+            .respond_with(
+                wiremock::ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                    "data": { "availableTopics": null },
+                    "extensions": { "cost": { "actualQueryCost": null, "throttleStatus": null } }
+                })),
+            )
+            .mount(&mock_server)
+            .await;
+
+        let client = mock_webhooks_client(&mock_server);
+        let topics = client.topics("2024-07").await.unwrap();
+        assert!(topics.is_empty());
+    }
+
+    #[tokio::test]
+    async fn send_sample_webhook_maps_cli_testing() {
         let mock_server = wiremock::MockServer::start().await;
         wiremock::Mock::given(wiremock::matchers::method("POST"))
             .respond_with(
                 wiremock::ResponseTemplate::new(200).set_body_json(serde_json::json!({
                     "data": {
-                        "sendSampleWebhook": {
-                            "sampleWebhookId": "wh-123",
-                            "userErrors": []
+                        "cliTesting": {
+                            "samplePayload": "{ \"sampleField\": \"SampleValue\" }",
+                            "headers": "{ \"header\": \"Header Value\" }",
+                            "success": true,
+                            "errors": []
                         }
                     },
                     "extensions": { "cost": { "actualQueryCost": null, "throttleStatus": null } }
@@ -355,10 +386,18 @@ mod tests {
 
         let client = mock_webhooks_client(&mock_server);
         let result = client
-            .send_sample_webhook("orders/create", "2024-07", "https://hook.example", "secret")
+            .send_sample_webhook(&SendSampleWebhookVariables {
+                topic: "orders/create".into(),
+                api_version: "2024-07".into(),
+                address: "https://hook.example".into(),
+                delivery_method: "http".into(),
+                shared_secret: "secret".into(),
+                api_key: None,
+            })
             .await
             .unwrap();
-        assert_eq!(result.sample_webhook_id, Some("wh-123".into()));
+        assert!(result.success);
+        assert!(result.sample_payload.contains("SampleValue"));
         assert!(result.user_errors.is_empty());
     }
 
@@ -369,9 +408,11 @@ mod tests {
             .respond_with(
                 wiremock::ResponseTemplate::new(200).set_body_json(serde_json::json!({
                     "data": {
-                        "sendSampleWebhook": {
-                            "sampleWebhookId": null,
-                            "userErrors": [{ "field": ["topic"], "message": "Invalid topic" }]
+                        "cliTesting": {
+                            "samplePayload": "{}",
+                            "headers": "{}",
+                            "success": false,
+                            "errors": ["Invalid topic"]
                         }
                     },
                     "extensions": { "cost": { "actualQueryCost": null, "throttleStatus": null } }
@@ -382,10 +423,17 @@ mod tests {
 
         let client = mock_webhooks_client(&mock_server);
         let result = client
-            .send_sample_webhook("bad/topic", "2024-07", "https://hook.example", "secret")
+            .send_sample_webhook(&SendSampleWebhookVariables {
+                topic: "bad/topic".into(),
+                api_version: "2024-07".into(),
+                address: "https://hook.example".into(),
+                delivery_method: "http".into(),
+                shared_secret: "secret".into(),
+                api_key: Some("api-key".into()),
+            })
             .await
             .unwrap();
-        assert!(result.sample_webhook_id.is_none());
+        assert!(!result.success);
         assert_eq!(result.user_errors.len(), 1);
     }
 

@@ -2,13 +2,13 @@
 
 use app::services::{
     get_dot_env_file_name, linked_app_context, pull_env, show_env, EnvFormat, EnvValues,
-    LinkedAppContextOptions, PullEnvOptions,
+    PullEnvOptions,
 };
 use cli_core::command::BaseCommand;
 use cli_core::error::CliError;
-use std::path::PathBuf;
 
-use super::auth_helpers::authenticated_developer_platform;
+use super::auth_helpers::{authenticated_developer_platform, linked_ctx_options};
+use super::prompter::CliKitPrompter;
 
 #[derive(Debug)]
 pub struct EnvPull {
@@ -16,6 +16,7 @@ pub struct EnvPull {
     config: Option<String>,
     client_id: Option<String>,
     env_file: Option<String>,
+    reset: bool,
 }
 
 impl EnvPull {
@@ -24,12 +25,14 @@ impl EnvPull {
         config: Option<String>,
         client_id: Option<String>,
         env_file: Option<String>,
+        reset: bool,
     ) -> Self {
         Self {
             path,
             config,
             client_id,
             env_file,
+            reset,
         }
     }
 }
@@ -48,13 +51,16 @@ impl BaseCommand for EnvPull {
 
     async fn run(&self) -> Result<(), CliError> {
         let client = authenticated_developer_platform().await?;
+        let prompter = CliKitPrompter;
         let ctx = linked_app_context(
-            LinkedAppContextOptions {
-                directory: PathBuf::from(&self.path),
-                config_name: self.config.clone(),
-                client_id: self.client_id.clone(),
-            },
+            linked_ctx_options(
+                &self.path,
+                self.config.clone(),
+                self.client_id.clone(),
+                self.reset,
+            ),
             client.as_ref(),
+            Some(&prompter),
         )
         .await
         .map_err(|e| CliError::abort(e.to_string()))?;
@@ -85,6 +91,7 @@ pub struct EnvShow {
     config: Option<String>,
     client_id: Option<String>,
     json: bool,
+    reset: bool,
 }
 
 impl EnvShow {
@@ -93,12 +100,14 @@ impl EnvShow {
         config: Option<String>,
         client_id: Option<String>,
         json: bool,
+        reset: bool,
     ) -> Self {
         Self {
             path,
             config,
             client_id,
             json,
+            reset,
         }
     }
 }
@@ -117,13 +126,16 @@ impl BaseCommand for EnvShow {
 
     async fn run(&self) -> Result<(), CliError> {
         let client = authenticated_developer_platform().await?;
+        let prompter = CliKitPrompter;
         let ctx = linked_app_context(
-            LinkedAppContextOptions {
-                directory: PathBuf::from(&self.path),
-                config_name: self.config.clone(),
-                client_id: self.client_id.clone(),
-            },
+            linked_ctx_options(
+                &self.path,
+                self.config.clone(),
+                self.client_id.clone(),
+                self.reset,
+            ),
             client.as_ref(),
+            Some(&prompter),
         )
         .await
         .map_err(|e| CliError::abort(e.to_string()))?;

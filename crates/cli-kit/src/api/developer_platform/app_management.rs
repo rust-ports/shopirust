@@ -14,15 +14,28 @@ use std::collections::HashMap;
 use crate::api::app_management::{
     AppManagementClient, OrganizationApp as KitOrganizationApp, Specification,
 };
+use crate::api::business_platform::{
+    id_from_encoded_gid, number_from_gid, AccessibleShopsPage, BusinessPlatformClient,
+    BusinessPlatformShop,
+};
 
 /// App Management / Developer Dashboard implementation of [`DeveloperPlatformClient`].
 pub struct AppManagementPlatformClient {
     inner: AppManagementClient,
+    business_platform: Option<BusinessPlatformClient>,
 }
 
 impl AppManagementPlatformClient {
     pub fn new(inner: AppManagementClient) -> Self {
-        Self { inner }
+        Self {
+            inner,
+            business_platform: None,
+        }
+    }
+
+    pub fn with_business_platform(mut self, client: BusinessPlatformClient) -> Self {
+        self.business_platform = Some(client);
+        self
     }
 
     pub fn into_inner(self) -> AppManagementClient {
@@ -68,6 +81,12 @@ impl AppManagementPlatformClient {
             .as_ref()
             .and_then(|r| r.granted_shopify_approval_scopes.clone())
             .unwrap_or_default();
+        let modules = app
+            .active_release
+            .as_ref()
+            .and_then(|r| r.version.as_ref())
+            .and_then(|v| v.app_modules.as_ref());
+        let (application_url, redirect_url_whitelist) = urls_from_modules(modules);
         OrganizationApp {
             id: app.id,
             title: app
@@ -80,30 +99,119 @@ impl AppManagementPlatformClient {
             organization_id: app.organization_id,
             api_secret_keys: secrets,
             granted_scopes: scopes,
-            application_url: None,
-            redirect_url_whitelist: vec![],
+            application_url,
+            redirect_url_whitelist,
             flags: filter_disabled_flags(&[]),
         }
     }
 
-    fn modules_to_version(modules: Vec<crate::api::app_management::AppModule>) -> AppVersion {
-        AppVersion {
-            app_module_versions: modules
-                .into_iter()
-                .map(|m| AppModuleVersion {
-                    registration_id: m.uuid.clone(),
-                    registration_uuid: Some(m.uuid),
-                    registration_title: m.handle.unwrap_or_default(),
-                    config: m.config.and_then(|c| serde_json::from_str(&c).ok()),
-                    target: m.target,
-                    module_type: m
-                        .specification
-                        .as_ref()
-                        .map(|s| s.identifier.clone())
-                        .unwrap_or_default(),
-                })
-                .collect(),
+    fn map_shops(page: AccessibleShopsPage) -> Paginateable<Vec<OrganizationStore>> {
+        let stores = page
+            .stores
+            .into_iter()
+            .filter_map(|s| map_bp_shop(s, page.provisionable))
+            .collect();
+        Paginateable {
+            data: stores,
+            has_more_pages: page.has_more_pages,
         }
+    }
+
+    fn bp_client(&self) -> Result<&BusinessPlatformClient, CliApiError> {
+        self.business_platform.as_ref().ok_or_else(|| {
+            CliApiError::unsupported(ClientName::AppManagement.as_str(), "dev_stores_for_org")
+        })
+    }
+}
+
+fn urls_from_modules(
+    modules: Option<&Vec<crate::api::app_management::AppModule>>,
+) -> (Option<String>, Vec<String>) {
+    let Some(modules) = modules else {
+        return (None, vec![]);
+    };
+    let mut application_url = None;
+    let mut redirect_url_whitelist = vec![];
+    for m in modules {
+        let ident = m
+            .specification
+            .as_ref()
+            .map(|s| {
+                s.external_identifier
+                    .clone()
+                    .unwrap_or_else(|| s.identifier.clone())
+            })
+            .unwrap_or_default();
+        let config: Value = m
+            .config
+            .as_deref()
+            .and_then(|c| serde_json::from_str(c).ok())
+            .unwrap_or(Value::Null);
+        if ident == "app_home" || ident == "app_home_external" {
+            application_url = config
+                .get("app_url")
+                .or_else(|| config.get("application_url"))
+                .and_then(|v| v.as_str())
+                .map(str::to_string);
+        }
+        if ident == "app_access" || ident == "app_access_external" {
+            if let Some(arr) = config
+                .get("redirect_url_allowlist")
+                .or_else(|| config.pointer("/auth/redirect_urls"))
+                .and_then(|v| v.as_array())
+            {
+                redirect_url_whitelist = arr
+                    .iter()
+                    .filter_map(|v| v.as_str().map(str::to_string))
+                    .collect();
+            }
+        }
+    }
+    (application_url, redirect_url_whitelist)
+}
+
+fn map_bp_shop(store: BusinessPlatformShop, provisionable: bool) -> Option<OrganizationStore> {
+    let shop_domain = store.url.or(store.primary_domain)?;
+    let shop_domain = shop_domain
+        .trim_start_matches("https://")
+        .trim_start_matches("http://")
+        .trim_end_matches('/')
+        .to_string();
+    let shop_id = store
+        .external_id
+        .as_deref()
+        .map(id_from_encoded_gid)
+        .or(store.id.clone())
+        .unwrap_or_default();
+    Some(OrganizationStore {
+        shop_id,
+        shop_domain: shop_domain.clone(),
+        shop_name: store.name,
+        transfer_disabled: true,
+        convertable_to_partner_test: true,
+        provisionable,
+        link: Some(shop_domain),
+        store_type: store.store_type,
+    })
+}
+
+fn modules_to_version(modules: Vec<crate::api::app_management::AppModule>) -> AppVersion {
+    AppVersion {
+        app_module_versions: modules
+            .into_iter()
+            .map(|m| AppModuleVersion {
+                registration_id: m.uuid.clone(),
+                registration_uuid: Some(m.uuid),
+                registration_title: m.handle.unwrap_or_default(),
+                config: m.config.and_then(|c| serde_json::from_str(&c).ok()),
+                target: m.target,
+                module_type: m
+                    .specification
+                    .as_ref()
+                    .map(|s| s.identifier.clone())
+                    .unwrap_or_default(),
+            })
+            .collect(),
     }
 }
 
@@ -335,7 +443,7 @@ impl DeveloperPlatformClient for AppManagementPlatformClient {
             a.active_release
                 .and_then(|r| r.version)
                 .and_then(|v| v.app_modules)
-                .map(Self::modules_to_version)
+                .map(modules_to_version)
         }))
     }
 
@@ -369,7 +477,7 @@ impl DeveloperPlatformClient for AppManagementPlatformClient {
             .map_err(Self::map_err)?
             .ok_or_else(|| CliApiError::message("Version detail not found"))?;
         let modules = detail.app_modules.unwrap_or_default();
-        let version = Self::modules_to_version(modules);
+        let version = modules_to_version(modules);
         Ok(AppVersionWithContext {
             id: 0,
             uuid: detail.id,
@@ -485,13 +593,34 @@ impl DeveloperPlatformClient for AppManagementPlatformClient {
 
     async fn dev_stores_for_org(
         &self,
-        _org_id: &str,
-        _search_term: Option<&str>,
+        org_id: &str,
+        search_term: Option<&str>,
     ) -> Result<Paginateable<Vec<OrganizationStore>>, CliApiError> {
-        Err(CliApiError::unsupported(
-            ClientName::AppManagement.as_str(),
-            "dev_stores_for_org",
-        ))
+        let page = self
+            .bp_client()?
+            .list_app_dev_stores(&number_from_gid(org_id), search_term)
+            .await
+            .map_err(Self::map_err)?;
+        Ok(Self::map_shops(page))
+    }
+
+    async fn store_by_domain(
+        &self,
+        org_id: &str,
+        shop_domain: &str,
+        store_types: &[&str],
+    ) -> Result<Option<OrganizationStore>, CliApiError> {
+        let types = if store_types.is_empty() {
+            vec!["APP_DEVELOPMENT"]
+        } else {
+            store_types.to_vec()
+        };
+        let page = self
+            .bp_client()?
+            .fetch_store_by_domain(&number_from_gid(org_id), shop_domain, &types)
+            .await
+            .map_err(Self::map_err)?;
+        Ok(Self::map_shops(page).data.into_iter().next())
     }
 
     fn to_extension_graphql_type(&self, input: &str) -> String {

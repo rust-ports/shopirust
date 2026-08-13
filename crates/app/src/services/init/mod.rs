@@ -1,11 +1,15 @@
 //! App scaffolding: clone a GitHub template and render Liquid placeholders.
 
+pub mod templates;
+
 use crate::error::AppError;
+use crate::services::dependencies::install_app_dependencies;
 use crate::utilities::liquid::recursive_liquid_template_copy;
 use serde_json::json;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use templates::resolve_template_url;
 
 #[derive(Debug, Clone)]
 pub struct InitOptions {
@@ -16,6 +20,27 @@ pub struct InitOptions {
     pub package_manager: String,
     /// When true, `template` is treated as a local filesystem path (no git clone).
     pub local_template: bool,
+    pub flavor: Option<String>,
+    pub client_id: Option<String>,
+    pub organization_id: Option<String>,
+    /// Install npm/yarn/pnpm after scaffold (upstream default).
+    pub install_dependencies: bool,
+}
+
+impl Default for InitOptions {
+    fn default() -> Self {
+        Self {
+            name: String::new(),
+            directory: PathBuf::from("."),
+            template: String::new(),
+            package_manager: "npm".into(),
+            local_template: false,
+            flavor: None,
+            client_id: None,
+            organization_id: None,
+            install_dependencies: false,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -54,6 +79,8 @@ pub fn init_app(options: InitOptions) -> Result<InitResult, AppError> {
         )));
     }
 
+    let resolved_template = resolve_template_url(&options.template, options.flavor.as_deref());
+
     let tmp = tempfile_dir()?;
     let download_dir = tmp.join("download");
     let scaffold_dir = tmp.join("app");
@@ -62,8 +89,8 @@ pub fn init_app(options: InitOptions) -> Result<InitResult, AppError> {
     let template_src = if options.local_template {
         PathBuf::from(&options.template)
     } else {
-        clone_template(&options.template, &download_dir)?;
-        resolve_template_subdir(&download_dir, &options.template)
+        clone_template(&resolved_template, &download_dir)?;
+        resolve_template_subdir(&download_dir, &resolved_template)
     };
 
     if !template_src.is_dir() {
@@ -83,7 +110,6 @@ pub fn init_app(options: InitOptions) -> Result<InitResult, AppError> {
     )
     .map_err(|e| AppError::message(e.to_string()))?;
 
-    // Update package.json name when present.
     let pkg_path = scaffold_dir.join("package.json");
     if pkg_path.exists() {
         if let Ok(raw) = fs::read_to_string(&pkg_path) {
@@ -100,17 +126,23 @@ pub fn init_app(options: InitOptions) -> Result<InitResult, AppError> {
         }
     }
 
-    // Ensure a minimal shopify.app.toml exists for empty/local stubs.
     let app_toml = scaffold_dir.join("shopify.app.toml");
     if !app_toml.exists() {
-        fs::write(
-            &app_toml,
-            format!(
-                "name = \"{}\"\napplication_url = \"https://example.com\"\nembedded = true\n\n[access_scopes]\nscopes = \"write_products\"\n",
-                options.name.replace('"', "\\\"")
-            ),
-        )?;
+        let mut toml = format!(
+            "name = \"{}\"\napplication_url = \"https://example.com\"\nembedded = true\n\n[access_scopes]\nscopes = \"write_products\"\n",
+            options.name.replace('"', "\\\"")
+        );
+        if let Some(ref client_id) = options.client_id {
+            toml = format!("client_id = \"{client_id}\"\n{toml}");
+        }
+        fs::write(&app_toml, toml)?;
+    } else if let Some(ref client_id) = options.client_id {
+        let raw = fs::read_to_string(&app_toml)?;
+        if !raw.contains("client_id") {
+            fs::write(&app_toml, format!("client_id = \"{client_id}\"\n{raw}"))?;
+        }
     }
+    let _ = options.organization_id;
 
     if let Some(parent) = output_directory.parent() {
         fs::create_dir_all(parent)?;
@@ -118,12 +150,22 @@ pub fn init_app(options: InitOptions) -> Result<InitResult, AppError> {
     move_dir(&scaffold_dir, &output_directory)?;
     let _ = fs::remove_dir_all(&tmp);
 
+    if options.install_dependencies {
+        let _ = install_app_dependencies(&output_directory, false, None);
+    }
+
     Ok(InitResult { output_directory })
 }
 
 fn tempfile_dir() -> Result<PathBuf, AppError> {
-    let base = std::env::temp_dir().join(format!("shopify-app-init-{}", std::process::id()));
-    let _ = fs::remove_dir_all(&base);
+    let base = std::env::temp_dir().join(format!(
+        "shopify-app-init-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0)
+    ));
     fs::create_dir_all(&base)?;
     Ok(base)
 }
@@ -134,7 +176,6 @@ pub fn parse_github_template_ref(template: &str) -> (String, Option<String>, Opt
         Some((u, b)) => (u, Some(b.to_string())),
         None => (template, None),
     };
-    // Support tree/blob path forms loosely: keep base repo URL.
     let mut file_path = None;
     let mut clone_url = url_part.to_string();
     if let Some(idx) = url_part.find("/tree/") {
@@ -189,7 +230,6 @@ fn move_dir(from: &Path, to: &Path) -> Result<(), AppError> {
     if fs::rename(from, to).is_ok() {
         return Ok(());
     }
-    // Cross-device fallback.
     copy_dir_all(from, to)?;
     fs::remove_dir_all(from)?;
     Ok(())
@@ -214,6 +254,17 @@ fn copy_dir_all(from: &Path, to: &Path) -> Result<(), AppError> {
 mod tests {
     use super::*;
     use tempfile::tempdir;
+
+    fn opts(name: &str, directory: PathBuf, template: String) -> InitOptions {
+        InitOptions {
+            name: name.into(),
+            directory,
+            template,
+            package_manager: "npm".into(),
+            local_template: true,
+            ..Default::default()
+        }
+    }
 
     #[test]
     fn hyphenates_names() {
@@ -244,14 +295,7 @@ mod tests {
 
         let parent = dir.path().join("out");
         fs::create_dir_all(&parent).unwrap();
-        let result = init_app(InitOptions {
-            name: "Demo App".into(),
-            directory: parent.clone(),
-            template: template.display().to_string(),
-            package_manager: "npm".into(),
-            local_template: true,
-        })
-        .unwrap();
+        let result = init_app(opts("Demo App", parent, template.display().to_string())).unwrap();
 
         assert!(result.output_directory.ends_with("demo-app"));
         assert_eq!(
@@ -267,19 +311,66 @@ mod tests {
     }
 
     #[test]
+    fn writes_client_id_when_provided() {
+        let dir = tempdir().unwrap();
+        let template = dir.path().join("template");
+        fs::create_dir_all(&template).unwrap();
+        let mut options = opts(
+            "With Client",
+            dir.path().to_path_buf(),
+            template.display().to_string(),
+        );
+        options.client_id = Some("gid://app/1".into());
+        let result = init_app(options).unwrap();
+        let toml = fs::read_to_string(result.output_directory.join("shopify.app.toml")).unwrap();
+        assert!(toml.contains("gid://app/1"));
+    }
+
+    #[test]
+    fn empty_name_is_rejected() {
+        let dir = tempdir().unwrap();
+        let err = init_app(opts(
+            "   ",
+            dir.path().to_path_buf(),
+            dir.path().join("template").display().to_string(),
+        ))
+        .unwrap_err();
+        assert!(err.to_string().contains("cannot be empty"));
+    }
+
+    #[test]
+    fn flavor_is_applied_to_template_url() {
+        let url = crate::services::init::templates::resolve_template_url(
+            "reactRouter",
+            Some("typescript"),
+        );
+        assert!(url.ends_with("#main-cli"));
+    }
+
+    #[test]
+    fn missing_local_template_errors() {
+        let dir = tempdir().unwrap();
+        let err = init_app(opts(
+            "Demo",
+            dir.path().to_path_buf(),
+            dir.path().join("no-such-template").display().to_string(),
+        ))
+        .unwrap_err();
+        assert!(err.to_string().contains("does not exist"));
+    }
+
+    #[test]
     fn refuses_existing_directory() {
         let dir = tempdir().unwrap();
         let existing = dir.path().join("demo-app");
         fs::create_dir_all(&existing).unwrap();
         let template = dir.path().join("template");
         fs::create_dir_all(&template).unwrap();
-        let err = init_app(InitOptions {
-            name: "Demo App".into(),
-            directory: dir.path().to_path_buf(),
-            template: template.display().to_string(),
-            package_manager: "npm".into(),
-            local_template: true,
-        })
+        let err = init_app(opts(
+            "Demo App",
+            dir.path().to_path_buf(),
+            template.display().to_string(),
+        ))
         .unwrap_err();
         assert!(err.to_string().contains("already exists"));
     }

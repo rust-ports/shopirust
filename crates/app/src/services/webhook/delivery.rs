@@ -87,6 +87,22 @@ pub async fn deliver_webhook_http(
     })
 }
 
+/// POST a webhook payload to a local endpoint (upstream `triggerLocalWebhook`).
+pub async fn trigger_local_webhook(
+    address: &str,
+    body: &str,
+    headers_json: &str,
+) -> Result<bool, AppError> {
+    let result = deliver_webhook_http(DeliverWebhookOptions {
+        address: address.into(),
+        body: body.into(),
+        headers_json: headers_json.into(),
+        shared_secret: None,
+    })
+    .await?;
+    Ok(result.success)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -151,5 +167,55 @@ mod tests {
 
         assert!(result.success);
         assert_eq!(result.status, Some(200));
+    }
+
+    #[tokio::test]
+    async fn trigger_local_webhook_delivers_to_port() {
+        use wiremock::matchers::{body_string, header, method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let server = MockServer::start().await;
+        let body = r#"{ "sampleField": "SampleValue" }"#;
+        let headers = r#"{ "header": "Header Value" }"#;
+
+        Mock::given(method("POST"))
+            .and(path("/a/url/path"))
+            .and(body_string(body))
+            .and(header("header", "Header Value"))
+            .and(header("Content-Type", "application/json"))
+            .respond_with(ResponseTemplate::new(200))
+            .mount(&server)
+            .await;
+
+        let got = trigger_local_webhook(
+            &format!("{}/a/url/path", server.uri()),
+            body,
+            headers,
+        )
+        .await
+        .unwrap();
+        assert!(got);
+    }
+
+    #[tokio::test]
+    async fn trigger_local_webhook_notifies_failure() {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/api/webhooks"))
+            .respond_with(ResponseTemplate::new(500))
+            .mount(&server)
+            .await;
+
+        let got = trigger_local_webhook(
+            &format!("{}/api/webhooks", server.uri()),
+            r#"{ "sampleField": "SampleValue" }"#,
+            r#"{ "header": "Header Value" }"#,
+        )
+        .await
+        .unwrap();
+        assert!(!got);
     }
 }

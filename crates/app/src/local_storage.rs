@@ -13,6 +13,8 @@ pub struct CachedAppInfo {
     pub title: Option<String>,
     pub org_id: Option<String>,
     pub store_fqdn: Option<String>,
+    pub update_urls: Option<bool>,
+    pub previous_app_id: Option<String>,
 }
 
 fn cache_path(directory: &Path) -> PathBuf {
@@ -47,6 +49,12 @@ pub fn set_cached_app_info(info: &CachedAppInfo) -> Result<(), AppError> {
     if info.store_fqdn.is_some() {
         merged.store_fqdn = info.store_fqdn.clone();
     }
+    if info.update_urls.is_some() {
+        merged.update_urls = info.update_urls;
+    }
+    if info.previous_app_id.is_some() {
+        merged.previous_app_id = info.previous_app_id.clone();
+    }
 
     let json = serde_json::to_string_pretty(&merged)?;
     fs::write(path, json)?;
@@ -78,6 +86,7 @@ mod tests {
             title: Some("Demo".into()),
             org_id: None,
             store_fqdn: None,
+            ..Default::default()
         })
         .unwrap();
         let loaded = get_cached_app_info(dir.path()).unwrap();

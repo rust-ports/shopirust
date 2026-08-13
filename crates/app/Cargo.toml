@@ -36,9 +36,18 @@ base64.workspace = true
 sha2.workspace = true
 hmac.workspace = true
 tracing.workspace = true
+theme = { path = "../theme" }
+hyper = { version = "1", features = ["http1", "server", "client"] }
+hyper-util = { version = "0.1", features = ["tokio", "http1", "client-legacy", "server"] }
+http-body-util = "0.1"
+http = "1"
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
+rustls-pemfile = "2"
+tokio-rustls = "0.26"
+glob = "0.3"
+walkdir = "2"
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt"] }
 tower = { version = "0.5", features = ["util"] }
 wiremock = "0.6"
-http-body-util = "0.1"

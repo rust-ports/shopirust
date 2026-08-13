@@ -8,14 +8,18 @@ pub struct Build {
     path: String,
     config: Option<String>,
     skip_dependencies_installation: bool,
+    reset: bool,
 }
 
 impl Build {
-    pub fn new(path: String, config: Option<String>, skip_dependencies_installation: bool) -> Self {
+    pub fn new(path: String, config: Option<String>, skip_dependencies_installation: bool,
+        reset: bool,
+    ) -> Self {
         Self {
             path,
             config,
             skip_dependencies_installation,
+            reset,
         }
     }
 }
@@ -33,6 +37,7 @@ impl BaseCommand for Build {
     }
 
     async fn run(&self) -> Result<(), CliError> {
+        let _ = self.reset;
         let result = build_app(BuildOptions {
             directory: PathBuf::from(&self.path),
             config_name: self.config.clone(),

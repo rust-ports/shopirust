@@ -21,7 +21,7 @@ pub fn parse_app_log_payload(payload: &str, _log_type: &str) -> Value {
     serde_json::from_str(payload).unwrap_or(Value::Null)
 }
 
-fn snake_to_camel(key: &str) -> String {
+pub fn snake_to_camel(key: &str) -> String {
     let mut out = String::with_capacity(key.len());
     let mut up = false;
     for ch in key.chars() {
@@ -37,16 +37,27 @@ fn snake_to_camel(key: &str) -> String {
     out
 }
 
-fn camelcase_keys(value: Value) -> Value {
+/// Convert object keys to camelCase (upstream `camelcase-keys.ts`).
+///
+/// When `deep` is false, only the top-level object's keys are converted (top-level
+/// arrays are left unchanged). When `deep` is true, nested objects and arrays recurse.
+pub fn camelcase_keys(value: Value, deep: bool) -> Value {
     match value {
         Value::Object(map) => {
             let mut out = serde_json::Map::new();
             for (k, v) in map {
-                out.insert(snake_to_camel(&k), camelcase_keys(v));
+                let converted = if deep {
+                    camelcase_keys(v, true)
+                } else {
+                    v
+                };
+                out.insert(snake_to_camel(&k), converted);
             }
             Value::Object(out)
         }
-        Value::Array(arr) => Value::Array(arr.into_iter().map(camelcase_keys).collect()),
+        Value::Array(arr) if deep => {
+            Value::Array(arr.into_iter().map(|v| camelcase_keys(v, true)).collect())
+        }
         other => other,
     }
 }
@@ -78,7 +89,7 @@ pub fn to_formatted_app_log_json(
     );
     obj.insert("storeName".into(), Value::String(store_name.to_string()));
 
-    let mut payload = camelcase_keys(app_log_payload.clone());
+    let mut payload = camelcase_keys(app_log_payload.clone(), true);
     if app_log.log_type == LOG_TYPE_FUNCTION_RUN {
         if let Some(logs) = payload.get("logs").and_then(|v| v.as_str()) {
             let lines: Vec<Value> = logs
@@ -253,5 +264,135 @@ mod tests {
         assert!(json.contains("\"fuelConsumed\""));
         assert!(json.contains("\"storeName\":\"shop.myshopify.com\""));
         assert!(json.contains("\"logs\":[\"a\",\"b\"]"));
+    }
+
+    #[test]
+    fn camelcase_converts_snake_case_keys() {
+        let v = serde_json::json!({"foo_bar": 1, "baz_qux": 2});
+        assert_eq!(
+            camelcase_keys(v, false),
+            serde_json::json!({"fooBar": 1, "bazQux": 2})
+        );
+    }
+
+    #[test]
+    fn camelcase_converts_kebab_case_keys() {
+        let v = serde_json::json!({"foo-bar": 1, "baz-qux": 2});
+        assert_eq!(
+            camelcase_keys(v, false),
+            serde_json::json!({"fooBar": 1, "bazQux": 2})
+        );
+    }
+
+    #[test]
+    fn camelcase_leaves_camel_case_unchanged() {
+        let v = serde_json::json!({"alreadyCamel": 1});
+        assert_eq!(camelcase_keys(v, false), serde_json::json!({"alreadyCamel": 1}));
+    }
+
+    #[test]
+    fn camelcase_handles_null() {
+        let v = serde_json::json!({"foo_bar": null});
+        assert_eq!(camelcase_keys(v, false), serde_json::json!({"fooBar": null}));
+    }
+
+    #[test]
+    fn camelcase_top_level_array_unchanged_without_deep() {
+        let v = serde_json::json!([{"foo_bar": 1}]);
+        assert_eq!(
+            camelcase_keys(v, false),
+            serde_json::json!([{"foo_bar": 1}])
+        );
+    }
+
+    #[test]
+    fn camelcase_does_not_recurse_by_default() {
+        let v = serde_json::json!({"foo_bar": {"nested_key": 1}});
+        assert_eq!(
+            camelcase_keys(v, false),
+            serde_json::json!({"fooBar": {"nested_key": 1}})
+        );
+    }
+
+    #[test]
+    fn camelcase_recurses_with_deep() {
+        let v = serde_json::json!({"foo_bar": {"nested_key": 1}});
+        assert_eq!(
+            camelcase_keys(v, true),
+            serde_json::json!({"fooBar": {"nestedKey": 1}})
+        );
+    }
+
+    #[test]
+    fn camelcase_recurses_into_arrays_with_deep() {
+        let v = serde_json::json!({"arr": [{"nested_key": 1}]});
+        assert_eq!(
+            camelcase_keys(v, true),
+            serde_json::json!({"arr": [{"nestedKey": 1}]})
+        );
+    }
+
+    #[test]
+    fn camelcase_top_level_arrays_with_deep() {
+        let v = serde_json::json!([{"foo_bar": 1}]);
+        assert_eq!(
+            camelcase_keys(v, true),
+            serde_json::json!([{"fooBar": 1}])
+        );
+    }
+
+    #[test]
+    fn camelcase_primitives_unchanged() {
+        assert_eq!(camelcase_keys(Value::Null, true), Value::Null);
+        assert_eq!(
+            camelcase_keys(Value::String("hello".into()), true),
+            Value::String("hello".into())
+        );
+    }
+
+    #[test]
+    fn camelcase_empty_object() {
+        assert_eq!(camelcase_keys(serde_json::json!({}), false), serde_json::json!({}));
+    }
+
+    #[test]
+    fn json_format_includes_shop_and_timestamps() {
+        let log = AppLogData {
+            shop_id: 1,
+            api_client_id: 2,
+            payload: r#"{"message":"Log 1"}"#.into(),
+            log_type: "app".into(),
+            source: "src".into(),
+            source_namespace: "ns".into(),
+            cursor: "c".into(),
+            status: "success".into(),
+            log_timestamp: "2024-09-14T05:00:00.000Z".into(),
+        };
+        let payload = parse_app_log_payload(&log.payload, &log.log_type);
+        let json = to_formatted_app_log_json(&log, &payload, "storeName", false);
+        assert!(json.contains("\"shopId\":1"));
+        assert!(json.contains("\"storeName\":\"storeName\""));
+        assert!(json.contains("\"logTimestamp\":\"2024-09-14T05:00:00.000Z\""));
+        assert!(json.contains("\"payload\":{\"message\":\"Log 1\"}"));
+    }
+
+    #[test]
+    fn text_format_function_run() {
+        let log = AppLogData {
+            shop_id: 1,
+            api_client_id: 2,
+            payload: r#"{"export":"run","fuel_consumed":2000000,"logs":"hello\n"}"#.into(),
+            log_type: LOG_TYPE_FUNCTION_RUN.into(),
+            source: "discount".into(),
+            source_namespace: "extensions".into(),
+            cursor: "c".into(),
+            status: "success".into(),
+            log_timestamp: "2024-05-23T19:17:00.240053Z".into(),
+        };
+        let text = format_log_text(&log, "shop.myshopify.com");
+        assert!(text.contains("Success"));
+        assert!(text.contains("discount"));
+        assert!(text.contains("export \"run\""));
+        assert!(text.contains("hello"));
     }
 }

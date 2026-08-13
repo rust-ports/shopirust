@@ -16,6 +16,7 @@ pub mod import_extractor;
 pub mod json;
 pub mod liquid;
 pub mod metadata;
+pub mod mkcert;
 pub mod package_manager;
 pub mod request_ids;
 pub mod retry;

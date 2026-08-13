@@ -1,11 +1,11 @@
-use app::services::{linked_app_context, release_version, LinkedAppContextOptions, ReleaseOptions};
+use app::services::{linked_app_context, release_version, ReleaseOptions};
 use cli_core::command::BaseCommand;
 use cli_core::error::CliError;
 use is_terminal::IsTerminal;
 use std::io::stdout;
-use std::path::PathBuf;
 
-use super::auth_helpers::authenticated_developer_platform;
+use super::auth_helpers::{authenticated_developer_platform, linked_ctx_options};
+use super::prompter::CliKitPrompter;
 
 #[derive(Debug)]
 pub struct Release {
@@ -15,6 +15,7 @@ pub struct Release {
     version: String,
     allow_updates: bool,
     allow_deletes: bool,
+    reset: bool,
 }
 
 impl Release {
@@ -25,6 +26,7 @@ impl Release {
         version: String,
         allow_updates: bool,
         allow_deletes: bool,
+        reset: bool,
     ) -> Self {
         Self {
             path,
@@ -33,6 +35,7 @@ impl Release {
             version,
             allow_updates,
             allow_deletes,
+            reset,
         }
     }
 }
@@ -51,13 +54,16 @@ impl BaseCommand for Release {
 
     async fn run(&self) -> Result<(), CliError> {
         let client = authenticated_developer_platform().await?;
+        let prompter = CliKitPrompter;
         let ctx = linked_app_context(
-            LinkedAppContextOptions {
-                directory: PathBuf::from(&self.path),
-                config_name: self.config.clone(),
-                client_id: self.client_id.clone(),
-            },
+            linked_ctx_options(
+                &self.path,
+                self.config.clone(),
+                self.client_id.clone(),
+                self.reset,
+            ),
             client.as_ref(),
+            Some(&prompter),
         )
         .await
         .map_err(|e| CliError::abort(e.to_string()))?;

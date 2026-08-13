@@ -8,14 +8,15 @@ use app::services::function::{
     run_function, FunctionBuildOptions, FunctionInfoFormat, FunctionInfoOptions, ReplayOptions,
     RunFunctionOptions, SchemaDefinitionFetcher, PREFERRED_FUNCTION_RUNNER_VERSION,
 };
-use app::services::{linked_app_context, LinkedAppContextOptions};
+use app::services::linked_app_context;
 use app::AppError;
 use async_trait::async_trait;
 use cli_core::command::BaseCommand;
 use cli_core::error::CliError;
 use std::path::PathBuf;
 
-use super::auth_helpers::authenticated_developer_platform;
+use super::auth_helpers::{authenticated_developer_platform, linked_ctx_options};
+use super::prompter::CliKitPrompter;
 use crate::api::functions::FunctionsClient;
 use crate::api::generated::graphql::functions::schema_definition_by_api_type::{
     SchemaDefinitionByApiTypeVariables, SCHEMA_DEFINITION_BY_API_TYPE_QUERY,
@@ -119,11 +120,18 @@ fn load_local_app(path: &str, config: Option<&str>) -> Result<app::LoadedApp, Cl
 pub struct FunctionBuild {
     path: String,
     config: Option<String>,
+    reset: bool,
 }
 
 impl FunctionBuild {
-    pub fn new(path: String, config: Option<String>) -> Self {
-        Self { path, config }
+    pub fn new(path: String, config: Option<String>,
+        reset: bool,
+    ) -> Self {
+        Self {
+            path,
+            config,
+            reset,
+        }
     }
 }
 
@@ -140,6 +148,7 @@ impl BaseCommand for FunctionBuild {
     }
 
     async fn run(&self) -> Result<(), CliError> {
+        let _ = self.reset;
         let app = load_local_app(&self.path, self.config.as_deref())?;
         let fun = choose_function(&app, &PathBuf::from(&self.path))
             .map_err(|e| CliError::abort(e.to_string()))?;
@@ -159,6 +168,7 @@ pub struct FunctionInfo {
     config: Option<String>,
     client_id: Option<String>,
     json: bool,
+    reset: bool,
 }
 
 impl FunctionInfo {
@@ -167,12 +177,14 @@ impl FunctionInfo {
         config: Option<String>,
         client_id: Option<String>,
         json: bool,
+        reset: bool,
     ) -> Self {
         Self {
             path,
             config,
             client_id,
             json,
+            reset,
         }
     }
 }
@@ -210,13 +222,16 @@ impl BaseCommand for FunctionInfo {
             if let Some(client_id) = client_id {
                 // Best-effort generate when linked
                 if let Ok(platform) = authenticated_developer_platform().await {
+                    let prompter = CliKitPrompter;
                     if let Ok(ctx) = linked_app_context(
-                        LinkedAppContextOptions {
-                            directory: PathBuf::from(&self.path),
-                            config_name: self.config.clone(),
-                            client_id: Some(client_id.clone()),
-                        },
+                        linked_ctx_options(
+                            &self.path,
+                            self.config.clone(),
+                            Some(client_id.clone()),
+                            self.reset,
+                        ),
                         platform.as_ref(),
+                        Some(&prompter),
                     )
                     .await
                     {
@@ -273,6 +288,7 @@ pub struct FunctionReplay {
     json: bool,
     log: Option<String>,
     watch: bool,
+    reset: bool,
 }
 
 impl FunctionReplay {
@@ -283,6 +299,7 @@ impl FunctionReplay {
         json: bool,
         log: Option<String>,
         watch: bool,
+        reset: bool,
     ) -> Self {
         Self {
             path,
@@ -291,6 +308,7 @@ impl FunctionReplay {
             json,
             log,
             watch,
+            reset,
         }
     }
 }
@@ -309,13 +327,16 @@ impl BaseCommand for FunctionReplay {
 
     async fn run(&self) -> Result<(), CliError> {
         let client = authenticated_developer_platform().await?;
+        let prompter = CliKitPrompter;
         let ctx = linked_app_context(
-            LinkedAppContextOptions {
-                directory: PathBuf::from(&self.path),
-                config_name: self.config.clone(),
-                client_id: self.client_id.clone(),
-            },
+            linked_ctx_options(
+                &self.path,
+                self.config.clone(),
+                self.client_id.clone(),
+                self.reset,
+            ),
             client.as_ref(),
+            Some(&prompter),
         )
         .await
         .map_err(|e| CliError::abort(e.to_string()))?;
@@ -348,6 +369,7 @@ pub struct FunctionRun {
     json: bool,
     input: Option<String>,
     export: Option<String>,
+    reset: bool,
 }
 
 impl FunctionRun {
@@ -358,6 +380,7 @@ impl FunctionRun {
         json: bool,
         input: Option<String>,
         export: Option<String>,
+        reset: bool,
     ) -> Self {
         Self {
             path,
@@ -366,6 +389,7 @@ impl FunctionRun {
             json,
             input,
             export,
+            reset,
         }
     }
 }
@@ -385,6 +409,7 @@ impl BaseCommand for FunctionRun {
     }
 
     async fn run(&self) -> Result<(), CliError> {
+        let _ = self.reset;
         let app = load_local_app(&self.path, self.config.as_deref())?;
         let fun = choose_function(&app, &PathBuf::from(&self.path))
             .map_err(|e| CliError::abort(e.to_string()))?;
@@ -450,6 +475,7 @@ pub struct FunctionSchema {
     config: Option<String>,
     client_id: Option<String>,
     stdout: bool,
+    reset: bool,
 }
 
 impl FunctionSchema {
@@ -458,12 +484,14 @@ impl FunctionSchema {
         config: Option<String>,
         client_id: Option<String>,
         stdout: bool,
+        reset: bool,
     ) -> Self {
         Self {
             path,
             config,
             client_id,
             stdout,
+            reset,
         }
     }
 }
@@ -482,13 +510,16 @@ impl BaseCommand for FunctionSchema {
 
     async fn run(&self) -> Result<(), CliError> {
         let client = authenticated_developer_platform().await?;
+        let prompter = CliKitPrompter;
         let ctx = linked_app_context(
-            LinkedAppContextOptions {
-                directory: PathBuf::from(&self.path),
-                config_name: self.config.clone(),
-                client_id: self.client_id.clone(),
-            },
+            linked_ctx_options(
+                &self.path,
+                self.config.clone(),
+                self.client_id.clone(),
+                self.reset,
+            ),
             client.as_ref(),
+            Some(&prompter),
         )
         .await
         .map_err(|e| CliError::abort(e.to_string()))?;
@@ -536,11 +567,18 @@ impl BaseCommand for FunctionSchema {
 pub struct FunctionTypegen {
     path: String,
     config: Option<String>,
+    reset: bool,
 }
 
 impl FunctionTypegen {
-    pub fn new(path: String, config: Option<String>) -> Self {
-        Self { path, config }
+    pub fn new(path: String, config: Option<String>,
+        reset: bool,
+    ) -> Self {
+        Self {
+            path,
+            config,
+            reset,
+        }
     }
 }
 
@@ -557,6 +595,7 @@ impl BaseCommand for FunctionTypegen {
     }
 
     async fn run(&self) -> Result<(), CliError> {
+        let _ = self.reset;
         let app = load_local_app(&self.path, self.config.as_deref())?;
         let fun = choose_function(&app, &PathBuf::from(&self.path))
             .map_err(|e| CliError::abort(e.to_string()))?;

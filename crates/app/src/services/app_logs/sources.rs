@@ -76,6 +76,7 @@ mod tests {
             webs: vec![],
             identifiers: Identifiers::default(),
             errors: vec![],
+            dev_application_urls: None,
         };
         let sources = sources_for_app(&app);
         assert_eq!(

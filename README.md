@@ -198,10 +198,18 @@ See [APP_PARITY_GAPS.md](APP_PARITY_GAPS.md) for remaining depth vs upstream Vit
 cargo run -p cli-kit -- app env show --path ./my-app
 cargo run -p cli-kit -- app env pull --path ./my-app
 
+# Flags are optional; omitted topic / api-version / address / delivery-method are prompted.
+# Localhost POSTs from the CLI; https / pubsub:// / EventBridge ARNs enqueue via WebhooksClient.
 cargo run -p cli-kit -- app webhook trigger \
   --topic products/create \
   --api-version 2025-01 \
-  --address http://127.0.0.1:3000/webhooks
+  --address http://localhost:3000/webhooks
+
+cargo run -p cli-kit -- app webhook trigger \
+  --topic orders/create \
+  --api-version 2025-01 \
+  --delivery-method event-bridge \
+  --address arn:aws:events:us-east-1::event-source/aws.partner/shopify.com/1/source
 
 cargo run -p cli-kit -- app logs sources --path ./my-app
 cargo run -p cli-kit -- app logs --store my-store.myshopify.com --path ./my-app

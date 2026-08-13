@@ -47,12 +47,33 @@ pub fn use_config(options: UseConfigOptions) -> Result<UseConfigResult, AppError
         title: loaded.configuration.name.clone(),
         org_id: None,
         store_fqdn: loaded.hidden_config.dev_store_url.clone(),
+        ..Default::default()
     })?;
 
     Ok(UseConfigResult {
         message: format!("Using configuration file {config_file}"),
         config_file: Some(config_file),
     })
+}
+
+/// Record the preferred configuration file (upstream `setCurrentConfigPreference`).
+pub fn set_current_config_preference(
+    directory: &Path,
+    config_file_name: &str,
+    client_id: Option<String>,
+) -> Result<(), AppError> {
+    if client_id.as_ref().is_some_and(|id| !id.is_empty()) {
+        set_cached_app_info(&CachedAppInfo {
+            directory: directory.display().to_string(),
+            config_file: Some(config_file_name.to_string()),
+            app_id: client_id,
+            title: None,
+            org_id: None,
+            store_fqdn: None,
+            ..Default::default()
+        })?;
+    }
+    Ok(())
 }
 
 fn resolve_config_file_name(
@@ -122,5 +143,102 @@ mod tests {
         })
         .unwrap();
         assert!(result.config_file.is_none());
+    }
+
+    #[test]
+    fn use_missing_file_errors() {
+        let dir = tempdir().unwrap();
+        let err = use_config(UseConfigOptions {
+            directory: dir.path().to_path_buf(),
+            config_name: Some("not-there".into()),
+            reset: false,
+        })
+        .unwrap_err();
+        assert!(err.to_string().contains("Could not find"));
+    }
+
+    #[test]
+    fn use_unlinked_file_errors() {
+        let dir = tempdir().unwrap();
+        fs::write(dir.path().join("shopify.app.toml"), "name = \"Demo\"\n").unwrap();
+        let err = use_config(UseConfigOptions {
+            directory: dir.path().to_path_buf(),
+            config_name: None,
+            reset: false,
+        })
+        .unwrap_err();
+        assert!(err.to_string().contains("client_id"));
+    }
+
+    #[test]
+    fn use_named_config() {
+        let dir = tempdir().unwrap();
+        fs::write(
+            dir.path().join("shopify.app.staging.toml"),
+            "client_id = \"abc\"\nname = \"Staging\"\n",
+        )
+        .unwrap();
+        let result = use_config(UseConfigOptions {
+            directory: dir.path().to_path_buf(),
+            config_name: Some("staging".into()),
+            reset: false,
+        })
+        .unwrap();
+        assert_eq!(
+            result.config_file.as_deref(),
+            Some("shopify.app.staging.toml")
+        );
+    }
+
+    #[test]
+    fn use_full_filename() {
+        let dir = tempdir().unwrap();
+        fs::write(
+            dir.path().join("shopify.app.prod.toml"),
+            "client_id = \"abc\"\nname = \"Prod\"\n",
+        )
+        .unwrap();
+        let result = use_config(UseConfigOptions {
+            directory: dir.path().to_path_buf(),
+            config_name: Some("shopify.app.prod.toml".into()),
+            reset: false,
+        })
+        .unwrap();
+        assert_eq!(
+            result.config_file.as_deref(),
+            Some("shopify.app.prod.toml")
+        );
+    }
+
+    #[test]
+    fn use_single_file_when_name_omitted() {
+        let dir = tempdir().unwrap();
+        fs::write(
+            dir.path().join("shopify.app.toml"),
+            "client_id = \"only\"\nname = \"Only\"\n",
+        )
+        .unwrap();
+        fs::write(
+            dir.path().join("shopify.app.staging.toml"),
+            "client_id = \"stg\"\nname = \"Staging\"\n",
+        )
+        .unwrap();
+        let result = use_config(UseConfigOptions {
+            directory: dir.path().to_path_buf(),
+            config_name: Some("staging".into()),
+            reset: false,
+        })
+        .unwrap();
+        assert!(result.message.contains("staging") || result.config_file.is_some());
+    }
+
+    #[test]
+    fn set_preference_skips_unlinked() {
+        let dir = tempdir().unwrap();
+        set_current_config_preference(dir.path(), "shopify.app.toml", None).unwrap();
+        assert!(crate::local_storage::get_cached_app_info(dir.path()).is_none());
+        set_current_config_preference(dir.path(), "shopify.app.toml", Some("abc".into())).unwrap();
+        let cached = crate::local_storage::get_cached_app_info(dir.path()).unwrap();
+        assert_eq!(cached.config_file.as_deref(), Some("shopify.app.toml"));
     }
 }

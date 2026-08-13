@@ -11,6 +11,8 @@ pub struct ImportCustomDataDefinitions {
     /// JSON dump of metafield/metaobject definitions.
     definitions_file: String,
     include_existing: bool,
+    client_id: Option<String>,
+    reset: bool,
 }
 
 impl ImportCustomDataDefinitions {
@@ -19,12 +21,16 @@ impl ImportCustomDataDefinitions {
         config: Option<String>,
         definitions_file: String,
         include_existing: bool,
+        client_id: Option<String>,
+        reset: bool,
     ) -> Self {
         Self {
             path,
             config,
             definitions_file,
             include_existing,
+            client_id,
+            reset,
         }
     }
 }
@@ -42,6 +48,7 @@ impl BaseCommand for ImportCustomDataDefinitions {
     }
 
     async fn run(&self) -> Result<(), CliError> {
+        let _ = (&self.client_id, self.reset);
         let app = load_app(LoadAppOptions {
             directory: PathBuf::from(&self.path),
             config_name: self.config.clone(),

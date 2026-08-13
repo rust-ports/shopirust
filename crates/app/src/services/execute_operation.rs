@@ -79,15 +79,10 @@ pub async fn execute_operation(
 }
 
 fn load_query(options: &ExecuteOperationOptions) -> Result<String, AppError> {
-    if let Some(ref q) = options.query {
-        return Ok(q.clone());
-    }
-    if let Some(ref path) = options.query_file {
-        return Ok(fs::read_to_string(path)?);
-    }
-    Err(AppError::message(
-        "Provide --query or --query-file for the GraphQL operation",
-    ))
+    crate::utilities::resolve_graphql_query(
+        options.query.as_deref(),
+        options.query_file.as_deref(),
+    )
 }
 
 fn load_variables(options: &ExecuteOperationOptions) -> Result<Value, AppError> {
@@ -121,5 +116,33 @@ mod tests {
         })
         .unwrap();
         assert!(q.contains("shop"));
+    }
+
+    #[test]
+    fn rejects_empty_query_flag() {
+        let err = load_query(&ExecuteOperationOptions {
+            query: Some("  ".into()),
+            query_file: None,
+            variables: None,
+            variable_file: None,
+            output_file: None,
+            api_version: "2026-01".into(),
+        })
+        .unwrap_err();
+        assert!(err.to_string().contains("empty"));
+    }
+
+    #[test]
+    fn loads_json_variables() {
+        let vars = load_variables(&ExecuteOperationOptions {
+            query: Some("{ shop { name } }".into()),
+            query_file: None,
+            variables: Some(r#"{"id":"1"}"#.into()),
+            variable_file: None,
+            output_file: None,
+            api_version: "2026-01".into(),
+        })
+        .unwrap();
+        assert_eq!(vars["id"], "1");
     }
 }

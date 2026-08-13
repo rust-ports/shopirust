@@ -1,16 +1,20 @@
 use crate::error::AppError;
 use crate::models::loader::{load_app, LoadAppOptions};
-use std::fs;
+use crate::models::AppConfiguration;
+use crate::services::config::select_app::{
+    deep_merge, fetch_app_remote_configuration, local_configuration_specifications,
+};
+use crate::services::config::write_app_configuration_file;
+use cli_api::{DeveloperPlatformClient, MinimalAppIdentifiers, OrganizationApp};
+use serde_json::Value;
 use std::path::PathBuf;
 
 #[derive(Debug, Clone)]
 pub struct PullConfigOptions {
     pub directory: PathBuf,
     pub config_name: Option<String>,
-    /// Remote fields to merge into the local TOML (from DeveloperPlatformClient).
-    pub remote_name: Option<String>,
-    pub remote_application_url: Option<String>,
-    pub remote_scopes: Option<Vec<String>>,
+    /// When set, skip the platform fetch and merge this JSON instead (tests).
+    pub remote_configuration: Option<Value>,
 }
 
 #[derive(Debug, Clone)]
@@ -19,47 +23,60 @@ pub struct PullConfigResult {
     pub updated: bool,
 }
 
-/// Pull remote app configuration into the local TOML file.
-///
-/// When remote fields are provided (by the command layer after an API fetch),
-/// they are merged into the existing local configuration.
-pub fn pull_config(options: PullConfigOptions) -> Result<PullConfigResult, AppError> {
+/// Pull remote app configuration into the local TOML file using the same
+/// remote-module merge as `config link`.
+pub async fn pull_config(
+    options: PullConfigOptions,
+    client: Option<&dyn DeveloperPlatformClient>,
+    remote_app: Option<&OrganizationApp>,
+) -> Result<PullConfigResult, AppError> {
     let loaded = load_app(LoadAppOptions {
         directory: options.directory.clone(),
         config_name: options.config_name.clone(),
         ignore_unknown_extensions: false,
     })?;
 
-    let mut updated = false;
-    let mut cfg = loaded.configuration.clone();
+    let remote_json = if let Some(remote) = options.remote_configuration {
+        remote
+    } else {
+        let (client, remote_app) = match (client, remote_app) {
+            (Some(c), Some(a)) => (c, a),
+            _ => {
+                return Ok(PullConfigResult {
+                    config_path: loaded.configuration_path,
+                    updated: false,
+                });
+            }
+        };
+        let identifiers = MinimalAppIdentifiers {
+            api_key: remote_app.api_key.clone(),
+            organization_id: remote_app
+                .organization_id
+                .clone()
+                .unwrap_or_default(),
+            id: remote_app.id.clone(),
+        };
+        let specs = local_configuration_specifications();
+        fetch_app_remote_configuration(&identifiers, client, &specs, None)
+            .await?
+            .unwrap_or_else(|| {
+                serde_json::json!({
+                    "name": remote_app.title,
+                    "application_url": remote_app.application_url,
+                })
+            })
+    };
 
-    if let Some(name) = options.remote_name {
-        if cfg.name.as_deref() != Some(name.as_str()) {
-            cfg.name = Some(name);
-            updated = true;
-        }
-    }
-    if let Some(url) = options.remote_application_url {
-        if cfg.application_url.as_deref() != Some(url.as_str()) {
-            cfg.application_url = Some(url);
-            updated = true;
-        }
-    }
-    if let Some(scopes) = options.remote_scopes {
-        let joined = scopes.join(",");
-        let current = cfg.scopes().join(",");
-        if current != joined {
-            cfg.extra.insert(
-                "access_scopes".into(),
-                serde_json::json!({ "scopes": joined }),
-            );
-            updated = true;
-        }
-    }
+    let local = serde_json::to_value(&loaded.configuration).unwrap_or(Value::Null);
+    let merged = deep_merge(local, remote_json);
+    let cfg: AppConfiguration = serde_json::from_value(merged)
+        .map_err(|e| AppError::message(format!("merge remote config: {e}")))?;
 
+    let previous = serde_json::to_value(&loaded.configuration).ok();
+    let next = serde_json::to_value(&cfg).ok();
+    let updated = previous != next;
     if updated {
-        let toml_body = configuration_to_toml(&cfg)?;
-        fs::write(&loaded.configuration_path, toml_body)?;
+        write_app_configuration_file(&loaded.configuration_path, &cfg)?;
     }
 
     Ok(PullConfigResult {
@@ -68,65 +85,76 @@ pub fn pull_config(options: PullConfigOptions) -> Result<PullConfigResult, AppEr
     })
 }
 
-fn configuration_to_toml(cfg: &crate::models::AppConfiguration) -> Result<String, AppError> {
-    let mut out = String::new();
-    if let Some(ref id) = cfg.client_id {
-        out.push_str(&format!("client_id = \"{id}\"\n"));
-    }
-    if let Some(ref name) = cfg.name {
-        out.push_str(&format!("name = \"{}\"\n", name.replace('"', "\\\"")));
-    }
-    if let Some(ref url) = cfg.application_url {
-        out.push_str(&format!("application_url = \"{url}\"\n"));
-    }
-    if let Some(embedded) = cfg.embedded {
-        out.push_str(&format!("embedded = {embedded}\n"));
-    }
-    let scopes = cfg.scopes();
-    out.push('\n');
-    out.push_str("[access_scopes]\n");
-    out.push_str(&format!("scopes = \"{}\"\n", scopes.join(",")));
-    if let Some(ref build) = cfg.build {
-        out.push('\n');
-        out.push_str("[build]\n");
-        if let Some(ref store) = build.dev_store_url {
-            out.push_str(&format!("dev_store_url = \"{store}\"\n"));
-        }
-        if let Some(v) = build.automatically_update_urls_on_dev {
-            out.push_str(&format!("automatically_update_urls_on_dev = {v}\n"));
-        }
-        if let Some(v) = build.include_config_on_deploy {
-            out.push_str(&format!("include_config_on_deploy = {v}\n"));
-        }
-    }
-    Ok(out)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::{sample_org_app, MockClient};
+    use cli_api::{AppModuleVersion, AppVersion};
     use std::fs;
     use tempfile::tempdir;
 
-    #[test]
-    fn pull_merges_remote_fields() {
+    #[tokio::test]
+    async fn pull_merges_remote_fields() {
         let dir = tempdir().unwrap();
         fs::write(
             dir.path().join("shopify.app.toml"),
             "client_id = \"abc\"\nname = \"Old\"\napplication_url = \"https://old.example\"\n",
         )
         .unwrap();
-        let result = pull_config(PullConfigOptions {
-            directory: dir.path().to_path_buf(),
-            config_name: None,
-            remote_name: Some("New".into()),
-            remote_application_url: Some("https://new.example".into()),
-            remote_scopes: Some(vec!["write_products".into()]),
-        })
+        let result = pull_config(
+            PullConfigOptions {
+                directory: dir.path().to_path_buf(),
+                config_name: None,
+                remote_configuration: Some(serde_json::json!({
+                    "name": "New",
+                    "application_url": "https://new.example",
+                    "access_scopes": { "scopes": "write_products" },
+                })),
+            },
+            None,
+            None,
+        )
+        .await
         .unwrap();
         assert!(result.updated);
         let content = fs::read_to_string(result.config_path).unwrap();
         assert!(content.contains("name = \"New\""));
         assert!(content.contains("https://new.example"));
+    }
+
+    #[tokio::test]
+    async fn pull_fetches_remote_modules() {
+        let dir = tempdir().unwrap();
+        fs::write(
+            dir.path().join("shopify.app.toml"),
+            "client_id = \"abc\"\nname = \"Old\"\n",
+        )
+        .unwrap();
+        let mut client = MockClient::with_app(sample_org_app("abc"));
+        client.active_version = Some(AppVersion {
+            app_module_versions: vec![AppModuleVersion {
+                registration_id: "1".into(),
+                registration_uuid: Some("u".into()),
+                registration_title: "branding".into(),
+                config: Some(serde_json::json!({"name": "From Remote"})),
+                target: None,
+                module_type: "branding".into(),
+            }],
+        });
+        let app = sample_org_app("abc");
+        let result = pull_config(
+            PullConfigOptions {
+                directory: dir.path().to_path_buf(),
+                config_name: None,
+                remote_configuration: None,
+            },
+            Some(&client),
+            Some(&app),
+        )
+        .await
+        .unwrap();
+        assert!(result.updated);
+        let content = fs::read_to_string(result.config_path).unwrap();
+        assert!(content.contains("From Remote"));
     }
 }

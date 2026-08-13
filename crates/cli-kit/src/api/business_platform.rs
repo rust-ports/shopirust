@@ -48,6 +48,65 @@ query CurrentAccountInfo {
 }
 "#;
 
+const LIST_APP_DEV_STORES_QUERY: &str = r#"
+query ListAppDevStores($searchTerm: String) {
+  organization {
+    id
+    name
+    accessibleShops(
+      filters: [
+        {field: STORE_TYPE, operator: EQUALS, value: "app_development"}
+        {field: STORE_STATUS, operator: EQUALS, value: "ACTIVE"}
+      ]
+      search: $searchTerm
+    ) {
+      edges {
+        node {
+          id
+          externalId
+          name
+          storeType
+          primaryDomain
+          shortName
+          url
+        }
+      }
+      pageInfo {
+        hasNextPage
+      }
+    }
+    currentUser {
+      organizationPermissions
+    }
+  }
+}
+"#;
+
+const FETCH_STORE_BY_DOMAIN_QUERY: &str = r#"
+query FetchStoreByDomain($domain: String, $filters: [ShopFilterInput!]) {
+  organization {
+    id
+    name
+    accessibleShops(filters: $filters, search: $domain) {
+      edges {
+        node {
+          id
+          externalId
+          name
+          storeType
+          primaryDomain
+          shortName
+          url
+        }
+      }
+    }
+    currentUser {
+      organizationPermissions
+    }
+  }
+}
+"#;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Destination {
@@ -101,6 +160,117 @@ struct OrgByHashedEmailData {
 #[serde(rename_all = "camelCase")]
 struct UserEmailData {
     current_account_info: CurrentAccountInfo,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BusinessPlatformShop {
+    pub id: Option<String>,
+    pub external_id: Option<String>,
+    pub name: String,
+    pub store_type: Option<String>,
+    pub primary_domain: Option<String>,
+    pub short_name: Option<String>,
+    pub url: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct AccessibleShopsPage {
+    pub stores: Vec<BusinessPlatformShop>,
+    pub has_more_pages: bool,
+    pub provisionable: bool,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct OrgShopsData {
+    organization: Option<OrgShopsOrganization>,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct OrgShopsOrganization {
+    id: Option<String>,
+    name: Option<String>,
+    accessible_shops: Option<AccessibleShopsConnection>,
+    current_user: Option<CurrentUserPermissions>,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AccessibleShopsConnection {
+    edges: Vec<ShopEdge>,
+    page_info: Option<PageInfo>,
+}
+
+#[derive(Deserialize, Serialize)]
+struct ShopEdge {
+    node: BusinessPlatformShop,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PageInfo {
+    has_next_page: Option<bool>,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CurrentUserPermissions {
+    organization_permissions: Option<Vec<String>>,
+}
+
+fn parse_org_shops(data: OrgShopsData) -> Result<AccessibleShopsPage, GraphqlRequestError> {
+    let org = data
+        .organization
+        .ok_or_else(|| GraphqlRequestError::ApiError("No organization found".into(), 404))?;
+    let connection = org.accessible_shops;
+    let stores = connection
+        .as_ref()
+        .map(|c| c.edges.iter().map(|e| e.node.clone()).collect())
+        .unwrap_or_default();
+    let has_more_pages = connection
+        .as_ref()
+        .and_then(|c| c.page_info.as_ref())
+        .and_then(|p| p.has_next_page)
+        .unwrap_or(false);
+    let provisionable = org
+        .current_user
+        .and_then(|u| u.organization_permissions)
+        .map(|p| p.iter().any(|x| x == "ondemand_access_to_stores"))
+        .unwrap_or(false);
+    Ok(AccessibleShopsPage {
+        stores,
+        has_more_pages,
+        provisionable,
+    })
+}
+
+/// Numeric id from a GID (`gid://shopify/Organization/123` → `123`).
+pub fn number_from_gid(gid: &str) -> String {
+    gid.rsplit('/').next().unwrap_or(gid).to_string()
+}
+
+/// Decode a base64-encoded GID or fall back to [`number_from_gid`].
+pub fn id_from_encoded_gid(gid: &str) -> String {
+    use base64::Engine;
+    if let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(gid) {
+        if let Ok(decoded) = String::from_utf8(bytes) {
+            if decoded.contains("gid://") || decoded.contains('/') {
+                return number_from_gid(&decoded);
+            }
+        }
+    }
+    // URL-safe alphabet without padding is also common.
+    if let Ok(bytes) = base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(gid) {
+        if let Ok(decoded) = String::from_utf8(bytes) {
+            if decoded.contains("gid://") || decoded.contains('/') {
+                return number_from_gid(&decoded);
+            }
+        }
+    }
+    number_from_gid(gid)
 }
 
 pub struct BusinessPlatformClient {
@@ -244,6 +414,55 @@ impl BusinessPlatformClient {
             )
             .await?;
         Ok(resp.current_account_info.email)
+    }
+
+    /// List app-development stores for an organization (Business Platform Organizations API).
+    pub async fn list_app_dev_stores(
+        &self,
+        organization_id: &str,
+        search_term: Option<&str>,
+    ) -> Result<AccessibleShopsPage, GraphqlRequestError> {
+        let vars = serde_json::json!({ "searchTerm": search_term });
+        let resp: OrgShopsData = self
+            .organizations_request(
+                organization_id,
+                LIST_APP_DEV_STORES_QUERY,
+                Some(vars),
+                None,
+                None,
+            )
+            .await?;
+        parse_org_shops(resp)
+    }
+
+    /// Find a store by domain, filtered by store type (`app_development`, `production`, …).
+    pub async fn fetch_store_by_domain(
+        &self,
+        organization_id: &str,
+        domain: &str,
+        store_types: &[&str],
+    ) -> Result<AccessibleShopsPage, GraphqlRequestError> {
+        let mut all = AccessibleShopsPage::default();
+        for store_type in store_types {
+            let filters = serde_json::json!([
+                {"field": "STORE_TYPE", "operator": "EQUALS", "value": store_type.to_lowercase()},
+                {"field": "STORE_STATUS", "operator": "EQUALS", "value": "ACTIVE"},
+            ]);
+            let vars = serde_json::json!({ "domain": domain, "filters": filters });
+            let resp: OrgShopsData = self
+                .organizations_request(
+                    organization_id,
+                    FETCH_STORE_BY_DOMAIN_QUERY,
+                    Some(vars),
+                    None,
+                    None,
+                )
+                .await?;
+            let page = parse_org_shops(resp)?;
+            all.provisionable = all.provisionable || page.provisionable;
+            all.stores.extend(page.stores);
+        }
+        Ok(all)
     }
 }
 

@@ -86,6 +86,34 @@ pub trait DeveloperPlatformClient: Send + Sync {
         org_id: &str,
         search_term: Option<&str>,
     ) -> Result<Paginateable<Vec<OrganizationStore>>, CliApiError>;
+
+    /// Look up a store by FQDN, filtering by store type (`APP_DEVELOPMENT`, `PRODUCTION`, …).
+    ///
+    /// Default implementation searches [`Self::dev_stores_for_org`]. App Management overrides
+    /// this with a Business Platform `accessibleShops` query.
+    async fn store_by_domain(
+        &self,
+        org_id: &str,
+        shop_domain: &str,
+        _store_types: &[&str],
+    ) -> Result<Option<OrganizationStore>, CliApiError> {
+        let stores = self.dev_stores_for_org(org_id, Some(shop_domain)).await?;
+        Ok(stores.data.into_iter().find(|s| {
+            s.shop_domain == shop_domain
+                || s.shop_domain.starts_with(shop_domain)
+                || shop_domain.starts_with(&s.shop_domain)
+        }))
+    }
+
+    /// Ensure the current user can log in to `store` and install apps (no-op by default).
+    async fn ensure_user_access_to_store(
+        &self,
+        _org_id: &str,
+        _store: &OrganizationStore,
+    ) -> Result<(), CliApiError> {
+        Ok(())
+    }
+
     fn to_extension_graphql_type(&self, input: &str) -> String;
     async fn app_deep_link(&self, app: &MinimalAppIdentifiers) -> Result<String, CliApiError>;
 

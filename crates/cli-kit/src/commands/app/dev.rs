@@ -1,14 +1,15 @@
 //! `shopify app dev` — run the app with hot reload / tunnel / extension preview.
 
 use app::services::{
-    dev, get_available_tcp_port, get_tunnel_mode, linked_app_context, resolve_primary_store,
-    DevOptions, LinkedAppContextOptions, TunnelMode, TunnelModeFlags,
+    dev, get_available_tcp_port, get_tunnel_mode, linked_app_context, store_context,
+    DevOptions, StoreContextOptions, TunnelMode, TunnelModeFlags,
 };
 use cli_core::command::BaseCommand;
 use cli_core::error::CliError;
 use std::path::PathBuf;
 
-use super::auth_helpers::authenticated_developer_platform;
+use super::auth_helpers::{authenticated_developer_platform, linked_ctx_options};
+use super::prompter::CliKitPrompter;
 use crate::constants::app_management_fqdn;
 use crate::session::ensure_authenticated;
 use crate::session::store::SessionStore;
@@ -34,6 +35,7 @@ pub struct Dev {
     notify: Option<String>,
     graphiql_port: Option<u16>,
     graphiql_key: Option<String>,
+    reset: bool,
 }
 
 impl Dev {
@@ -55,6 +57,7 @@ impl Dev {
         notify: Option<String>,
         graphiql_port: Option<u16>,
         graphiql_key: Option<String>,
+        reset: bool,
     ) -> Self {
         Self {
             path,
@@ -73,6 +76,7 @@ impl Dev {
             notify,
             graphiql_port,
             graphiql_key,
+            reset,
         }
     }
 }
@@ -91,21 +95,33 @@ impl BaseCommand for Dev {
 
     async fn run(&self) -> Result<(), CliError> {
         let client = authenticated_developer_platform().await?;
+        let prompter = CliKitPrompter;
         let ctx = linked_app_context(
-            LinkedAppContextOptions {
-                directory: PathBuf::from(&self.path),
-                config_name: self.config.clone(),
-                client_id: self.client_id.clone(),
-            },
+            linked_ctx_options(
+                &self.path,
+                self.config.clone(),
+                self.client_id.clone(),
+                self.reset,
+            ),
             client.as_ref(),
+            Some(&prompter),
         )
         .await
         .map_err(|e| CliError::abort(e.to_string()))?;
 
         let store_flag = self.store.as_ref().map(|s| normalize_store_fqdn(s, None));
-        let store = resolve_primary_store(&ctx, client.as_ref(), store_flag.as_deref())
-            .await
-            .map_err(|e| CliError::abort(e.to_string()))?;
+        let store = store_context(
+            &ctx,
+            client.as_ref(),
+            StoreContextOptions {
+                store_fqdn: store_flag,
+                force_reselect_store: self.reset,
+                ..Default::default()
+            },
+            Some(&prompter),
+        )
+        .await
+        .map_err(|e| CliError::abort(e.to_string()))?;
 
         let tunnel = get_tunnel_mode(TunnelModeFlags {
             tunnel_url: self.tunnel_url.clone(),

@@ -1,19 +1,48 @@
 //! Shared helpers for app topic commands that need Developer Platform auth.
 
-use cli_api::{
-    select_developer_platform_client, DeveloperPlatformClient, SelectDeveloperPlatformClientOptions,
-};
+use app::services::LinkedAppContextOptions;
+use cli_api::DeveloperPlatformClient;
 use cli_core::error::CliError;
+use std::path::PathBuf;
 
-use crate::api::app_management::AppManagementClient;
-use crate::api::developer_platform::{AppManagementPlatformClient, PartnersPlatformClient};
-use crate::api::partners::PartnersClient;
+use crate::api::developer_platform::developer_platform_with_business_platform;
+use crate::api::webhooks::WebhooksClient;
 use crate::session::ensure_authenticated;
 use crate::session::store::SessionStore;
-use crate::session::validate::{AppManagementApiOptions, OAuthApplications, PartnersApiOptions};
+use crate::session::validate::{
+    AppManagementApiOptions, BusinessPlatformApiOptions, OAuthApplications, PartnersApiOptions,
+};
 
 pub async fn authenticated_developer_platform() -> Result<Box<dyn DeveloperPlatformClient>, CliError>
 {
+    let store = SessionStore::new();
+    let applications = OAuthApplications {
+        app_management_api: Some(AppManagementApiOptions { scopes: vec![] }),
+        partners_api: Some(PartnersApiOptions { scopes: vec![] }),
+        business_platform_api: Some(BusinessPlatformApiOptions::default()),
+        ..Default::default()
+    };
+    let tokens = ensure_authenticated(&applications, &store)
+        .await
+        .map_err(|e| CliError::abort(e.to_string()))?;
+
+    let am_token = tokens
+        .app_management
+        .clone()
+        .or(tokens.partners.clone())
+        .unwrap_or_default();
+    Ok(developer_platform_with_business_platform(
+        tokens.partners,
+        am_token,
+        tokens.business_platform,
+        Default::default(),
+    ))
+}
+
+/// Authenticated webhooks GraphQL client for sample / topic / version requests.
+pub async fn authenticated_webhooks_client(
+    organization_id: &str,
+) -> Result<WebhooksClient, CliError> {
     let store = SessionStore::new();
     let applications = OAuthApplications {
         app_management_api: Some(AppManagementApiOptions { scopes: vec![] }),
@@ -23,25 +52,29 @@ pub async fn authenticated_developer_platform() -> Result<Box<dyn DeveloperPlatf
     let tokens = ensure_authenticated(&applications, &store)
         .await
         .map_err(|e| CliError::abort(e.to_string()))?;
-
-    let partners = tokens.partners.clone().map(|tok| {
-        Box::new(PartnersPlatformClient::new(PartnersClient::new_with_token(
-            tok, None,
-        ))) as Box<dyn DeveloperPlatformClient>
-    });
-    let am_token = tokens
+    let token = tokens
         .app_management
         .or(tokens.partners)
         .unwrap_or_default();
-    let app_management = Box::new(AppManagementPlatformClient::new(AppManagementClient::new(
-        am_token, None,
-    ))) as Box<dyn DeveloperPlatformClient>;
-
-    Ok(select_developer_platform_client(
-        SelectDeveloperPlatformClientOptions::default(),
-        partners,
-        app_management,
+    Ok(WebhooksClient::new(
+        organization_id.to_string(),
+        token,
+        None,
     ))
+}
+
+pub fn linked_ctx_options(
+    path: &str,
+    config: Option<String>,
+    client_id: Option<String>,
+    reset: bool,
+) -> LinkedAppContextOptions {
+    LinkedAppContextOptions {
+        directory: PathBuf::from(path),
+        config_name: config,
+        client_id,
+        force_relink: reset,
+    }
 }
 
 pub fn admin_graphql_url(store: &str, version: &str) -> String {

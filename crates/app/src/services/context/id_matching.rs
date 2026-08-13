@@ -380,4 +380,68 @@ mod tests {
             Some("gid://shopify/AppModule/1")
         );
     }
+
+    #[test]
+    fn existing_identifiers_are_kept() {
+        let locals = vec![local("checkout-ext", "checkout_ui_extension")];
+        let remotes = vec![remote("u1", "Checkout Ext", "checkout_ui_extension")];
+        let mut ids = HashMap::new();
+        ids.insert("checkout-ext".into(), "u1".into());
+        let result = automatic_matchmaking(&locals, &remotes, &ids, false);
+        assert_eq!(
+            result.identifiers.get("checkout-ext").map(String::as_str),
+            Some("u1")
+        );
+        assert!(result.to_create.is_empty());
+        assert!(result.to_confirm.is_empty());
+    }
+
+    #[test]
+    fn duplicate_types_go_to_manual_match() {
+        let locals = vec![
+            local("apple", "theme"),
+            local("orange", "theme"),
+        ];
+        let remotes = vec![
+            remote("u1", "pear", "theme"),
+            remote("u2", "banana", "theme"),
+        ];
+        let result = automatic_matchmaking(&locals, &remotes, &HashMap::new(), false);
+        assert_eq!(result.to_manual_match.local.len(), 2);
+        assert_eq!(result.to_manual_match.remote.len(), 2);
+        assert!(result.identifiers.is_empty());
+    }
+
+    #[test]
+    fn slugified_title_matches_handle() {
+        let locals = vec![local("my-checkout-ui", "checkout_ui_extension")];
+        let remotes = vec![remote("u1", "My Checkout UI", "checkout_ui_extension")];
+        let result = automatic_matchmaking(&locals, &remotes, &HashMap::new(), false);
+        assert_eq!(
+            result.identifiers.get("my-checkout-ui").map(String::as_str),
+            Some("u1")
+        );
+    }
+
+    #[test]
+    fn uuid_match_when_remote_id_empty() {
+        let locals = vec![local("fn", "function")];
+        let remotes = vec![remote("stored-uuid", "Different Name", "function")];
+        let mut ids = HashMap::new();
+        ids.insert("fn".into(), "stored-uuid".into());
+        let result = automatic_matchmaking(&locals, &remotes, &ids, true);
+        assert_eq!(
+            result.identifiers.get("fn").map(String::as_str),
+            Some("stored-uuid")
+        );
+    }
+
+    #[test]
+    fn unmatched_remote_stays_out_of_identifiers() {
+        let locals = vec![local("local-only", "function")];
+        let remotes = vec![remote("u1", "remote-only", "theme")];
+        let result = automatic_matchmaking(&locals, &remotes, &HashMap::new(), false);
+        assert_eq!(result.to_create.len(), 1);
+        assert!(!result.identifiers.values().any(|v| v == "u1"));
+    }
 }

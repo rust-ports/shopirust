@@ -71,7 +71,10 @@ pub async fn build_deploy_config(
         "events" => Ok(Some(transform_events_forward(&config, ctx))),
         "function" => deploy_function(&config, directory, ctx).await,
         "theme" => Ok(Some(json!({ "theme_extension": { "files": {} } }))),
-        "ui_extension" => deploy_ui_extension(&config, directory).await,
+        "ui_extension" => {
+            crate::models::extensions::specifications::deploy_ui_extension(&config, directory)
+                .await
+        }
         "checkout_ui_extension" => deploy_checkout_ui(&config, directory).await,
         "checkout_post_purchase" => Ok(Some(json!({
             "metafields": config.get("metafields").cloned().unwrap_or_else(|| json!([]))
@@ -100,7 +103,9 @@ pub async fn build_deploy_config(
         "flow_action" => deploy_flow_action(&config, directory, ctx).await,
         "flow_trigger" => deploy_flow_trigger(&config, directory).await,
         "flow_template" => deploy_flow_template(&config, directory).await,
-        "payments_extension" => deploy_payments(&config),
+        "payments_extension" => {
+            crate::models::extensions::specifications::deploy_payments(&config)
+        }
         "admin_link" | "channel_config" | "order_attribution_config" => {
             deploy_contract(spec, &config, directory).await
         }
@@ -177,13 +182,10 @@ pub fn validate_configuration(
             require_string(&config, "api_version")?;
         }
         "ui_extension" => {
-            require_string(&config, "name")?;
-            if config.get("targeting").is_none() && config.get("extension_points").is_none() {
-                return Err(AppError::message(
-                    "No extension targets defined, add a `targeting` field to your configuration",
-                ));
-            }
-            validate_ui_modules(&config, directory)?;
+            crate::models::extensions::specifications::validate_ui_extension(&config, directory)?;
+        }
+        "payments_extension" => {
+            crate::models::extensions::specifications::validate_payments(&config)?;
         }
         "checkout_ui_extension" | "pos_ui_extension" => {
             require_string(&config, "name")?;
@@ -502,81 +504,6 @@ async fn deploy_function(
     })))
 }
 
-async fn deploy_ui_extension(config: &Value, directory: &Path) -> Result<Option<Value>, AppError> {
-    let handle = config
-        .get("handle")
-        .and_then(|v| v.as_str())
-        .unwrap_or("extension");
-    let points = config
-        .get("targeting")
-        .or_else(|| config.get("extension_points"))
-        .and_then(|v| v.as_array())
-        .cloned()
-        .unwrap_or_default();
-
-    let mut extension_points = Vec::new();
-    for targeting in points {
-        let module = targeting
-            .get("module")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default();
-        let target = targeting.get("target").cloned().unwrap_or(Value::Null);
-        let mut build_manifest = json!({
-            "assets": {
-                "main": {
-                    "filepath": format!("{handle}.js"),
-                    "module": module,
-                }
-            }
-        });
-        if let Some(sr) = targeting
-            .pointer("/should_render/module")
-            .and_then(|v| v.as_str())
-        {
-            build_manifest["assets"]["should_render"] = json!({
-                "filepath": format!("{handle}-conditions.js"),
-                "module": sr,
-            });
-        }
-        extension_points.push(json!({
-            "target": target,
-            "module": module,
-            "metafields": targeting.get("metafields")
-                .cloned()
-                .or_else(|| config.get("metafields").cloned())
-                .unwrap_or_else(|| json!([])),
-            "default_placement_reference": targeting.get("default_placement"),
-            "urls": targeting.get("urls").cloned().unwrap_or_else(|| json!({})),
-            "capabilities": targeting.get("capabilities"),
-            "preloads": targeting.get("preloads").cloned().unwrap_or_else(|| json!({})),
-            "build_manifest": build_manifest,
-            "tools": targeting.get("tools"),
-            "instructions": targeting.get("instructions"),
-            "intents": targeting.get("intents"),
-            "assets": targeting.get("assets"),
-        }));
-    }
-
-    let localization = load_locales_config(
-        directory,
-        config
-            .get("type")
-            .and_then(|v| v.as_str())
-            .unwrap_or("ui_extension"),
-    )?;
-
-    Ok(Some(json!({
-        "api_version": config.get("api_version"),
-        "extension_points": extension_points,
-        "capabilities": config.get("capabilities"),
-        "supported_features": config.get("supported_features"),
-        "name": config.get("name"),
-        "description": config.get("description"),
-        "settings": config.get("settings"),
-        "localization": localization,
-    })))
-}
-
 async fn deploy_checkout_ui(config: &Value, directory: &Path) -> Result<Option<Value>, AppError> {
     let localization = load_locales_config(directory, "checkout_ui")?;
     Ok(Some(json!({
@@ -702,88 +629,6 @@ async fn deploy_flow_template(config: &Value, directory: &Path) -> Result<Option
     })))
 }
 
-fn deploy_payments(config: &Value) -> Result<Option<Value>, AppError> {
-    let target = config
-        .pointer("/targeting/0/target")
-        .and_then(|v| v.as_str())
-        .unwrap_or("");
-
-    let mut out = Map::new();
-    out.insert(
-        "api_version".into(),
-        config.get("api_version").cloned().unwrap_or(Value::Null),
-    );
-    out.insert(
-        "start_payment_session_url".into(),
-        config
-            .get("payment_session_url")
-            .cloned()
-            .unwrap_or(Value::Null),
-    );
-    for (from, to) in [
-        ("refund_session_url", "start_refund_session_url"),
-        ("capture_session_url", "start_capture_session_url"),
-        ("void_session_url", "start_void_session_url"),
-        ("verification_session_url", "start_verification_session_url"),
-        ("update_payment_session_url", "update_payment_session_url"),
-        ("confirmation_callback_url", "confirmation_callback_url"),
-        ("balance_url", "balance_url"),
-        (
-            "sync_terminal_transaction_result_url",
-            "sync_terminal_transaction_result_url",
-        ),
-    ] {
-        if let Some(v) = config.get(from) {
-            out.insert(to.into(), v.clone());
-        }
-    }
-    for key in [
-        "merchant_label",
-        "supported_countries",
-        "supported_payment_methods",
-        "supported_buyer_contexts",
-        "test_mode_available",
-        "multiple_capture",
-        "supports_3ds",
-        "supports_deferred_payments",
-        "supports_installments",
-        "supports_oversell_protection",
-        "supports_moto",
-        "encryption_certificate_fingerprint",
-        "checkout_payment_method_fields",
-        "modal_payment_method_fields",
-        "ui_extension_handle",
-        "checkout_hosted_fields",
-    ] {
-        if let Some(v) = config.get(key) {
-            out.insert(key.into(), v.clone());
-        }
-    }
-    if let Some(label) = config.get("buyer_label") {
-        out.insert("default_buyer_label".into(), label.clone());
-    }
-    if let Some(translations) = config.get("buyer_label_translations") {
-        out.insert("buyer_label_to_locale".into(), translations.clone());
-    }
-    if target == "payments.redeemable.render" {
-        let method = config
-            .get("supported_payment_methods")
-            .and_then(|v| v.as_array())
-            .and_then(|a| a.first())
-            .and_then(|v| v.as_str());
-        out.insert(
-            "redeemable_type".into(),
-            if method == Some("gift-card") {
-                json!("gift_card")
-            } else {
-                Value::Null
-            },
-        );
-    }
-    let _ = target;
-    Ok(Some(Value::Object(out)))
-}
-
 async fn deploy_contract(
     spec: &ExtensionSpecification,
     config: &Value,
@@ -842,35 +687,6 @@ fn dependency_version(directory: &Path, package: &str) -> Option<String> {
         }
     }
     None
-}
-
-fn validate_ui_modules(config: &Value, directory: &Path) -> Result<(), AppError> {
-    let points = config
-        .get("targeting")
-        .or_else(|| config.get("extension_points"))
-        .and_then(|v| v.as_array())
-        .cloned()
-        .unwrap_or_default();
-    let mut targets = Vec::new();
-    for point in &points {
-        let target = point
-            .get("target")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default();
-        if targets.contains(&target.to_string()) {
-            return Err(AppError::message(format!(
-                "Duplicate extension target `{target}`"
-            )));
-        }
-        targets.push(target.to_string());
-        if let Some(module) = point.get("module").and_then(|v| v.as_str()) {
-            let path = directory.join(module);
-            if !path.is_file() {
-                return Err(AppError::message(format!("Couldn't find {module}",)));
-            }
-        }
-    }
-    Ok(())
 }
 
 fn validate_theme_extension(directory: &Path) -> Result<(), AppError> {

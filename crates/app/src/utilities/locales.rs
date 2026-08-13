@@ -100,4 +100,60 @@ mod tests {
         let dir = tempdir().unwrap();
         assert!(load_locales_config(dir.path(), "x").unwrap().is_none());
     }
+
+    #[test]
+    fn empty_locales_dir_returns_none() {
+        let dir = tempdir().unwrap();
+        fs::create_dir_all(dir.path().join("locales")).unwrap();
+        assert!(load_locales_config(dir.path(), "x").unwrap().is_none());
+    }
+
+    #[test]
+    fn ignores_non_json_files() {
+        let dir = tempdir().unwrap();
+        let locales = dir.path().join("locales");
+        fs::create_dir_all(&locales).unwrap();
+        fs::write(locales.join("en.default.json"), r#"{"a":"b"}"#).unwrap();
+        fs::write(locales.join("notes.txt"), "ignore").unwrap();
+        let loc = load_locales_config(dir.path(), "test").unwrap().unwrap();
+        assert_eq!(loc["default_locale"], "en");
+        assert!(loc["translations"].get("en").is_some());
+        assert!(loc["translations"].get("notes").is_none());
+    }
+
+    #[test]
+    fn first_locale_becomes_default_without_default_marker() {
+        let dir = tempdir().unwrap();
+        let locales = dir.path().join("locales");
+        fs::create_dir_all(&locales).unwrap();
+        fs::write(locales.join("fr.json"), r#"{"hello":"bonjour"}"#).unwrap();
+        let loc = load_locales_config(dir.path(), "test").unwrap().unwrap();
+        assert_eq!(loc["default_locale"], "fr");
+    }
+
+    #[test]
+    fn rejects_invalid_locale_json() {
+        let dir = tempdir().unwrap();
+        let locales = dir.path().join("locales");
+        fs::create_dir_all(&locales).unwrap();
+        fs::write(locales.join("en.default.json"), "not-json").unwrap();
+        assert!(load_locales_config(dir.path(), "test").is_err());
+    }
+
+    #[test]
+    fn translations_are_base64_encoded() {
+        let dir = tempdir().unwrap();
+        let locales = dir.path().join("locales");
+        fs::create_dir_all(&locales).unwrap();
+        let raw = r#"{"hello":"world"}"#;
+        fs::write(locales.join("en.default.json"), raw).unwrap();
+        let loc = load_locales_config(dir.path(), "test").unwrap().unwrap();
+        let encoded = loc["translations"]["en"].as_str().unwrap();
+        let decoded = base64::Engine::decode(
+            &base64::engine::general_purpose::STANDARD,
+            encoded.as_bytes(),
+        )
+        .unwrap();
+        assert_eq!(String::from_utf8(decoded).unwrap(), raw);
+    }
 }

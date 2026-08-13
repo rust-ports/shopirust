@@ -10,8 +10,10 @@ pub use stage_file::{
     resolve_mutation_jsonl, staged_upload_path_from_response, upload_staged_jsonl,
 };
 pub use status::{
-    get_bulk_operation_status, list_bulk_operations, normalize_bulk_operation_id,
-    parse_bulk_operation_status, BulkOperationStatus,
+    extract_bulk_operation_id, format_bulk_operation_cancellation_result,
+    format_bulk_operation_status, format_bulk_operation_user_errors, get_bulk_operation_status,
+    list_bulk_operations, normalize_bulk_operation_id, parse_bulk_operation_status,
+    BulkOperationCancellationResult, BulkOperationStatus,
 };
 pub use watch::watch_bulk_operation;
 

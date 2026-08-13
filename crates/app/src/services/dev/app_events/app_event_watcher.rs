@@ -373,6 +373,7 @@ mod tests {
             identifiers: Identifiers::new(),
             name: "app".into(),
             errors: vec![],
+            dev_application_urls: None,
         }
     }
 

@@ -1,4 +1,6 @@
 mod auth_helpers;
+mod flags;
+mod prompter;
 mod build;
 mod bulk;
 mod config;
@@ -22,12 +24,16 @@ use clap::Subcommand;
 use cli_core::command::{BaseCommand, TopicCommand};
 use cli_core::error::CliError;
 
+pub use flags::AppLinkedArgs;
+
 #[derive(Debug, Subcommand)]
 pub enum AppConfigSubcommand {
     /// Link a remote Shopify app to a local configuration file
     Link {
         #[arg(long = "client-id", env = "SHOPIFY_FLAG_CLIENT_ID")]
         client_id: Option<String>,
+        #[arg(long = "reset", env = "SHOPIFY_FLAG_RESET", default_value_t = false, conflicts_with = "config")]
+        reset: bool,
         #[arg(short = 'c', long = "config", env = "SHOPIFY_FLAG_APP_CONFIG")]
         config: Option<String>,
         #[arg(long = "path", env = "SHOPIFY_FLAG_PATH", default_value = ".")]
@@ -51,6 +57,8 @@ pub enum AppConfigSubcommand {
         path: String,
         #[arg(long = "client-id", env = "SHOPIFY_FLAG_CLIENT_ID")]
         client_id: Option<String>,
+        #[arg(long = "reset", env = "SHOPIFY_FLAG_RESET", default_value_t = false, conflicts_with = "config")]
+        reset: bool,
     },
     /// Validate app configuration and extensions
     Validate {
@@ -73,6 +81,8 @@ pub enum AppVersionsSubcommand {
         path: String,
         #[arg(long = "client-id", env = "SHOPIFY_FLAG_CLIENT_ID")]
         client_id: Option<String>,
+        #[arg(long = "reset", env = "SHOPIFY_FLAG_RESET", default_value_t = false, conflicts_with = "config")]
+        reset: bool,
         #[arg(short = 'j', long = "json")]
         json: bool,
     },
@@ -125,12 +135,12 @@ pub enum AppBulkSubcommand {
 pub enum AppGenerateSubcommand {
     /// Scaffold a new extension from a template
     Extension {
-        #[arg(long = "name", required = true)]
-        name: String,
-        #[arg(long = "type", required = true)]
-        type_name: String,
-        #[arg(long = "template", required = true)]
-        template: String,
+        #[arg(long = "name")]
+        name: Option<String>,
+        #[arg(long = "type")]
+        type_name: Option<String>,
+        #[arg(long = "template")]
+        template: Option<String>,
         #[arg(long = "flavor")]
         flavor: Option<String>,
         #[arg(long = "clone-url")]
@@ -141,6 +151,10 @@ pub enum AppGenerateSubcommand {
         config: Option<String>,
         #[arg(long = "path", env = "SHOPIFY_FLAG_PATH", default_value = ".")]
         path: String,
+        #[arg(long = "client-id", env = "SHOPIFY_FLAG_CLIENT_ID")]
+        client_id: Option<String>,
+        #[arg(long = "reset", env = "SHOPIFY_FLAG_RESET", default_value_t = false, conflicts_with = "config")]
+        reset: bool,
     },
 }
 
@@ -152,6 +166,8 @@ pub enum AppFunctionSubcommand {
         config: Option<String>,
         #[arg(long = "path", env = "SHOPIFY_FLAG_PATH", default_value = ".")]
         path: String,
+        #[arg(long = "reset", env = "SHOPIFY_FLAG_RESET", default_value_t = false, conflicts_with = "config")]
+        reset: bool,
     },
     /// Print basic information about your function
     Info {
@@ -161,6 +177,8 @@ pub enum AppFunctionSubcommand {
         path: String,
         #[arg(long = "client-id", env = "SHOPIFY_FLAG_CLIENT_ID")]
         client_id: Option<String>,
+        #[arg(long = "reset", env = "SHOPIFY_FLAG_RESET", default_value_t = false, conflicts_with = "config")]
+        reset: bool,
         #[arg(short = 'j', long = "json")]
         json: bool,
     },
@@ -172,6 +190,8 @@ pub enum AppFunctionSubcommand {
         path: String,
         #[arg(long = "client-id", env = "SHOPIFY_FLAG_CLIENT_ID")]
         client_id: Option<String>,
+        #[arg(long = "reset", env = "SHOPIFY_FLAG_RESET", default_value_t = false, conflicts_with = "config")]
+        reset: bool,
         #[arg(short = 'j', long = "json")]
         json: bool,
         #[arg(short = 'l', long = "log", env = "SHOPIFY_FLAG_LOG")]
@@ -187,6 +207,8 @@ pub enum AppFunctionSubcommand {
         path: String,
         #[arg(long = "client-id", env = "SHOPIFY_FLAG_CLIENT_ID")]
         client_id: Option<String>,
+        #[arg(long = "reset", env = "SHOPIFY_FLAG_RESET", default_value_t = false, conflicts_with = "config")]
+        reset: bool,
         #[arg(short = 'j', long = "json")]
         json: bool,
         #[arg(short = 'i', long = "input", env = "SHOPIFY_FLAG_INPUT")]
@@ -202,6 +224,8 @@ pub enum AppFunctionSubcommand {
         path: String,
         #[arg(long = "client-id", env = "SHOPIFY_FLAG_CLIENT_ID")]
         client_id: Option<String>,
+        #[arg(long = "reset", env = "SHOPIFY_FLAG_RESET", default_value_t = false, conflicts_with = "config")]
+        reset: bool,
         #[arg(long = "stdout", env = "SHOPIFY_FLAG_STDOUT")]
         stdout: bool,
     },
@@ -211,6 +235,8 @@ pub enum AppFunctionSubcommand {
         config: Option<String>,
         #[arg(long = "path", env = "SHOPIFY_FLAG_PATH", default_value = ".")]
         path: String,
+        #[arg(long = "reset", env = "SHOPIFY_FLAG_RESET", default_value_t = false, conflicts_with = "config")]
+        reset: bool,
     },
 }
 
@@ -224,6 +250,8 @@ pub enum AppLogsSubcommand {
         path: String,
         #[arg(long = "client-id", env = "SHOPIFY_FLAG_CLIENT_ID")]
         client_id: Option<String>,
+        #[arg(long = "reset", env = "SHOPIFY_FLAG_RESET", default_value_t = false, conflicts_with = "config")]
+        reset: bool,
     },
 }
 
@@ -237,6 +265,8 @@ pub enum AppEnvSubcommand {
         path: String,
         #[arg(long = "client-id", env = "SHOPIFY_FLAG_CLIENT_ID")]
         client_id: Option<String>,
+        #[arg(long = "reset", env = "SHOPIFY_FLAG_RESET", default_value_t = false, conflicts_with = "config")]
+        reset: bool,
         #[arg(long = "env-file", env = "SHOPIFY_FLAG_ENV_FILE")]
         env_file: Option<String>,
     },
@@ -248,6 +278,8 @@ pub enum AppEnvSubcommand {
         path: String,
         #[arg(long = "client-id", env = "SHOPIFY_FLAG_CLIENT_ID")]
         client_id: Option<String>,
+        #[arg(long = "reset", env = "SHOPIFY_FLAG_RESET", default_value_t = false, conflicts_with = "config")]
+        reset: bool,
         #[arg(short = 'j', long = "json")]
         json: bool,
     },
@@ -263,6 +295,8 @@ pub enum AppWebhookSubcommand {
         path: String,
         #[arg(long = "client-id", env = "SHOPIFY_FLAG_CLIENT_ID")]
         client_id: Option<String>,
+        #[arg(long = "reset", env = "SHOPIFY_FLAG_RESET", default_value_t = false, conflicts_with = "config")]
+        reset: bool,
         #[arg(long = "topic", env = "SHOPIFY_FLAG_TOPIC")]
         topic: Option<String>,
         #[arg(long = "api-version", env = "SHOPIFY_FLAG_API_VERSION")]
@@ -281,10 +315,16 @@ pub enum AppWebhookSubcommand {
 pub enum AppSubcommand {
     /// Create a new app project from a template
     Init {
-        #[arg(long = "name", required = true)]
-        name: String,
-        #[arg(long = "template", required = true)]
-        template: String,
+        #[arg(long = "name")]
+        name: Option<String>,
+        #[arg(long = "template")]
+        template: Option<String>,
+        #[arg(long = "flavor")]
+        flavor: Option<String>,
+        #[arg(long = "client-id", env = "SHOPIFY_FLAG_CLIENT_ID")]
+        client_id: Option<String>,
+        #[arg(long = "organization-id", env = "SHOPIFY_FLAG_ORGANIZATION_ID")]
+        organization_id: Option<String>,
         #[arg(long = "path", env = "SHOPIFY_FLAG_PATH", default_value = ".")]
         path: String,
         #[arg(long = "package-manager", default_value = "npm")]
@@ -310,6 +350,10 @@ pub enum AppSubcommand {
         all: bool,
         #[arg(long = "overwrite")]
         overwrite: bool,
+        #[arg(long = "client-id", env = "SHOPIFY_FLAG_CLIENT_ID")]
+        client_id: Option<String>,
+        #[arg(long = "reset", env = "SHOPIFY_FLAG_RESET", default_value_t = false, conflicts_with = "config")]
+        reset: bool,
     },
     /// Import metafield and metaobject definitions into the app TOML
     ImportCustomDataDefinitions {
@@ -321,6 +365,10 @@ pub enum AppSubcommand {
         definitions_file: String,
         #[arg(long = "include-existing")]
         include_existing: bool,
+        #[arg(long = "client-id", env = "SHOPIFY_FLAG_CLIENT_ID")]
+        client_id: Option<String>,
+        #[arg(long = "reset", env = "SHOPIFY_FLAG_RESET", default_value_t = false, conflicts_with = "config")]
+        reset: bool,
     },
     /// Print basic information about your app and extensions
     Info {
@@ -332,6 +380,10 @@ pub enum AppSubcommand {
         json: bool,
         #[arg(long = "web-env")]
         web_env: bool,
+        #[arg(long = "client-id", env = "SHOPIFY_FLAG_CLIENT_ID")]
+        client_id: Option<String>,
+        #[arg(long = "reset", env = "SHOPIFY_FLAG_RESET", default_value_t = false, conflicts_with = "config")]
+        reset: bool,
     },
     /// Manage app configuration files
     #[command(subcommand)]
@@ -344,15 +396,13 @@ pub enum AppSubcommand {
         path: String,
         #[arg(long = "skip-dependencies-installation")]
         skip_dependencies_installation: bool,
+        #[arg(long = "reset", env = "SHOPIFY_FLAG_RESET", default_value_t = false, conflicts_with = "config")]
+        reset: bool,
     },
     /// Deploy your Shopify app
     Deploy {
-        #[arg(short = 'c', long = "config", env = "SHOPIFY_FLAG_APP_CONFIG")]
-        config: Option<String>,
-        #[arg(long = "path", env = "SHOPIFY_FLAG_PATH", default_value = ".")]
-        path: String,
-        #[arg(long = "client-id", env = "SHOPIFY_FLAG_CLIENT_ID")]
-        client_id: Option<String>,
+        #[command(flatten)]
+        linked: AppLinkedArgs,
         #[arg(long = "message")]
         message: Option<String>,
         #[arg(long = "version")]
@@ -376,6 +426,8 @@ pub enum AppSubcommand {
         path: String,
         #[arg(long = "client-id", env = "SHOPIFY_FLAG_CLIENT_ID")]
         client_id: Option<String>,
+        #[arg(long = "reset", env = "SHOPIFY_FLAG_RESET", default_value_t = false, conflicts_with = "config")]
+        reset: bool,
         #[arg(long = "version", required = true)]
         version: String,
         #[arg(long = "allow-updates")]
@@ -400,6 +452,8 @@ pub enum AppSubcommand {
         path: String,
         #[arg(long = "client-id", env = "SHOPIFY_FLAG_CLIENT_ID")]
         client_id: Option<String>,
+        #[arg(long = "reset", env = "SHOPIFY_FLAG_RESET", default_value_t = false, conflicts_with = "config")]
+        reset: bool,
         /// Output logs as JSON lines
         #[arg(short = 'j', long = "json")]
         json: bool,
@@ -418,7 +472,15 @@ pub enum AppSubcommand {
     /// Execute a GraphQL query or mutation against a store
     Execute {
         #[arg(long = "store", env = "SHOPIFY_FLAG_STORE")]
-        store: String,
+        store: Option<String>,
+        #[arg(long = "path", env = "SHOPIFY_FLAG_PATH", default_value = ".")]
+        path: String,
+        #[arg(short = 'c', long = "config", env = "SHOPIFY_FLAG_APP_CONFIG")]
+        config: Option<String>,
+        #[arg(long = "client-id", env = "SHOPIFY_FLAG_CLIENT_ID")]
+        client_id: Option<String>,
+        #[arg(long = "reset", env = "SHOPIFY_FLAG_RESET", default_value_t = false, conflicts_with = "config")]
+        reset: bool,
         #[arg(long = "query")]
         query: Option<String>,
         #[arg(long = "query-file")]
@@ -446,6 +508,8 @@ pub enum AppSubcommand {
         path: String,
         #[arg(long = "client-id", env = "SHOPIFY_FLAG_CLIENT_ID")]
         client_id: Option<String>,
+        #[arg(long = "reset", env = "SHOPIFY_FLAG_RESET", default_value_t = false, conflicts_with = "config")]
+        reset: bool,
         #[arg(short = 's', long = "store", env = "SHOPIFY_FLAG_STORE")]
         store: Option<String>,
         #[arg(long = "tunnel-url", env = "SHOPIFY_FLAG_TUNNEL_URL")]
@@ -509,6 +573,8 @@ pub enum AppDevSubcommand {
         path: String,
         #[arg(long = "client-id", env = "SHOPIFY_FLAG_CLIENT_ID")]
         client_id: Option<String>,
+        #[arg(long = "reset", env = "SHOPIFY_FLAG_RESET", default_value_t = false, conflicts_with = "config")]
+        reset: bool,
         #[arg(short = 's', long = "store", env = "SHOPIFY_FLAG_STORE")]
         store: Option<String>,
     },
@@ -563,6 +629,9 @@ impl TopicCommand for AppTopic {
             AppSubcommand::Init {
                 name,
                 template,
+                flavor,
+                client_id,
+                organization_id,
                 path,
                 package_manager,
                 local,
@@ -572,6 +641,9 @@ impl TopicCommand for AppTopic {
                 template,
                 package_manager,
                 local,
+                flavor,
+                client_id,
+                organization_id,
             )),
             AppSubcommand::Generate(AppGenerateSubcommand::Extension {
                 name,
@@ -582,8 +654,10 @@ impl TopicCommand for AppTopic {
                 local,
                 config,
                 path,
+                client_id,
+                reset,
             }) => Self::GenerateExtension(generate::GenerateExtension::new(
-                path, config, name, type_name, template, flavor, local, clone_url,
+                path, config, name, type_name, template, flavor, local, clone_url, client_id, reset,
             )),
             AppSubcommand::ImportExtensions {
                 config,
@@ -592,6 +666,8 @@ impl TopicCommand for AppTopic {
                 extension_type,
                 all,
                 overwrite,
+                client_id,
+                reset,
             } => Self::ImportExtensions(import_extensions::ImportExtensions::new(
                 path,
                 config,
@@ -599,18 +675,24 @@ impl TopicCommand for AppTopic {
                 extension_type,
                 all,
                 overwrite,
+                client_id,
+                reset,
             )),
             AppSubcommand::ImportCustomDataDefinitions {
                 config,
                 path,
                 definitions_file,
                 include_existing,
+                client_id,
+                reset,
             } => Self::ImportCustomDataDefinitions(
                 import_custom_data::ImportCustomDataDefinitions::new(
                     path,
                     config,
                     definitions_file,
                     include_existing,
+                    client_id,
+                    reset,
                 ),
             ),
             AppSubcommand::Info {
@@ -618,13 +700,16 @@ impl TopicCommand for AppTopic {
                 path,
                 json,
                 web_env,
-            } => Self::Info(info::Info::new(path, config, json, web_env)),
+                client_id,
+                reset,
+            } => Self::Info(info::Info::new(path, config, json, web_env, client_id, reset)),
             AppSubcommand::Config(AppConfigSubcommand::Link {
                 client_id,
+                reset,
                 config,
                 path,
                 name,
-            }) => Self::ConfigLink(config::Link::new(path, client_id, config, name)),
+            }) => Self::ConfigLink(config::Link::new(path, client_id, config, name, reset)),
             AppSubcommand::Config(AppConfigSubcommand::Use {
                 config,
                 path,
@@ -634,7 +719,8 @@ impl TopicCommand for AppTopic {
                 config,
                 path,
                 client_id,
-            }) => Self::ConfigPull(config::Pull::new(path, config, client_id)),
+                reset,
+            }) => Self::ConfigPull(config::Pull::new(path, config, client_id, reset)),
             AppSubcommand::Config(AppConfigSubcommand::Validate { config, path, json }) => {
                 Self::ConfigValidate(config::Validate::new(path, config, json))
             }
@@ -642,15 +728,15 @@ impl TopicCommand for AppTopic {
                 config,
                 path,
                 skip_dependencies_installation,
+                reset,
             } => Self::Build(build::Build::new(
                 path,
                 config,
                 skip_dependencies_installation,
+                reset,
             )),
             AppSubcommand::Deploy {
-                config,
-                path,
-                client_id,
+                linked,
                 message,
                 version,
                 no_build,
@@ -659,9 +745,7 @@ impl TopicCommand for AppTopic {
                 allow_deletes,
                 source_control_url,
             } => Self::Deploy(deploy::Deploy::new(
-                path,
-                config,
-                client_id,
+                linked,
                 message,
                 version,
                 no_build,
@@ -674,6 +758,7 @@ impl TopicCommand for AppTopic {
                 config,
                 path,
                 client_id,
+                reset,
                 version,
                 allow_updates,
                 allow_deletes,
@@ -684,13 +769,15 @@ impl TopicCommand for AppTopic {
                 version,
                 allow_updates,
                 allow_deletes,
+                reset,
             )),
             AppSubcommand::Versions(AppVersionsSubcommand::List {
                 config,
                 path,
                 client_id,
+                reset,
                 json,
-            }) => Self::VersionsList(versions::VersionsList::new(path, config, client_id, json)),
+            }) => Self::VersionsList(versions::VersionsList::new(path, config, client_id, json, reset)),
             AppSubcommand::Bulk(AppBulkSubcommand::Execute {
                 store,
                 query,
@@ -719,50 +806,55 @@ impl TopicCommand for AppTopic {
                 version,
                 json,
             }) => Self::BulkStatus(bulk::BulkStatus::new(store, id, version, json)),
-            AppSubcommand::Function(AppFunctionSubcommand::Build { config, path }) => {
-                Self::FunctionBuild(function::FunctionBuild::new(path, config))
+            AppSubcommand::Function(AppFunctionSubcommand::Build { config, path, reset }) => {
+                Self::FunctionBuild(function::FunctionBuild::new(path, config, reset))
             }
             AppSubcommand::Function(AppFunctionSubcommand::Info {
                 config,
                 path,
                 client_id,
+                reset,
                 json,
-            }) => Self::FunctionInfo(function::FunctionInfo::new(path, config, client_id, json)),
+            }) => Self::FunctionInfo(function::FunctionInfo::new(path, config, client_id, json, reset)),
             AppSubcommand::Function(AppFunctionSubcommand::Replay {
                 config,
                 path,
                 client_id,
+                reset,
                 json,
                 log,
                 watch,
             }) => Self::FunctionReplay(function::FunctionReplay::new(
-                path, config, client_id, json, log, watch,
+                path, config, client_id, json, log, watch, reset,
             )),
             AppSubcommand::Function(AppFunctionSubcommand::Run {
                 config,
                 path,
                 client_id,
+                reset,
                 json,
                 input,
                 export,
             }) => Self::FunctionRun(function::FunctionRun::new(
-                path, config, client_id, json, input, export,
+                path, config, client_id, json, input, export, reset,
             )),
             AppSubcommand::Function(AppFunctionSubcommand::Schema {
                 config,
                 path,
                 client_id,
+                reset,
                 stdout,
             }) => Self::FunctionSchema(function::FunctionSchema::new(
-                path, config, client_id, stdout,
+                path, config, client_id, stdout, reset,
             )),
-            AppSubcommand::Function(AppFunctionSubcommand::Typegen { config, path }) => {
-                Self::FunctionTypegen(function::FunctionTypegen::new(path, config))
+            AppSubcommand::Function(AppFunctionSubcommand::Typegen { config, path, reset }) => {
+                Self::FunctionTypegen(function::FunctionTypegen::new(path, config, reset))
             }
             AppSubcommand::Logs {
                 config,
                 path,
                 client_id,
+                reset,
                 json,
                 store,
                 source,
@@ -773,13 +865,18 @@ impl TopicCommand for AppTopic {
                     config,
                     path,
                     client_id,
-                }) => Self::LogsSources(logs::LogsSources::new(path, config, client_id)),
+                    reset,
+                }) => Self::LogsSources(logs::LogsSources::new(path, config, client_id, reset)),
                 None => Self::Logs(logs::Logs::new(
-                    path, config, client_id, json, store, source, status,
+                    path, config, client_id, json, store, source, status, reset,
                 )),
             },
             AppSubcommand::Execute {
                 store,
+                path,
+                config,
+                client_id,
+                reset,
                 query,
                 query_file,
                 variables,
@@ -788,6 +885,10 @@ impl TopicCommand for AppTopic {
                 version,
             } => Self::Execute(execute::Execute::new(
                 store,
+                path,
+                config,
+                client_id,
+                reset,
                 query,
                 query_file,
                 variables,
@@ -799,18 +900,21 @@ impl TopicCommand for AppTopic {
                 config,
                 path,
                 client_id,
+                reset,
                 env_file,
-            }) => Self::EnvPull(env::EnvPull::new(path, config, client_id, env_file)),
+            }) => Self::EnvPull(env::EnvPull::new(path, config, client_id, env_file, reset)),
             AppSubcommand::Env(AppEnvSubcommand::Show {
                 config,
                 path,
                 client_id,
+                reset,
                 json,
-            }) => Self::EnvShow(env::EnvShow::new(path, config, client_id, json)),
+            }) => Self::EnvShow(env::EnvShow::new(path, config, client_id, json, reset)),
             AppSubcommand::Webhook(AppWebhookSubcommand::Trigger {
                 config,
                 path,
                 client_id,
+                reset,
                 topic,
                 api_version,
                 delivery_method,
@@ -825,11 +929,13 @@ impl TopicCommand for AppTopic {
                 delivery_method,
                 address,
                 client_secret,
+                reset,
             )),
             AppSubcommand::Dev {
                 config,
                 path,
                 client_id,
+                reset,
                 store,
                 tunnel_url,
                 use_localhost,
@@ -849,8 +955,9 @@ impl TopicCommand for AppTopic {
                     config,
                     path,
                     client_id,
+                    reset,
                     store,
-                }) => Self::DevClean(dev_clean::DevClean::new(path, config, client_id, store)),
+                }) => Self::DevClean(dev_clean::DevClean::new(path, config, client_id, store, reset)),
                 None => Self::Dev(dev::Dev::new(
                     path,
                     config,
@@ -868,6 +975,7 @@ impl TopicCommand for AppTopic {
                     notify,
                     graphiql_port,
                     graphiql_key,
+                    reset,
                 )),
             },
         }
@@ -905,6 +1013,326 @@ impl TopicCommand for AppTopic {
             Self::WebhookTrigger(cmd) => cmd.run().await,
             Self::Dev(cmd) => cmd.run().await,
             Self::DevClean(cmd) => cmd.run().await,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::Parser;
+
+    #[derive(Debug, Parser)]
+    struct TestAppCli {
+        #[command(subcommand)]
+        command: AppSubcommand,
+    }
+
+    fn parse(args: &[&str]) -> Result<AppSubcommand, clap::Error> {
+        TestAppCli::try_parse_from(args).map(|c| c.command)
+    }
+
+    #[test]
+    fn deploy_accepts_reset_and_client_id() {
+        let cmd = parse(&["app", "deploy", "--reset", "--client-id", "abc"]).unwrap();
+        match cmd {
+            AppSubcommand::Deploy { linked, .. } => {
+                assert!(linked.reset);
+                assert_eq!(linked.client_id.as_deref(), Some("abc"));
+            }
+            other => panic!("expected Deploy, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn deploy_reset_conflicts_with_config() {
+        assert!(parse(&["app", "deploy", "--reset", "-c", "prod"]).is_err());
+    }
+
+    #[test]
+    fn deploy_client_id_conflicts_with_config() {
+        assert!(parse(&["app", "deploy", "--client-id", "abc", "-c", "prod"]).is_err());
+    }
+
+    #[test]
+    fn init_name_and_template_are_optional() {
+        let cmd = parse(&["app", "init"]).unwrap();
+        match cmd {
+            AppSubcommand::Init { name, template, .. } => {
+                assert!(name.is_none());
+                assert!(template.is_none());
+            }
+            other => panic!("expected Init, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn generate_extension_type_is_optional() {
+        let cmd = parse(&["app", "generate", "extension"]).unwrap();
+        match cmd {
+            AppSubcommand::Generate(AppGenerateSubcommand::Extension {
+                name,
+                type_name,
+                template,
+                reset,
+                ..
+            }) => {
+                assert!(name.is_none());
+                assert!(type_name.is_none());
+                assert!(template.is_none());
+                assert!(!reset);
+            }
+            other => panic!("expected Generate Extension, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn logs_and_dev_accept_reset() {
+        match parse(&["app", "logs", "--reset"]).unwrap() {
+            AppSubcommand::Logs { reset, .. } => assert!(reset),
+            other => panic!("expected Logs, got {other:?}"),
+        }
+        match parse(&["app", "dev", "--reset"]).unwrap() {
+            AppSubcommand::Dev { reset, .. } => assert!(reset),
+            other => panic!("expected Dev, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn execute_store_is_optional() {
+        match parse(&["app", "execute", "--query", "{ shop { name } }"]).unwrap() {
+            AppSubcommand::Execute { store, .. } => assert!(store.is_none()),
+            other => panic!("expected Execute, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn config_link_accepts_reset() {
+        match parse(&["app", "config", "link", "--reset"]).unwrap() {
+            AppSubcommand::Config(AppConfigSubcommand::Link { reset, .. }) => assert!(reset),
+            other => panic!("expected Config Link, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn webhook_trigger_flags_are_optional() {
+        match parse(&["app", "webhook", "trigger"]).unwrap() {
+            AppSubcommand::Webhook(AppWebhookSubcommand::Trigger {
+                topic,
+                api_version,
+                address,
+                delivery_method,
+                ..
+            }) => {
+                assert!(topic.is_none());
+                assert!(api_version.is_none());
+                assert!(address.is_none());
+                assert!(delivery_method.is_none());
+            }
+            other => panic!("expected Webhook Trigger, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn webhook_trigger_accepts_linked_and_delivery_flags() {
+        match parse(&[
+            "app",
+            "webhook",
+            "trigger",
+            "--topic",
+            "orders/create",
+            "--api-version",
+            "2024-07",
+            "--address",
+            "https://example.org",
+            "--delivery-method",
+            "http",
+            "--client-secret",
+            "sec",
+            "--reset",
+        ])
+        .unwrap()
+        {
+            AppSubcommand::Webhook(AppWebhookSubcommand::Trigger {
+                topic,
+                api_version,
+                address,
+                delivery_method,
+                client_secret,
+                reset,
+                ..
+            }) => {
+                assert_eq!(topic.as_deref(), Some("orders/create"));
+                assert_eq!(api_version.as_deref(), Some("2024-07"));
+                assert_eq!(address.as_deref(), Some("https://example.org"));
+                assert_eq!(delivery_method.as_deref(), Some("http"));
+                assert_eq!(client_secret.as_deref(), Some("sec"));
+                assert!(reset);
+            }
+            other => panic!("expected Webhook Trigger, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn webhook_reset_conflicts_with_config() {
+        assert!(parse(&["app", "webhook", "trigger", "--reset", "-c", "prod"]).is_err());
+    }
+
+    #[test]
+    fn info_accepts_linked_flags() {
+        match parse(&["app", "info", "--client-id", "abc", "--json"]).unwrap() {
+            AppSubcommand::Info {
+                client_id, json, ..
+            } => {
+                assert_eq!(client_id.as_deref(), Some("abc"));
+                assert!(json);
+            }
+            other => panic!("expected Info, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn build_accepts_skip_deps() {
+        match parse(&["app", "build", "--skip-dependencies-installation"]).unwrap() {
+            AppSubcommand::Build {
+                skip_dependencies_installation,
+                ..
+            } => assert!(skip_dependencies_installation),
+            other => panic!("expected Build, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn env_pull_and_show_parse() {
+        match parse(&["app", "env", "pull"]).unwrap() {
+            AppSubcommand::Env(AppEnvSubcommand::Pull { .. }) => {}
+            other => panic!("expected Env Pull, got {other:?}"),
+        }
+        match parse(&["app", "env", "show", "--json"]).unwrap() {
+            AppSubcommand::Env(AppEnvSubcommand::Show { json, .. }) => assert!(json),
+            other => panic!("expected Env Show, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn bulk_execute_requires_store() {
+        assert!(parse(&["app", "bulk", "execute", "--query", "{ shop { name } }"]).is_err());
+        match parse(&[
+            "app",
+            "bulk",
+            "execute",
+            "--store",
+            "shop.myshopify.com",
+            "--query",
+            "{ shop { name } }",
+        ])
+        .unwrap()
+        {
+            AppSubcommand::Bulk(AppBulkSubcommand::Execute { store, query, .. }) => {
+                assert_eq!(store, "shop.myshopify.com");
+                assert_eq!(query.as_deref(), Some("{ shop { name } }"));
+            }
+            other => panic!("expected Bulk Execute, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn bulk_cancel_and_status_parse() {
+        match parse(&[
+            "app",
+            "bulk",
+            "cancel",
+            "--store",
+            "s.myshopify.com",
+            "--id",
+            "123",
+        ])
+        .unwrap()
+        {
+            AppSubcommand::Bulk(AppBulkSubcommand::Cancel { id, .. }) => assert_eq!(id, "123"),
+            other => panic!("expected Bulk Cancel, got {other:?}"),
+        }
+        match parse(&["app", "bulk", "status", "--store", "s.myshopify.com", "--json"]).unwrap() {
+            AppSubcommand::Bulk(AppBulkSubcommand::Status { json, .. }) => assert!(json),
+            other => panic!("expected Bulk Status, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn function_subcommands_parse() {
+        match parse(&["app", "function", "build"]).unwrap() {
+            AppSubcommand::Function(AppFunctionSubcommand::Build { .. }) => {}
+            other => panic!("expected Function Build, got {other:?}"),
+        }
+        match parse(&["app", "function", "info", "--json"]).unwrap() {
+            AppSubcommand::Function(AppFunctionSubcommand::Info { json, .. }) => assert!(json),
+            other => panic!("expected Function Info, got {other:?}"),
+        }
+        match parse(&["app", "function", "replay", "--log", "abc123"]).unwrap() {
+            AppSubcommand::Function(AppFunctionSubcommand::Replay { log, .. }) => {
+                assert_eq!(log.as_deref(), Some("abc123"));
+            }
+            other => panic!("expected Function Replay, got {other:?}"),
+        }
+        match parse(&["app", "function", "schema", "--stdout"]).unwrap() {
+            AppSubcommand::Function(AppFunctionSubcommand::Schema { stdout, .. }) => {
+                assert!(stdout);
+            }
+            other => panic!("expected Function Schema, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn release_and_versions_parse() {
+        match parse(&["app", "release", "--version", "1.0.0", "--allow-updates"]).unwrap() {
+            AppSubcommand::Release {
+                version,
+                allow_updates,
+                ..
+            } => {
+                assert_eq!(version, "1.0.0");
+                assert!(allow_updates);
+            }
+            other => panic!("expected Release, got {other:?}"),
+        }
+        match parse(&["app", "versions", "list", "--json"]).unwrap() {
+            AppSubcommand::Versions(AppVersionsSubcommand::List { json, .. }) => assert!(json),
+            other => panic!("expected Versions List, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn logs_sources_and_dev_clean_parse() {
+        match parse(&["app", "logs", "sources"]).unwrap() {
+            AppSubcommand::Logs { command, .. } => {
+                assert!(matches!(command, Some(AppLogsSubcommand::Sources { .. })));
+            }
+            other => panic!("expected Logs sources, got {other:?}"),
+        }
+        match parse(&["app", "dev", "clean", "--store", "s.myshopify.com"]).unwrap() {
+            AppSubcommand::Dev { command, .. } => {
+                assert!(matches!(command, Some(AppDevSubcommand::Clean { .. })));
+            }
+            other => panic!("expected Dev Clean, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn import_commands_parse() {
+        match parse(&["app", "import-extensions"]).unwrap() {
+            AppSubcommand::ImportExtensions { .. } => {}
+            other => panic!("expected ImportExtensions, got {other:?}"),
+        }
+        match parse(&[
+            "app",
+            "import-custom-data-definitions",
+            "--definitions-file",
+            "defs.json",
+        ])
+        .unwrap()
+        {
+            AppSubcommand::ImportCustomDataDefinitions { .. } => {}
+            other => panic!("expected ImportCustomDataDefinitions, got {other:?}"),
         }
     }
 }
