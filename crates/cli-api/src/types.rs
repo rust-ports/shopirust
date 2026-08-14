@@ -162,10 +162,12 @@ pub struct ExtensionTemplate {
     pub types: Vec<serde_json::Value>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct ExtensionTemplatesResult {
     pub templates: Vec<ExtensionTemplate>,
+    #[serde(default)]
+    pub group_order: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

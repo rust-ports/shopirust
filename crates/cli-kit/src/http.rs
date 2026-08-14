@@ -11,6 +11,55 @@ const DEFAULT_TIMEOUT_MS: u64 = 30_000;
 const DEFAULT_MAX_RETRY_TIME_MS: u64 = 10_000;
 const USER_AGENT_STRING: &str = "Shopify CLI; v=3.94.3";
 
+const SENSITIVE_QUERY_PARAMS: &[&str] = &[
+    "access_token",
+    "refresh_token",
+    "id_token",
+    "subject_token",
+    "actor_token",
+    "device_code",
+    "client_secret",
+    "code",
+    "token",
+];
+
+/// Redact OAuth/token query params before logging (upstream `sanitizeURL`).
+pub fn sanitize_url(url: &str) -> String {
+    let Ok(mut parsed) = url::Url::parse(url) else {
+        return url.to_string();
+    };
+    let pairs: Vec<(String, String)> = parsed
+        .query_pairs()
+        .map(|(k, v)| (k.into_owned(), v.into_owned()))
+        .collect();
+    if pairs.is_empty() {
+        return url.to_string();
+    }
+    let mut changed = false;
+    let redacted: Vec<(String, String)> = pairs
+        .into_iter()
+        .map(|(k, v)| {
+            if SENSITIVE_QUERY_PARAMS
+                .iter()
+                .any(|p| p.eq_ignore_ascii_case(&k))
+            {
+                changed = true;
+                (k, "****".to_string())
+            } else {
+                (k, v)
+            }
+        })
+        .collect();
+    if !changed {
+        return url.to_string();
+    }
+    parsed.query_pairs_mut().clear();
+    for (k, v) in &redacted {
+        parsed.query_pairs_mut().append_pair(k, v);
+    }
+    parsed.to_string()
+}
+
 // ── Custom Error ────────────────────────────────────────────────────
 
 /// Errors that can occur during HTTP operations.
@@ -367,7 +416,8 @@ async fn execute_request(
 ) -> Result<Response, HttpError> {
     if log_request {
         debug!(
-            "Sending {method} request to URL {url} With request headers: {}",
+            "Sending {method} request to URL {} With request headers: {}",
+            sanitize_url(url),
             sanitized_headers_output(headers.unwrap_or(&HeaderMap::new()))
         );
     }
@@ -376,7 +426,8 @@ async fn execute_request(
         let response = send_once(client, method, url, headers, body).await?;
         if log_request {
             debug!(
-                "Request to {url} completed with status {}",
+                "Request to {} completed with status {}",
+                sanitize_url(url),
                 response.status()
             );
         }
@@ -396,7 +447,8 @@ async fn execute_request(
                 if response.status().is_success() {
                     if log_request {
                         debug!(
-                            "Request to {url} completed with status {}",
+                            "Request to {} completed with status {}",
+                            sanitize_url(url),
                             response.status()
                         );
                     }
@@ -405,13 +457,14 @@ async fn execute_request(
                 if response.status().is_server_error() {
                     let code = response.status().as_u16();
                     let msg = format!("server error: {code}");
-                    debug!("Server error on {url}: {msg}");
+                    debug!("Server error on {}: {msg}", sanitize_url(url));
                     error_occurred = true;
                     last_error = HttpError::Status(code, msg);
                 } else {
                     if log_request {
                         debug!(
-                            "Request to {url} completed with non-retryable status {}",
+                            "Request to {} completed with non-retryable status {}",
+                            sanitize_url(url),
                             response.status()
                         );
                     }
@@ -422,7 +475,7 @@ async fn execute_request(
                 if !is_transient_network_error(&e.to_string()) {
                     return Err(HttpError::Reqwest(e));
                 }
-                debug!("Transient network error to {url}: {e}");
+                debug!("Transient network error to {}: {e}", sanitize_url(url));
                 error_occurred = true;
                 last_error = HttpError::Reqwest(e);
             }
@@ -639,5 +692,23 @@ mod tests {
     fn test_build_shopify_client() {
         let client = build_shopify_client(None).unwrap();
         assert!(std::mem::size_of_val(&client) > 0);
+    }
+
+    #[test]
+    fn sanitize_url_redacts_tokens() {
+        let raw = "https://example.com/oauth?code=secret&state=abc&access_token=tok";
+        let clean = sanitize_url(raw);
+        assert!(clean.contains("code=****"));
+        assert!(clean.contains("access_token=****"));
+        assert!(clean.contains("state=abc"));
+        assert!(!clean.contains("secret"));
+    }
+
+    #[test]
+    fn sanitize_url_leaves_plain_urls() {
+        assert_eq!(
+            sanitize_url("https://example.com/path"),
+            "https://example.com/path"
+        );
     }
 }

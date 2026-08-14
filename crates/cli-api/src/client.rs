@@ -347,7 +347,10 @@ mod tests {
             &self,
             _: &MinimalAppIdentifiers,
         ) -> Result<ExtensionTemplatesResult, CliApiError> {
-            Ok(ExtensionTemplatesResult { templates: vec![] })
+            Ok(ExtensionTemplatesResult {
+                templates: vec![],
+                group_order: vec![],
+            })
         }
         async fn app_extension_registrations(
             &self,

@@ -197,14 +197,19 @@ impl DeveloperPlatformClient for PartnersPlatformClient {
             .id
             .parse()
             .map_err(|_| CliApiError::message(format!("invalid org id {}", org.id)))?;
+        let is_launchable = options.is_launchable.unwrap_or(true);
+        let (app_url, redirect) = if is_launchable {
+            ("https://example.com", "https://example.com/api/auth")
+        } else {
+            (
+                "https://shopify.dev/apps/default-app-home",
+                "https://shopify.dev/apps/default-app-home/api/auth",
+            )
+        };
+        let scopes = options.scopes_array.clone().unwrap_or_default();
         let result = self
             .inner
-            .create_app(
-                org_id,
-                &options.name,
-                "https://example.com",
-                vec!["https://example.com/auth/callback"],
-            )
+            .create_app(org_id, &options.name, app_url, vec![redirect], &scopes)
             .await
             .map_err(Self::map_err)?;
         if !result.user_errors.is_empty() {
@@ -234,12 +239,12 @@ impl DeveloperPlatformClient for PartnersPlatformClient {
 
     async fn template_specifications(
         &self,
-        _app: &MinimalAppIdentifiers,
+        app: &MinimalAppIdentifiers,
     ) -> Result<ExtensionTemplatesResult, CliApiError> {
-        Err(CliApiError::unsupported(
-            ClientName::Partners.as_str(),
-            "template_specifications",
-        ))
+        self.inner
+            .template_specifications(&app.api_key)
+            .await
+            .map_err(Self::map_err)
     }
 
     async fn app_extension_registrations(
@@ -256,12 +261,12 @@ impl DeveloperPlatformClient for PartnersPlatformClient {
 
     async fn active_app_version(
         &self,
-        _app: &MinimalAppIdentifiers,
+        app: &MinimalAppIdentifiers,
     ) -> Result<Option<AppVersion>, CliApiError> {
-        Err(CliApiError::unsupported(
-            ClientName::Partners.as_str(),
-            "active_app_version",
-        ))
+        self.inner
+            .active_app_version(&app.api_key)
+            .await
+            .map_err(Self::map_err)
     }
 
     async fn app_versions(&self, app: &OrganizationApp) -> Result<Value, CliApiError> {
@@ -273,24 +278,24 @@ impl DeveloperPlatformClient for PartnersPlatformClient {
 
     async fn app_version_by_tag(
         &self,
-        _app: &MinimalOrganizationApp,
-        _tag: &str,
+        app: &MinimalOrganizationApp,
+        tag: &str,
     ) -> Result<AppVersionWithContext, CliApiError> {
-        Err(CliApiError::unsupported(
-            ClientName::Partners.as_str(),
-            "app_version_by_tag",
-        ))
+        self.inner
+            .app_version_by_tag(&app.identifiers.api_key, tag)
+            .await
+            .map_err(Self::map_err)
     }
 
     async fn app_versions_diff(
         &self,
-        _app: &MinimalOrganizationApp,
-        _version: &AppVersionIdentifiers,
+        app: &MinimalOrganizationApp,
+        version: &AppVersionIdentifiers,
     ) -> Result<Value, CliApiError> {
-        Err(CliApiError::unsupported(
-            ClientName::Partners.as_str(),
-            "app_versions_diff",
-        ))
+        self.inner
+            .app_versions_diff(&app.identifiers.api_key, version.app_version_id)
+            .await
+            .map_err(Self::map_err)
     }
 
     async fn generate_signed_upload_url(
@@ -554,5 +559,28 @@ impl DeveloperPlatformClient for PartnersPlatformClient {
             .app_preview_mode(api_key)
             .await
             .map_err(Self::map_err)
+    }
+
+    async fn store_by_domain(
+        &self,
+        org_id: &str,
+        shop_domain: &str,
+        _store_types: &[&str],
+    ) -> Result<Option<OrganizationStore>, CliApiError> {
+        let store = self
+            .inner
+            .find_store_by_domain(org_id, shop_domain)
+            .await
+            .map_err(Self::map_err)?;
+        Ok(store.map(|s| OrganizationStore {
+            shop_id: s.shop_id,
+            shop_domain: s.shop_domain,
+            shop_name: s.shop_name,
+            transfer_disabled: s.transfer_disabled,
+            convertable_to_partner_test: s.convertable_to_partner_test,
+            provisionable: false,
+            link: Some(s.link),
+            store_type: None,
+        }))
     }
 }

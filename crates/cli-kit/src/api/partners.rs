@@ -430,6 +430,135 @@ query AppVersionsQuery($apiKey: String!) {
 }
 "#;
 
+const TEMPLATE_SPECIFICATIONS_QUERY: &str = r#"
+query RemoteTemplateSpecifications($version: String, $apiKey: String) {
+  templateSpecifications(version: $version, apiKey: $apiKey) {
+    identifier
+    name
+    defaultName
+    group
+    sortPriority
+    supportLinks
+    types {
+      url
+      type
+      extensionPoints
+      supportedFlavors {
+        name
+        value
+        path
+      }
+    }
+  }
+}
+"#;
+
+const ACTIVE_APP_VERSION_QUERY: &str = r#"
+query activeAppVersion($apiKey: String!) {
+  app(apiKey: $apiKey) {
+    activeAppVersion {
+      appModuleVersions {
+        registrationId
+        registrationUuid
+        registrationTitle
+        type
+        config
+        specification {
+          identifier
+          name
+          experience
+          options { managementExperience }
+        }
+      }
+    }
+  }
+}
+"#;
+
+const APP_VERSION_BY_TAG_QUERY: &str = r#"
+query AppVersionByTag($apiKey: String!, $versionTag: String!) {
+  app(apiKey: $apiKey) {
+    appVersion(versionTag: $versionTag) {
+      id
+      uuid
+      versionTag
+      location
+      message
+      appModuleVersions {
+        registrationId
+        registrationUuid
+        registrationTitle
+        type
+        config
+        specification {
+          identifier
+          name
+          experience
+          options { managementExperience }
+        }
+      }
+    }
+  }
+}
+"#;
+
+const APP_VERSIONS_DIFF_QUERY: &str = r#"
+query AppVersionsDiff($apiKey: String!, $versionId: ID!) {
+  app(apiKey: $apiKey) {
+    versionsDiff(appVersionId: $versionId) {
+      added {
+        uuid
+        registrationTitle
+        specification {
+          identifier
+          experience
+          options { managementExperience }
+        }
+      }
+      updated {
+        uuid
+        registrationTitle
+        specification {
+          identifier
+          experience
+          options { managementExperience }
+        }
+      }
+      removed {
+        uuid
+        registrationTitle
+        specification {
+          identifier
+          experience
+          options { managementExperience }
+        }
+      }
+    }
+  }
+}
+"#;
+
+const FIND_STORE_BY_DOMAIN_QUERY: &str = r#"
+query FindOrganization($orgId: ID!, $shopDomain: String) {
+  organizations(id: $orgId, first: 1) {
+    nodes {
+      id
+      businessName
+      stores(shopDomain: $shopDomain, first: 1, archived: false) {
+        nodes {
+          shopId
+          link
+          shopDomain
+          shopName
+          transferDisabled
+          convertableToPartnerTest
+        }
+      }
+    }
+  }
+}
+"#;
+
 const APP_RELEASE_MUTATION: &str = r#"
 mutation AppRelease($apiKey: String!, $appVersionId: ID, $versionTag: String) {
   appRelease(input: {apiKey: $apiKey, appVersionId: $appVersionId, versionTag: $versionTag}) {
@@ -605,6 +734,31 @@ query currentAccountInfo {
 }
 "#;
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PartnerAppModule {
+    registration_id: Option<String>,
+    registration_uuid: Option<String>,
+    registration_title: Option<String>,
+    #[serde(rename = "type")]
+    module_type: Option<String>,
+    config: Option<String>,
+}
+
+fn map_partner_modules(modules: Vec<PartnerAppModule>) -> Vec<cli_api::AppModuleVersion> {
+    modules
+        .into_iter()
+        .map(|m| cli_api::AppModuleVersion {
+            registration_id: m.registration_id.unwrap_or_default(),
+            registration_uuid: m.registration_uuid,
+            registration_title: m.registration_title.unwrap_or_default(),
+            config: m.config.and_then(|raw| serde_json::from_str(&raw).ok()),
+            target: None,
+            module_type: m.module_type.unwrap_or_default(),
+        })
+        .collect()
+}
+
 /// Client for the Shopify Partners GraphQL API.
 ///
 /// Wraps [`GraphqlClient`] with Partners-specific rate limiting (150 ms
@@ -713,6 +867,7 @@ impl PartnersClient {
         title: &str,
         app_url: &str,
         redirect_urls: Vec<&str>,
+        requested_access_scopes: &[String],
     ) -> Result<CreateAppResult, GraphqlRequestError> {
         let vars = serde_json::json!({
             "org": org_id,
@@ -720,6 +875,7 @@ impl PartnersClient {
             "appUrl": app_url,
             "redir": redirect_urls,
             "type": "undecided",
+            "requestedAccessScopes": requested_access_scopes,
         });
         let resp: CreateAppResponse = self
             .graphql
@@ -983,6 +1139,221 @@ impl PartnersClient {
             )
             .await?;
         Ok(resp)
+    }
+
+    pub async fn template_specifications(
+        &self,
+        api_key: &str,
+    ) -> Result<cli_api::ExtensionTemplatesResult, GraphqlRequestError> {
+        #[derive(Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct TemplateType {
+            url: Option<String>,
+            #[serde(rename = "type")]
+            type_name: Option<String>,
+            extension_points: Option<Vec<String>>,
+            supported_flavors: Option<serde_json::Value>,
+        }
+        #[derive(Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct RemoteTemplate {
+            identifier: String,
+            name: String,
+            group: Option<String>,
+            sort_priority: Option<i64>,
+            support_links: Option<Vec<String>>,
+            types: Vec<TemplateType>,
+        }
+        #[derive(Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct Resp {
+            template_specifications: Vec<RemoteTemplate>,
+        }
+
+        let resp: Resp = self
+            .graphql
+            .query_with_variables(
+                TEMPLATE_SPECIFICATIONS_QUERY,
+                Some(serde_json::json!({ "apiKey": api_key })),
+            )
+            .await?;
+
+        let mut group_order = Vec::new();
+        let mut counter = 0i64;
+        let templates = resp
+            .template_specifications
+            .into_iter()
+            .map(|t| {
+                let _ = t.sort_priority.unwrap_or_else(|| {
+                    let n = counter;
+                    counter += 1;
+                    n
+                });
+                if let Some(group) = t.group.as_deref() {
+                    if !group.is_empty() && !group_order.iter().any(|g| g == group) {
+                        group_order.push(group.to_string());
+                    }
+                }
+                let url = t
+                    .types
+                    .first()
+                    .and_then(|ty| ty.url.clone())
+                    .or_else(|| t.support_links.as_ref().and_then(|l| l.first().cloned()));
+                let types = t
+                    .types
+                    .into_iter()
+                    .map(|ty| {
+                        serde_json::json!({
+                            "url": ty.url,
+                            "type": ty.type_name,
+                            "extensionPoints": ty.extension_points,
+                            "supportedFlavors": ty.supported_flavors,
+                        })
+                    })
+                    .collect();
+                cli_api::ExtensionTemplate {
+                    identifier: t.identifier,
+                    name: t.name,
+                    group: t.group,
+                    url,
+                    types,
+                }
+            })
+            .collect();
+        Ok(cli_api::ExtensionTemplatesResult {
+            templates,
+            group_order,
+        })
+    }
+
+    pub async fn active_app_version(
+        &self,
+        api_key: &str,
+    ) -> Result<Option<cli_api::AppVersion>, GraphqlRequestError> {
+        #[derive(Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct Active {
+            app_module_versions: Option<Vec<PartnerAppModule>>,
+        }
+        #[derive(Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct App {
+            active_app_version: Option<Active>,
+        }
+        #[derive(Deserialize)]
+        struct Resp {
+            app: Option<App>,
+        }
+
+        let resp: Resp = self
+            .graphql
+            .query_with_variables(
+                ACTIVE_APP_VERSION_QUERY,
+                Some(serde_json::json!({ "apiKey": api_key })),
+            )
+            .await?;
+        Ok(resp.app.and_then(|a| a.active_app_version).map(|v| {
+            cli_api::AppVersion {
+                app_module_versions: map_partner_modules(v.app_module_versions.unwrap_or_default()),
+            }
+        }))
+    }
+
+    pub async fn app_version_by_tag(
+        &self,
+        api_key: &str,
+        version_tag: &str,
+    ) -> Result<cli_api::AppVersionWithContext, GraphqlRequestError> {
+        #[derive(Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct Version {
+            id: i64,
+            uuid: String,
+            version_tag: Option<String>,
+            app_module_versions: Option<Vec<PartnerAppModule>>,
+        }
+        #[derive(Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct App {
+            app_version: Option<Version>,
+        }
+        #[derive(Deserialize)]
+        struct Resp {
+            app: Option<App>,
+        }
+
+        let resp: Resp = self
+            .graphql
+            .query_with_variables(
+                APP_VERSION_BY_TAG_QUERY,
+                Some(serde_json::json!({ "apiKey": api_key, "versionTag": version_tag })),
+            )
+            .await?;
+        let version = resp
+            .app
+            .and_then(|a| a.app_version)
+            .ok_or_else(|| {
+                GraphqlRequestError::ApiError(format!("Version {version_tag} not found"), 404)
+            })?;
+        Ok(cli_api::AppVersionWithContext {
+            id: version.id,
+            uuid: version.uuid,
+            version_tag: version.version_tag,
+            app_module_versions: map_partner_modules(version.app_module_versions.unwrap_or_default()),
+        })
+    }
+
+    pub async fn app_versions_diff(
+        &self,
+        api_key: &str,
+        version_id: i64,
+    ) -> Result<serde_json::Value, GraphqlRequestError> {
+        self.graphql
+            .query_with_variables(
+                APP_VERSIONS_DIFF_QUERY,
+                Some(serde_json::json!({ "apiKey": api_key, "versionId": version_id })),
+            )
+            .await
+    }
+
+    pub async fn find_store_by_domain(
+        &self,
+        org_id: &str,
+        shop_domain: &str,
+    ) -> Result<Option<OrganizationStore>, GraphqlRequestError> {
+        #[derive(Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct Stores {
+            nodes: Vec<OrganizationStore>,
+        }
+        #[derive(Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct Org {
+            stores: Option<Stores>,
+        }
+        #[derive(Deserialize)]
+        struct Connection {
+            nodes: Vec<Org>,
+        }
+        #[derive(Deserialize)]
+        struct Resp {
+            organizations: Connection,
+        }
+
+        let resp: Resp = self
+            .graphql
+            .query_with_variables(
+                FIND_STORE_BY_DOMAIN_QUERY,
+                Some(serde_json::json!({ "orgId": org_id, "shopDomain": shop_domain })),
+            )
+            .await?;
+        Ok(resp
+            .organizations
+            .nodes
+            .into_iter()
+            .next()
+            .and_then(|o| o.stores)
+            .and_then(|s| s.nodes.into_iter().next()))
     }
 
     pub async fn release_app_version(
@@ -1377,7 +1748,7 @@ mod tests {
 
         let client = mock_client(&mock_server);
         let result = client
-            .create_app(1, "New App", "https://example.com", vec![])
+            .create_app(1, "New App", "https://example.com", vec![], &[])
             .await
             .unwrap();
         assert_eq!(result.app.as_ref().unwrap().title, "New App");
@@ -1404,7 +1775,7 @@ mod tests {
 
         let client = mock_client(&mock_server);
         let result = client
-            .create_app(1, "", "https://example.com", vec![])
+            .create_app(1, "", "https://example.com", vec![], &[])
             .await
             .unwrap();
         assert_eq!(result.user_errors.len(), 1);
@@ -1635,5 +2006,162 @@ mod tests {
             .await;
         let client = mock_client(&mock_server);
         assert!(client.convert_dev_to_test_store(1, "shop-1").await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn template_specifications_maps_types_and_group_order() {
+        let mock_server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "data": {
+                    "templateSpecifications": [
+                        {
+                            "identifier": "checkout_ui",
+                            "name": "Checkout UI",
+                            "group": "Checkout",
+                            "sortPriority": 0,
+                            "supportLinks": [],
+                            "types": [{ "url": "https://github.com/Shopify/checkout-ui", "type": "checkout_ui_extension", "extensionPoints": [], "supportedFlavors": [] }]
+                        },
+                        {
+                            "identifier": "theme",
+                            "name": "Theme",
+                            "group": "Online store",
+                            "types": [{ "url": "https://github.com/Shopify/theme-ext", "type": "theme_app_extension" }]
+                        }
+                    ]
+                },
+                "extensions": { "cost": { "actualQueryCost": null, "throttleStatus": null } }
+            })))
+            .mount(&mock_server)
+            .await;
+        let client = mock_client(&mock_server);
+        let result = client.template_specifications("key").await.unwrap();
+        assert_eq!(result.templates.len(), 2);
+        assert_eq!(result.templates[0].url.as_deref(), Some("https://github.com/Shopify/checkout-ui"));
+        assert_eq!(result.group_order, vec!["Checkout", "Online store"]);
+    }
+
+    #[tokio::test]
+    async fn active_app_version_parses_module_config() {
+        let mock_server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "data": {
+                    "app": {
+                        "activeAppVersion": {
+                            "appModuleVersions": [{
+                                "registrationId": "1",
+                                "registrationUuid": "uuid-1",
+                                "registrationTitle": "Checkout",
+                                "type": "checkout_ui_extension",
+                                "config": "{\"name\":\"x\"}"
+                            }]
+                        }
+                    }
+                },
+                "extensions": { "cost": { "actualQueryCost": null, "throttleStatus": null } }
+            })))
+            .mount(&mock_server)
+            .await;
+        let client = mock_client(&mock_server);
+        let version = client.active_app_version("key").await.unwrap().unwrap();
+        assert_eq!(version.app_module_versions[0].registration_id, "1");
+        assert_eq!(
+            version.app_module_versions[0].config.as_ref().and_then(|v| v.get("name")).and_then(|v| v.as_str()),
+            Some("x")
+        );
+    }
+
+    #[tokio::test]
+    async fn app_version_by_tag_returns_context() {
+        let mock_server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "data": {
+                    "app": {
+                        "appVersion": {
+                            "id": 42,
+                            "uuid": "ver-uuid",
+                            "versionTag": "1.0.0",
+                            "location": "https://partners.shopify.com/versions/42",
+                            "message": "ship it",
+                            "appModuleVersions": []
+                        }
+                    }
+                },
+                "extensions": { "cost": { "actualQueryCost": null, "throttleStatus": null } }
+            })))
+            .mount(&mock_server)
+            .await;
+        let client = mock_client(&mock_server);
+        let version = client.app_version_by_tag("key", "1.0.0").await.unwrap();
+        assert_eq!(version.id, 42);
+        assert_eq!(version.uuid, "ver-uuid");
+        assert_eq!(version.version_tag.as_deref(), Some("1.0.0"));
+    }
+
+    #[tokio::test]
+    async fn app_versions_diff_returns_added() {
+        let mock_server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "data": {
+                    "app": {
+                        "versionsDiff": {
+                            "added": [{ "uuid": "a", "registrationTitle": "New", "specification": { "identifier": "theme", "experience": "extension", "options": { "managementExperience": "cli" } } }],
+                            "updated": [],
+                            "removed": []
+                        }
+                    }
+                },
+                "extensions": { "cost": { "actualQueryCost": null, "throttleStatus": null } }
+            })))
+            .mount(&mock_server)
+            .await;
+        let client = mock_client(&mock_server);
+        let diff = client.app_versions_diff("key", 42).await.unwrap();
+        assert_eq!(diff["app"]["versionsDiff"]["added"][0]["uuid"], "a");
+    }
+
+    #[tokio::test]
+    async fn find_store_by_domain_returns_shop() {
+        let mock_server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "data": {
+                    "organizations": {
+                        "nodes": [{
+                            "id": "1",
+                            "businessName": "Org",
+                            "stores": {
+                                "nodes": [{
+                                    "shopId": "shop-1",
+                                    "link": "https://demo.myshopify.com",
+                                    "shopDomain": "demo.myshopify.com",
+                                    "shopName": "Demo",
+                                    "transferDisabled": false,
+                                    "convertableToPartnerTest": true
+                                }]
+                            }
+                        }]
+                    }
+                },
+                "extensions": { "cost": { "actualQueryCost": null, "throttleStatus": null } }
+            })))
+            .mount(&mock_server)
+            .await;
+        let client = mock_client(&mock_server);
+        let store = client
+            .find_store_by_domain("1", "demo.myshopify.com")
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(store.shop_domain, "demo.myshopify.com");
     }
 }

@@ -395,28 +395,18 @@ impl DeveloperPlatformClient for AppManagementPlatformClient {
         &self,
         _app: &MinimalAppIdentifiers,
     ) -> Result<ExtensionTemplatesResult, CliApiError> {
-        let templates = self
-            .inner
-            .template_specifications()
-            .await
-            .map_err(Self::map_err)?;
-        Ok(ExtensionTemplatesResult {
-            templates: templates
-                .into_iter()
-                .map(|t| ExtensionTemplate {
-                    identifier: t.identifier,
-                    name: t.name,
-                    group: t.group,
-                    url: t.support_links.and_then(|links| links.into_iter().next()),
-                    types: t
-                        .types
-                        .unwrap_or_default()
-                        .into_iter()
-                        .map(|ty| serde_json::to_value(ty).unwrap_or(Value::Null))
-                        .collect(),
-                })
-                .collect(),
-        })
+        match fetch_cdn_templates().await {
+            Ok(result) => Ok(result),
+            Err(cdn_err) => {
+                tracing::debug!("CDN template catalog failed ({cdn_err}); falling back to GraphQL");
+                let templates = self
+                    .inner
+                    .template_specifications()
+                    .await
+                    .map_err(Self::map_err)?;
+                Ok(map_graphql_templates(templates))
+            }
+        }
     }
 
     async fn app_extension_registrations(
@@ -694,5 +684,145 @@ impl DeveloperPlatformClient for AppManagementPlatformClient {
             .fetch_app_logs(organization_id, jwt_token, cursor, filters.cloned())
             .await
             .map_err(CliApiError::message)
+    }
+}
+
+const TEMPLATE_JSON_URL: &str = "https://cdn.shopify.com/static/cli/extensions/templates.json";
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CdnExtensionTemplate {
+    identifier: String,
+    name: String,
+    #[serde(default)]
+    group: Option<String>,
+    #[serde(default)]
+    url: Option<String>,
+    #[serde(rename = "type", default)]
+    type_name: Option<String>,
+    #[serde(default)]
+    types: Option<Vec<Value>>,
+    #[serde(default)]
+    support_links: Option<Vec<String>>,
+}
+
+async fn fetch_cdn_templates() -> Result<ExtensionTemplatesResult, String> {
+    let response = crate::http::fetch(TEMPLATE_JSON_URL, None, None, None)
+        .await
+        .map_err(|e| e.to_string())?;
+    if !response.status().is_success() {
+        return Err(format!("CDN HTTP {}", response.status()));
+    }
+    let body = response.text().await.map_err(|e| e.to_string())?;
+    let parsed: Vec<CdnExtensionTemplate> =
+        serde_json::from_str(&body).map_err(|e| e.to_string())?;
+    Ok(map_cdn_templates(parsed))
+}
+
+fn map_cdn_templates(parsed: Vec<CdnExtensionTemplate>) -> ExtensionTemplatesResult {
+    let mut group_order = Vec::new();
+    let templates = parsed
+        .into_iter()
+        .map(|t| {
+            if let Some(group) = t.group.as_deref() {
+                if !group.is_empty() && !group_order.iter().any(|g| g == group) {
+                    group_order.push(group.to_string());
+                }
+            }
+            let mut types = t.types.unwrap_or_default();
+            if types.is_empty() && (t.type_name.is_some() || t.url.is_some()) {
+                types.push(serde_json::json!({
+                    "type": t.type_name,
+                    "url": t.url,
+                }));
+            }
+            let url = t.url.or_else(|| {
+                t.support_links
+                    .as_ref()
+                    .and_then(|links| links.first().cloned())
+            });
+            ExtensionTemplate {
+                identifier: t.identifier,
+                name: t.name,
+                group: t.group,
+                url,
+                types,
+            }
+        })
+        .collect();
+    ExtensionTemplatesResult {
+        templates,
+        group_order,
+    }
+}
+
+fn map_graphql_templates(
+    templates: Vec<crate::api::app_management::TemplateSpecification>,
+) -> ExtensionTemplatesResult {
+    let mut group_order = Vec::new();
+    let templates = templates
+        .into_iter()
+        .map(|t| {
+            if let Some(group) = t.group.as_deref() {
+                if !group.is_empty() && !group_order.iter().any(|g| g == group) {
+                    group_order.push(group.to_string());
+                }
+            }
+            ExtensionTemplate {
+                identifier: t.identifier,
+                name: t.name,
+                group: t.group,
+                url: t.support_links.and_then(|links| links.into_iter().next()),
+                types: t
+                    .types
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(|ty| serde_json::to_value(ty).unwrap_or(Value::Null))
+                    .collect(),
+            }
+        })
+        .collect();
+    ExtensionTemplatesResult {
+        templates,
+        group_order,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn map_cdn_templates_extracts_group_order_and_types() {
+        let result = map_cdn_templates(vec![
+            CdnExtensionTemplate {
+                identifier: "checkout_ui".into(),
+                name: "Checkout UI".into(),
+                group: Some("Checkout".into()),
+                url: Some("https://github.com/Shopify/checkout-ui".into()),
+                type_name: Some("checkout_ui_extension".into()),
+                types: None,
+                support_links: None,
+            },
+            CdnExtensionTemplate {
+                identifier: "theme".into(),
+                name: "Theme".into(),
+                group: Some("Online store".into()),
+                url: None,
+                type_name: None,
+                types: Some(vec![serde_json::json!({"type": "theme_app_extension"})]),
+                support_links: Some(vec!["https://shopify.dev/docs".into()]),
+            },
+        ]);
+        assert_eq!(result.group_order, vec!["Checkout", "Online store"]);
+        assert_eq!(result.templates.len(), 2);
+        assert_eq!(
+            result.templates[0].url.as_deref(),
+            Some("https://github.com/Shopify/checkout-ui")
+        );
+        assert_eq!(
+            result.templates[0].types[0].get("type").and_then(|v| v.as_str()),
+            Some("checkout_ui_extension")
+        );
     }
 }

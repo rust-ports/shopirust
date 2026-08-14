@@ -54,7 +54,10 @@ pub async fn fetch_extension_templates(
             })
         })
         .collect();
-    Ok(ExtensionTemplatesResult { templates })
+    Ok(ExtensionTemplatesResult {
+        templates,
+        group_order: result.group_order,
+    })
 }
 
 /// Resolve a flavor subdirectory inside a cloned template (or local tree).

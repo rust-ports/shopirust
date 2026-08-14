@@ -191,6 +191,7 @@ impl DeveloperPlatformClient for MockClient {
     ) -> Result<ExtensionTemplatesResult, CliApiError> {
         Ok(ExtensionTemplatesResult {
             templates: self.templates.clone(),
+            group_order: vec![],
         })
     }
     async fn app_extension_registrations(

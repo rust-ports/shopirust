@@ -69,7 +69,7 @@ pub fn is_env_truthy(env: Option<&std::collections::HashMap<String, String>>, ke
 
 /// Shopify service deployment environment.
 ///
-/// - `Local` → dev server FQDNs (not yet supported, resolves to production)
+/// - `Local` → local Shopify FQDNs (`*.shop.dev`) via `util/fqdn`
 /// - `Production` → production FQDNs
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ServiceEnvironment {
