@@ -47,12 +47,33 @@ impl ThemeStoreFlags {
 mod tests {
     use super::*;
     use crate::local_storage::ThemeLocalStorage;
+    use std::sync::Mutex;
+
+    static GLOBAL_STORE_LOCK: Mutex<()> = Mutex::new(());
+
+    fn with_global_theme_store<T>(f: impl FnOnce() -> T) -> T {
+        let _guard = GLOBAL_STORE_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let previous = get_theme_store();
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(f));
+        match previous {
+            Some(store) => set_theme_store(&store),
+            None => remove_theme_store(),
+        }
+        match result {
+            Ok(value) => value,
+            Err(panic) => std::panic::resume_unwind(panic),
+        }
+    }
 
     #[test]
     fn returns_store_when_provided() {
-        let flags = ThemeStoreFlags::new(Some("shop.myshopify.com".into()));
-        let result = ensure_theme_store(&flags).unwrap();
-        assert_eq!(result, "shop.myshopify.com");
+        with_global_theme_store(|| {
+            let flags = ThemeStoreFlags::new(Some("shop.myshopify.com".into()));
+            let result = ensure_theme_store(&flags).unwrap();
+            assert_eq!(result, "shop.myshopify.com");
+        });
     }
 
     #[test]
@@ -97,10 +118,12 @@ mod tests {
 
     #[test]
     fn set_and_get_global_theme_store_round_trips() {
-        set_theme_store("global-roundtrip.myshopify.com");
-        assert_eq!(
-            get_theme_store(),
-            Some("global-roundtrip.myshopify.com".into())
-        );
+        with_global_theme_store(|| {
+            set_theme_store("global-roundtrip.myshopify.com");
+            assert_eq!(
+                get_theme_store(),
+                Some("global-roundtrip.myshopify.com".into())
+            );
+        });
     }
 }

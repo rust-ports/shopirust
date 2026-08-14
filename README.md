@@ -23,11 +23,12 @@ From the repo root:
 cargo build -p cli-kit
 ```
 
-Run the CLI (binary package is `cli-kit`):
+Run the CLI (`shopify` binary from `cli-kit`):
 
 ```bash
-cargo run -p cli-kit -- --help
-cargo run -p cli-kit -- version
+cargo build -p cli-kit
+cargo run -p cli-kit --bin shopify -- --help
+cargo run -p cli-kit --bin shopify -- version
 ```
 
 Tip: alias for shorter commands while testing:
@@ -233,12 +234,36 @@ make console-assets UPSTREAM_CLI=/path/to/shopify/cli
 
 `app dev` sends a live `APP_UNINSTALLED` sample (HMAC-signed) when the remote app changed, with a synthetic fallback. TTY sessions show concurrent prefixed logs, a status table, and shortcuts `p` (preview), `g` (GraphiQL), `q`/Ctrl+C (abort).
 
+## Store + CLI meta
+
+```bash
+cargo run -p cli-kit --bin shopify -- store list --organization-id <ORG_ID>
+cargo run -p cli-kit --bin shopify -- store info --store my-store.myshopify.com
+cargo run -p cli-kit --bin shopify -- cache clear
+cargo run -p cli-kit --bin shopify -- upgrade
+cargo run -p cli-kit --bin shopify -- search deploy
+cargo run -p cli-kit --bin shopify -- config autoupgrade status
+cargo run -p cli-kit --bin create-app -- --name my-app --template remix
+```
+
+`cloudflared` is downloaded into `~/.shopify/` on first Auto tunnel if it is not on PATH (same pattern as mkcert). Unknown commands print a did-you-mean suggestion.
+
+## Smoke checklist (no live Shopify)
+
+```bash
+cargo test -p app --lib
+cargo test -p theme --lib
+cargo test -p store --lib
+cargo test -p cli-api --lib
+cargo test -p cli-kit --lib
+cargo test -p cli-kit --test e2e
+```
+
 ## Not ready / out of scope (do not expect parity yet)
 
-- Pixel-identical Ink DevSessionUI / Replay React components
-- Store / Hydrogen surfaces
-- CLI meta (`upgrade`, `cache`, notifications, did-you-mean)
-- Playwright-class E2E suite
+- Pixel-identical Ink DevSessionUI / Replay React components (ratatui/status-table UX instead)
+- Hydrogen (`@shopify/cli-hydrogen` is an external npm plugin, not in this repo)
+- Playwright journeys that hit live Shopify APIs
 ## Regenerate GraphQL
 
 Rust GraphQL modules under `crates/cli-kit/src/api/generated/graphql/` are produced from an upstream [Shopify/cli](https://github.com/Shopify/cli) checkout (`.graphql` + `generated/*.ts` + `types.d.ts`). Refresh them with the root Makefile:
@@ -270,7 +295,8 @@ If upstream TypeScript artifacts are stale, run Shopify/cli’s own GraphQL code
 | `cli-api` | Developer-platform traits / types |
 | `app` | App domain (load, config, build, deploy, bulk) |
 | `theme` | Theme domain |
-| `graphql-codegen` | Generate Rust GraphQL modules |
+| `store` | Store list / info / execute / create / auth |
+| `graphql-codegen` | Generate Rust GraphQL modules into cli-kit (committed) |
 
 ## License
 

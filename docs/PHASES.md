@@ -1,9 +1,9 @@
 # CLI-Kit Phase Plan & Checklist
 
-**Current**: 23,826 LOC / 108 files / 799 tests / clippy clean  
-**Phase 2**: All 10 public API clients ported, session complete, HTTP client complete. One remaining: `sanitize_url()`.  
-**Phase 8**: Theme crate API module planned — 7 source files + 13 GraphQL operations, 2 private utilities.
-**Target**: ~22,000 LOC / 100+ files / 100% of upstream cli-kit
+**Current**: production-oriented Rust port of Shopify CLI (`shopify` binary in `cli-kit`).  
+Canonical remaining-work docs: [`APP_PARITY_GAPS.md`](../APP_PARITY_GAPS.md), [`THEME_PARITY_GAPS.md`](../THEME_PARITY_GAPS.md), README.
+
+Workspace crates that exist today: `cli-kit`, `cli-core`, `cli-api`, `app`, `theme`, `store`, `graphql-codegen`. There is **no** separate Hydrogen / plugin-cloudflare / plugin-did-you-mean / organizations / codegen crate — those surfaces are folded into `cli-kit` + `store` (Hydrogen remains out of scope).
 
 ---
 
@@ -400,29 +400,17 @@ Wire everything into the public-facing API. Build test tooling.
 New crate `crates/theme/`. Details in PORT.md §5.3.
 Commands: `push`, `pull`, `dev`, `delete`, `list`, `info`, `open`, `share`, `check`.
 
-### 8.1 Theme API Client Module (`crates/theme/src/api/`)
+### 8.1 Theme API (folded into `crates/theme` + `cli-kit`)
 
-Port of upstream `public/node/themes/` + `private/node/themes/`.
+Port of upstream `public/node/themes/` + `private/node/themes/`. There is no separate `crates/theme/src/api/` — types/URLs live in `theme::models`, Admin GraphQL in `cli-kit/src/api/themes.rs`.
 
-- [ ] `types.rs` — Theme, Checksum, ThemeAsset, Result, Operation, ThemeParams, AssetParams
-- [ ] `factories.rs` — build_theme(), build_checksum(), build_theme_asset()
-- [ ] `conf.rs` — host_theme_local_storage(), get_host_theme(), set_host_theme(), remove_host_theme()
-- [ ] `urls.rs` — theme_preview_url(), theme_editor_url(), code_editor_url(), store_admin_url(), store_password_page()
-- [ ] `utils.rs` — role constants (DEVELOPMENT, LIVE, UNPUBLISHED), is_development_theme(), compose_theme_gid(), parse_gid(), prompt_theme_name()
-- [ ] `generate_name.rs` — generate_theme_name(), API_NAME_LIMIT (upstream `private/node/themes/generate-theme-name.ts`)
-- [ ] `replace_invalid_chars.rs` — replace_invalid_characters() (upstream `private/node/themes/replace-invalid-characters.ts`)
-- [ ] `api.rs` — ThemeClient struct wrapping AdminClient::query()
-  - [ ] 13 embedded GraphQL query/mutation strings matching upstream exactly
-  - [ ] fetch_theme() / fetch_themes() (paginated 50, cursor-based)
-  - [ ] find_development_theme_by_name()
-  - [ ] theme_create() / theme_update() / theme_delete() / theme_publish() / theme_duplicate()
-  - [ ] fetch_theme_assets() (paginated 250) / delete_theme_assets() (batched 50) / bulk_upload_theme_assets() (batched 50)
-  - [ ] fetch_checksums() (paginated 250)
-  - [ ] metafield_definitions_by_owner_type() / password_protected()
-  - [ ] parse_theme_file_content() — Text/Base64/Url discriminated union
-  - [ ] ACCESS_DENIED detection + user-facing remediation
-- [ ] `mod.rs` — re-exports + ThemeClient struct
-- [ ] `ThemeManager` — orchestrator (find-or-create, depends on api.rs)
+- [x] `models.rs` — Theme, roles, preview/editor URLs, JSON shapes
+- [x] `local_storage.rs` — host/development/repl theme IDs + storefront password
+- [x] `generate_name.rs` — `generate_theme_name()`
+- [x] `replace_invalid_chars.rs` — `replace_invalid_characters()`
+- [x] `cli-kit/src/api/themes.rs` — Admin GraphQL (create/update/delete/publish/duplicate, assets, checksums)
+- [x] `services.rs` — `ThemeAdmin` trait + list/info/duplicate/publish
+- [x] `utilities/development_theme_manager.rs` — find-or-create development theme
 
 ---
 
@@ -435,12 +423,12 @@ Commands: `dev`, `deploy`, `build`, `init`, `generate`, `env`, `config`, `functi
 
 ## Phase 10 — Remaining Domain Crates (+3,000 LOC)
 
-- [x] `store` crate — `store create` command
-- [x] `organizations` crate — org selection
-- [x] `plugin-cloudflare` crate — tunnel management
-- [x] `plugin-did-you-mean` crate — command autocorrection
-- [x] `cli` crate — main binary wiring (update for new commands)
-- [x] `create-app` crate — standalone binary
+- [x] `store` crate — `store list|info|execute|auth|create`
+- [x] organization list lives in `cli-kit` (no separate organizations crate)
+- [x] Cloudflare tunnel + `cloudflared` auto-install in `cli-kit`
+- [x] did-you-mean folded into `cli-kit` (`strsim`)
+- [x] `shopify` binary name on `cli-kit`
+- [x] `create-app` binary on `cli-kit`
 
 ---
 

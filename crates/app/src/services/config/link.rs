@@ -151,7 +151,7 @@ fn load_local_options(options: &LinkConfigOptions, remote_api_key: &str) -> Loca
 fn resolve_config_file_name(
     remote_app: &OrganizationApp,
     options: &LinkConfigOptions,
-    local: &LocalLinkOptions,
+    _local: &LocalLinkOptions,
     prompter: Option<&dyn Prompter>,
 ) -> Result<String, AppError> {
     if let Some(ref name) = options.config_name {
@@ -178,8 +178,6 @@ fn resolve_config_file_name(
 
     if let Some(prompter) = prompter {
         select_config_name(prompter, &options.directory, &remote_app.title)
-    } else if local.existing_config.get("client_id").is_some() {
-        Ok(get_app_configuration_file_name(None))
     } else {
         Ok(get_app_configuration_file_name(None))
     }

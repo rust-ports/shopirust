@@ -45,7 +45,7 @@ pub fn resolve_graphql_query(
 pub fn validate_single_operation(query: &str) -> Result<(), AppError> {
     let mut ops = 0;
     for token in query.split_whitespace() {
-        let t = token.trim_start_matches(|c: char| c == '{' || c == '(');
+        let t = token.trim_start_matches(['{', '(']);
         if matches!(t, "query" | "mutation" | "subscription") {
             ops += 1;
         }

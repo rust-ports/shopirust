@@ -24,6 +24,7 @@ pub struct Logs {
 }
 
 impl Logs {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         path: String,
         config: Option<String>,

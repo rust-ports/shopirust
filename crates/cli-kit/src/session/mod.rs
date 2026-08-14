@@ -27,6 +27,22 @@ use std::sync::Mutex;
 static USER_ID: Mutex<Option<String>> = Mutex::new(None);
 static AUTH_METHOD: Mutex<AuthMethod> = Mutex::new(AuthMethod::None);
 
+#[cfg(test)]
+thread_local! {
+    static TEST_CURRENT_SESSION_ID: std::cell::RefCell<Option<Option<String>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+fn current_session_id() -> Option<String> {
+    #[cfg(test)]
+    {
+        if let Some(overridden) = TEST_CURRENT_SESSION_ID.with(|slot| slot.borrow().clone()) {
+            return overridden;
+        }
+    }
+    SessionStore::new().get_current_session_id()
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum AuthMethod {
     None,
@@ -36,8 +52,20 @@ pub enum AuthMethod {
     CustomAppToken,
 }
 
+fn lock_user_id() -> std::sync::MutexGuard<'static, Option<String>> {
+    USER_ID
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+fn lock_auth_method() -> std::sync::MutexGuard<'static, AuthMethod> {
+    AUTH_METHOD
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
 pub fn set_last_seen_user_id(id: &str) {
-    *USER_ID.lock().unwrap() = Some(id.to_string());
+    *lock_user_id() = Some(id.to_string());
 }
 
 pub fn get_last_seen_user_id() -> String {
@@ -45,11 +73,11 @@ pub fn get_last_seen_user_id() -> String {
         return non_random_uuid(&custom_token);
     }
 
-    if let Some(user_id) = USER_ID.lock().unwrap().clone() {
+    if let Some(user_id) = lock_user_id().clone() {
         return user_id;
     }
 
-    if let Some(current_session_id) = SessionStore::new().get_current_session_id() {
+    if let Some(current_session_id) = current_session_id() {
         return current_session_id;
     }
 
@@ -57,16 +85,16 @@ pub fn get_last_seen_user_id() -> String {
 }
 
 pub fn set_last_seen_auth_method(method: AuthMethod) {
-    *AUTH_METHOD.lock().unwrap() = method;
+    *lock_auth_method() = method;
 }
 
 pub fn get_last_seen_auth_method() -> AuthMethod {
-    let auth_method = AUTH_METHOD.lock().unwrap().clone();
+    let auth_method = lock_auth_method().clone();
     if auth_method != AuthMethod::None {
         return auth_method;
     }
 
-    if SessionStore::new().get_current_session_id().is_some() {
+    if current_session_id().is_some() {
         return AuthMethod::DeviceAuth;
     }
 
@@ -616,6 +644,22 @@ mod tests {
 
     static ENV_LOCK: Mutex<()> = Mutex::new(());
 
+    fn lock_env() -> std::sync::MutexGuard<'static, ()> {
+        ENV_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    fn with_no_cached_session<T>(f: impl FnOnce() -> T) -> T {
+        TEST_CURRENT_SESSION_ID.with(|slot| *slot.borrow_mut() = Some(None));
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(f));
+        TEST_CURRENT_SESSION_ID.with(|slot| *slot.borrow_mut() = None);
+        match result {
+            Ok(value) => value,
+            Err(panic) => std::panic::resume_unwind(panic),
+        }
+    }
+
     #[test]
     fn tokens_for_extracts_admin_token() {
         let app_id = identity::application_id("admin");
@@ -697,10 +741,10 @@ mod tests {
 
     #[test]
     fn user_id_roundtrip() {
-        let _guard = ENV_LOCK.lock().unwrap();
+        let _guard = lock_env();
         std::env::remove_var(EnvVars::APP_AUTOMATION_TOKEN);
         std::env::remove_var(EnvVars::THEME_TOKEN);
-        *USER_ID.lock().unwrap() = None;
+        *lock_user_id() = None;
 
         set_last_seen_user_id("user-1");
         assert_eq!(get_last_seen_user_id(), "user-1");
@@ -708,9 +752,9 @@ mod tests {
 
     #[test]
     fn get_last_seen_user_id_prefers_custom_tokens() {
-        let _guard = ENV_LOCK.lock().unwrap();
+        let _guard = lock_env();
         std::env::set_var(EnvVars::APP_AUTOMATION_TOKEN, "custom-token");
-        *USER_ID.lock().unwrap() = None;
+        *lock_user_id() = None;
         set_last_seen_user_id("user-1");
 
         assert_eq!(get_last_seen_user_id(), non_random_uuid("custom-token"));
@@ -720,10 +764,10 @@ mod tests {
 
     #[test]
     fn get_last_seen_auth_method_uses_cached_method_first() {
-        let _guard = ENV_LOCK.lock().unwrap();
+        let _guard = lock_env();
         std::env::remove_var(EnvVars::APP_AUTOMATION_TOKEN);
         std::env::remove_var(EnvVars::THEME_TOKEN);
-        *AUTH_METHOD.lock().unwrap() = AuthMethod::None;
+        *lock_auth_method() = AuthMethod::None;
         set_last_seen_auth_method(AuthMethod::ThemeAccessToken);
 
         assert_eq!(get_last_seen_auth_method(), AuthMethod::ThemeAccessToken);
@@ -733,20 +777,22 @@ mod tests {
 
     #[test]
     fn get_last_seen_auth_method_detects_env_tokens() {
-        let _guard = ENV_LOCK.lock().unwrap();
-        *AUTH_METHOD.lock().unwrap() = AuthMethod::None;
-        set_last_seen_auth_method(AuthMethod::None);
-        std::env::set_var(EnvVars::APP_AUTOMATION_TOKEN, "custom-token");
+        let _guard = lock_env();
+        with_no_cached_session(|| {
+            *lock_auth_method() = AuthMethod::None;
+            set_last_seen_auth_method(AuthMethod::None);
+            std::env::set_var(EnvVars::APP_AUTOMATION_TOKEN, "custom-token");
 
-        assert_eq!(get_last_seen_auth_method(), AuthMethod::PartnersToken);
+            assert_eq!(get_last_seen_auth_method(), AuthMethod::PartnersToken);
 
-        std::env::remove_var(EnvVars::APP_AUTOMATION_TOKEN);
-        std::env::set_var(EnvVars::THEME_TOKEN, "shptka_test");
-        assert_eq!(get_last_seen_auth_method(), AuthMethod::ThemeAccessToken);
+            std::env::remove_var(EnvVars::APP_AUTOMATION_TOKEN);
+            std::env::set_var(EnvVars::THEME_TOKEN, "shptka_test");
+            assert_eq!(get_last_seen_auth_method(), AuthMethod::ThemeAccessToken);
 
-        std::env::set_var(EnvVars::THEME_TOKEN, "shpat_test");
-        assert_eq!(get_last_seen_auth_method(), AuthMethod::CustomAppToken);
+            std::env::set_var(EnvVars::THEME_TOKEN, "shpat_test");
+            assert_eq!(get_last_seen_auth_method(), AuthMethod::CustomAppToken);
 
-        std::env::remove_var(EnvVars::THEME_TOKEN);
+            std::env::remove_var(EnvVars::THEME_TOKEN);
+        });
     }
 }

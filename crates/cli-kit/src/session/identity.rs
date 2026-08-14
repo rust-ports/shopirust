@@ -52,9 +52,15 @@ mod tests {
 
     static ENV_LOCK: Mutex<()> = Mutex::new(());
 
+    fn lock_env() -> std::sync::MutexGuard<'static, ()> {
+        ENV_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
     #[test]
     fn returns_production_ids_by_default() {
-        let _guard = ENV_LOCK.lock().unwrap();
+        let _guard = lock_env();
         std::env::remove_var(EnvVars::SERVICE_ENV);
 
         assert_eq!(client_id(), "fbdb2649-e327-4907-8f67-908d24cfd7e3");
@@ -66,7 +72,7 @@ mod tests {
 
     #[test]
     fn returns_local_ids_for_local_service_env() {
-        let _guard = ENV_LOCK.lock().unwrap();
+        let _guard = lock_env();
         std::env::set_var(EnvVars::SERVICE_ENV, "local");
 
         assert_eq!(client_id(), "e5380e02-312a-7408-5718-e07017e9cf52");

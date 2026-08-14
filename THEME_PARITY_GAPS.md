@@ -5,7 +5,7 @@ Generated from deep analysis of upstream `packages/theme/src/cli` vs the Rust `c
 
 ## Current Baseline
 
-- Rust `theme` crate tests: `cargo test -p theme` → **263 tests**.
+- Rust `theme` crate tests: `cargo test -p theme --lib` → **265 tests**.
 - Rust CLI theme boundary tests: `cargo test -p cli-kit theme::` → **30 tests**.
 - All 20 theme subcommands wired and dispatched in `cli-kit/src/commands/theme.rs`.
 - Dev-server core + theme-ext environment live in `crates/theme`.
@@ -80,7 +80,7 @@ Generated from deep analysis of upstream `packages/theme/src/cli` vs the Rust `c
 
 ### Remaining (low priority / out of scope)
 
-- [ ] Full Vitest-parity retry matrix for live HTTP storefront-session (429 table, wrong-password variants) — helpers covered; integration mocks optional
+- [x] Storefront-session retry classifier (`should_retry_storefront_session` / 429/5xx / wrong-password)
 - [ ] End-to-end `theme-environment.test.ts` bootstrap suite
 - [ ] Progress-bar / analytics metadata parity
 - [ ] Exact chalk/`renderConcurrent` streaming UI

@@ -82,12 +82,12 @@ pub fn validate_payments(config: &Value) -> Result<(), AppError> {
         }
     }
 
-    if target == CREDIT_CARD_TARGET || target == CUSTOM_CREDIT_CARD_TARGET {
-        if config.get("encryption_certificate_fingerprint").is_none() {
-            return Err(AppError::message(
-                "encryption_certificate_fingerprint is required",
-            ));
-        }
+    if (target == CREDIT_CARD_TARGET || target == CUSTOM_CREDIT_CARD_TARGET)
+        && config.get("encryption_certificate_fingerprint").is_none()
+    {
+        return Err(AppError::message(
+            "encryption_certificate_fingerprint is required",
+        ));
     }
 
     if matches!(

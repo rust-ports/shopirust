@@ -2684,6 +2684,21 @@ pub fn cookie_from_set_cookie(headers: &[String], name: &str) -> Option<String> 
         .find_map(|header| parse_cookies(header).remove(name))
 }
 
+/// Whether a storefront-session HTTP status should be retried (upstream retry matrix).
+pub fn should_retry_storefront_session(status: u16) -> bool {
+    matches!(status, 429 | 500 | 502 | 503 | 504)
+}
+
+pub fn storefront_session_retry_delay_ms(attempt: u32) -> u64 {
+    100 * 2u64.pow(attempt.min(5))
+}
+
+pub fn is_wrong_storefront_password(status: u16, body: &str) -> bool {
+    status == 401
+        || status == 403
+        || body.to_lowercase().contains("password") && body.to_lowercase().contains("incorrect")
+}
+
 pub fn storefront_session_headers(session: &DevServerSession) -> BTreeMap<String, String> {
     let mut headers = BTreeMap::new();
     if let Some(token) = &session.storefront_token {
@@ -4673,5 +4688,21 @@ mod tests {
         if let Some(previous) = previous {
             std::env::set_var("SHOPIFY_CLI_LOCAL_HOT_RELOAD", previous);
         }
+    }
+
+    #[test]
+    fn storefront_session_retry_matrix() {
+        assert!(should_retry_storefront_session(429));
+        assert!(should_retry_storefront_session(500));
+        assert!(should_retry_storefront_session(502));
+        assert!(should_retry_storefront_session(503));
+        assert!(should_retry_storefront_session(504));
+        assert!(!should_retry_storefront_session(200));
+        assert!(!should_retry_storefront_session(401));
+        assert_eq!(storefront_session_retry_delay_ms(0), 100);
+        assert_eq!(storefront_session_retry_delay_ms(1), 200);
+        assert!(is_wrong_storefront_password(401, ""));
+        assert!(is_wrong_storefront_password(200, "Incorrect password"));
+        assert!(!is_wrong_storefront_password(200, "ok"));
     }
 }

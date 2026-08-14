@@ -81,9 +81,10 @@ async fn graphiql_page(
     Query(q): Query<KeyQuery>,
 ) -> impl IntoResponse {
     if q.key.as_deref() != Some(state.key.as_str()) {
-        return Html(format!(
+        return Html(
             "<html><body><h1>Unauthorized</h1><p>Missing or invalid GraphiQL key.</p></body></html>"
-        ));
+                .to_string(),
+        );
     }
     Html(graphiql_cdn_html(
         &state.app_name,
@@ -98,7 +99,7 @@ async fn graphql_proxy(
     Query(q): Query<KeyQuery>,
     Json(body): Json<Value>,
 ) -> impl IntoResponse {
-    if q.key.as_deref() != Some(state.key.as_str()) && !q.key.is_none() {
+    if q.key.as_deref() != Some(state.key.as_str()) && q.key.is_some() {
         return (
             axum::http::StatusCode::UNAUTHORIZED,
             Json(serde_json::json!({"errors": [{"message": "invalid key"}]})),

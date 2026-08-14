@@ -25,6 +25,7 @@ pub struct ImportExtensions {
 }
 
 impl ImportExtensions {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         path: String,
         config: Option<String>,

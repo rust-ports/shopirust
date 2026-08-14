@@ -1,5 +1,3 @@
-use std::path::PathBuf;
-
 #[derive(Debug, Clone, clap::Args)]
 pub struct GlobalFlags {
     #[arg(
@@ -24,7 +22,7 @@ pub struct GlobalFlags {
         global = true,
         help = "Path to the project directory"
     )]
-    pub path: Option<PathBuf>,
+    pub path: Option<String>,
 }
 
 #[cfg(test)]
@@ -65,13 +63,13 @@ mod tests {
     #[test]
     fn test_path_flag() {
         let cli = TestCli::parse_from(["test", "--path", "/some/project"]);
-        assert_eq!(cli.global.path, Some(PathBuf::from("/some/project")));
+        assert_eq!(cli.global.path.as_deref(), Some("/some/project"));
     }
 
     #[test]
     fn test_path_short() {
         let cli = TestCli::parse_from(["test", "-p", "/some/project"]);
-        assert_eq!(cli.global.path, Some(PathBuf::from("/some/project")));
+        assert_eq!(cli.global.path.as_deref(), Some("/some/project"));
     }
 
     #[test]

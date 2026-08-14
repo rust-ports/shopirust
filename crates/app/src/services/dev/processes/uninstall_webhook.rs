@@ -24,9 +24,9 @@ pub struct UninstallWebhookOptions {
     pub sample_client: Option<Arc<dyn WebhookSampleClient>>,
 }
 
-pub fn front_and_backend<'a>(
-    webs: &'a [WebInstance],
-) -> (Option<&'a WebInstance>, Option<&'a WebInstance>) {
+pub fn front_and_backend(
+    webs: &[WebInstance],
+) -> (Option<&WebInstance>, Option<&WebInstance>) {
     let backend = webs
         .iter()
         .find(|w| w.roles.iter().any(|r| r.eq_ignore_ascii_case("backend")));
@@ -167,6 +167,8 @@ mod tests {
             auth_callback_path: vec![],
             webhooks_path: webhooks.map(str::to_string),
             port: None,
+            commands: Default::default(),
+            hmr_server: false,
         }
     }
 
