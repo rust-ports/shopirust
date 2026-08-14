@@ -8,6 +8,7 @@ use crate::services::dev::processes::dev_session::{
 use std::io::{stdout, Write};
 use std::sync::Arc;
 use std::time::Duration;
+use tokio::sync::mpsc::UnboundedReceiver;
 use tokio_util::sync::CancellationToken;
 
 const PREFIX_COLORS: &[&str] = &["yellow", "cyan", "magenta", "green", "blue"];
@@ -57,31 +58,69 @@ pub fn render_status_table(status: &DevSessionStatusManager) -> String {
     out
 }
 
+/// Upstream Ctrl+C copy when a preview was successfully pushed.
+pub fn persist_preview_message(shop_fqdn: &str) -> String {
+    format!(
+        "A preview of your development changes is still available on {shop_fqdn}.\nRun shopify app dev clean to restore the latest released version of your app."
+    )
+}
+
+pub fn build_dev_console_url(store_fqdn: &str) -> String {
+    let host = store_fqdn
+        .trim()
+        .trim_start_matches("https://")
+        .trim_start_matches("http://")
+        .trim_end_matches('/');
+    format!("https://{host}/admin?dev-console=show")
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TuiAction {
+    Quit,
+    OpenPreview,
+    OpenGraphiql,
+    OpenDevConsole,
+    None,
+}
+
+pub fn dispatch_shortcut(code: crossterm::event::KeyCode, ctrl: bool) -> TuiAction {
+    use crossterm::event::KeyCode;
+    match code {
+        KeyCode::Char('c') if ctrl => TuiAction::Quit,
+        KeyCode::Char('q') => TuiAction::Quit,
+        KeyCode::Char('p') => TuiAction::OpenPreview,
+        KeyCode::Char('g') => TuiAction::OpenGraphiql,
+        KeyCode::Char('c') => TuiAction::OpenDevConsole,
+        _ => TuiAction::None,
+    }
+}
+
 pub struct DevTuiOptions {
     pub preview_url: String,
     pub graphiql_url: Option<String>,
+    pub dev_console_url: Option<String>,
     pub prefixes: Vec<String>,
     pub status: Arc<DevSessionStatusManager>,
+    pub log_rx: UnboundedReceiver<(String, String)>,
 }
 
-/// Print shortcuts + status, then poll p/g/q until abort.
-pub async fn run_dev_tui(opts: DevTuiOptions, abort: CancellationToken) {
+/// Print shortcuts + live status/logs, then poll p/g/c/q until abort.
+pub async fn run_dev_tui(mut opts: DevTuiOptions, abort: CancellationToken) {
     let col = prefix_column_size(&opts.prefixes);
-    for (i, prefix) in opts.prefixes.iter().enumerate() {
-        let line = format_prefixed_line(prefix, "running", col);
-        let _ = prefix_color(i);
-        eprintln!("{line}");
-    }
     eprintln!("Preview URL: {}", opts.preview_url);
     if let Some(ref gurl) = opts.graphiql_url {
         eprintln!("GraphiQL URL: {gurl}");
     }
-    eprintln!("Shortcuts: p preview · g GraphiQL · q / Ctrl+C abort");
+    if let Some(ref curl) = opts.dev_console_url {
+        eprintln!("Dev Console URL: {curl}");
+    }
+    eprintln!("Shortcuts: p preview · g GraphiQL · c Dev Console · q / Ctrl+C abort");
     eprint!("{}", render_status_table(&opts.status));
     let _ = stdout().flush();
 
     let preview = opts.preview_url.clone();
     let graphiql = opts.graphiql_url.clone();
+    let dev_console = opts.dev_console_url.clone();
     let abort_keys = abort.clone();
     let key_task = tokio::task::spawn_blocking(move || {
         let _ = crossterm::terminal::enable_raw_mode();
@@ -91,25 +130,27 @@ pub async fn run_dev_tui(opts: DevTuiOptions, abort: CancellationToken) {
             }
             if crossterm::event::poll(Duration::from_millis(200)).unwrap_or(false) {
                 if let Ok(crossterm::event::Event::Key(key)) = crossterm::event::read() {
-                    use crossterm::event::{KeyCode, KeyModifiers};
-                    match key.code {
-                        KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                    use crossterm::event::KeyModifiers;
+                    let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+                    match dispatch_shortcut(key.code, ctrl) {
+                        TuiAction::Quit => {
                             abort_keys.cancel();
                             break;
                         }
-                        KeyCode::Char('q') => {
-                            abort_keys.cancel();
-                            break;
-                        }
-                        KeyCode::Char('p') => {
+                        TuiAction::OpenPreview => {
                             let _ = open::that(&preview);
                         }
-                        KeyCode::Char('g') => {
+                        TuiAction::OpenGraphiql => {
                             if let Some(ref url) = graphiql {
                                 let _ = open::that(url);
                             }
                         }
-                        _ => {}
+                        TuiAction::OpenDevConsole => {
+                            if let Some(ref url) = dev_console {
+                                let _ = open::that(url);
+                            }
+                        }
+                        TuiAction::None => {}
                     }
                 }
             }
@@ -117,7 +158,26 @@ pub async fn run_dev_tui(opts: DevTuiOptions, abort: CancellationToken) {
         let _ = crossterm::terminal::disable_raw_mode();
     });
 
-    abort.cancelled().await;
+    let mut status_rx = opts.status.subscribe();
+    loop {
+        tokio::select! {
+            _ = abort.cancelled() => break,
+            line = opts.log_rx.recv() => {
+                let Some((prefix, text)) = line else { break };
+                for chunk in text.split('\n') {
+                    eprintln!("{}", format_prefixed_line(&prefix, chunk, col));
+                }
+            }
+            changed = status_rx.changed() => {
+                if changed.is_err() {
+                    break;
+                }
+                eprint!("{}", render_status_table(&opts.status));
+                let _ = stdout().flush();
+            }
+        }
+    }
+
     let _ = crossterm::terminal::disable_raw_mode();
     key_task.abort();
 }
@@ -126,6 +186,7 @@ pub async fn run_dev_tui(opts: DevTuiOptions, abort: CancellationToken) {
 mod tests {
     use super::*;
     use crate::services::dev::processes::dev_session::DevSessionExtensionRow;
+    use crossterm::event::KeyCode;
 
     #[test]
     fn prefixes_align() {
@@ -146,5 +207,31 @@ mod tests {
         assert!(table.contains("ready"));
         assert!(table.contains("checkout-ui"));
         assert!(table.contains("ok"));
+    }
+
+    #[test]
+    fn shortcut_dispatch_includes_dev_console() {
+        assert_eq!(dispatch_shortcut(KeyCode::Char('p'), false), TuiAction::OpenPreview);
+        assert_eq!(dispatch_shortcut(KeyCode::Char('g'), false), TuiAction::OpenGraphiql);
+        assert_eq!(dispatch_shortcut(KeyCode::Char('c'), false), TuiAction::OpenDevConsole);
+        assert_eq!(dispatch_shortcut(KeyCode::Char('q'), false), TuiAction::Quit);
+        assert_eq!(dispatch_shortcut(KeyCode::Char('c'), true), TuiAction::Quit);
+        assert_eq!(dispatch_shortcut(KeyCode::Char('x'), false), TuiAction::None);
+    }
+
+    #[test]
+    fn persist_preview_mentions_clean_command() {
+        let msg = persist_preview_message("shop.myshopify.com");
+        assert!(msg.contains("shop.myshopify.com"));
+        assert!(msg.contains("shopify app dev clean"));
+        assert!(msg.contains("still available"));
+    }
+
+    #[test]
+    fn dev_console_url_uses_admin_query() {
+        assert_eq!(
+            build_dev_console_url("shop.myshopify.com"),
+            "https://shop.myshopify.com/admin?dev-console=show"
+        );
     }
 }

@@ -1,11 +1,12 @@
 //! Spawn web (frontend/backend) processes from `shopify.web.toml` commands.
 
-use super::types::{DevProcess, DevProcessKind};
+use super::types::{DevProcess, DevProcessContext, DevProcessKind};
 use crate::error::AppError;
 use crate::models::loader::WebInstance;
 use std::path::Path;
+use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
-use tokio_util::sync::CancellationToken;
+use tokio::sync::mpsc::UnboundedSender;
 
 #[derive(Debug, Clone)]
 pub struct WebProcessOptions {
@@ -59,14 +60,14 @@ pub fn setup_web_processes(
             hmr_port: if is_frontend { hmr_port } else { None },
         };
         out.push(DevProcess::new(name, DevProcessKind::Web, move |ctx| {
-            run_web_process(ctx.abort, opts)
+            run_web_process(ctx, opts)
         }));
     }
     out
 }
 
 async fn run_web_process(
-    abort: CancellationToken,
+    ctx: DevProcessContext,
     opts: WebProcessOptions,
 ) -> Result<(), AppError> {
     if let Some(ref predev) = opts.web.commands.predev {
@@ -81,18 +82,18 @@ async fn run_web_process(
         .or_else(|| detect_npm_script(&opts.web.directory.join("package.json")));
 
     let Some(dev_command) = dev_command else {
-        tracing::info!(
-            target: "app_dev",
+        ctx.emit(format!(
             "skipping web at {} (no [commands] dev / package.json script)",
             opts.web.directory.display()
-        );
-        abort.cancelled().await;
+        ));
+        ctx.abort.cancelled().await;
         return Ok(());
     };
 
     let mut child = spawn_command_chain(&dev_command, &opts)?;
+    pipe_child_output(&mut child, ctx.prefix.clone(), ctx.log.clone());
     tokio::select! {
-        _ = abort.cancelled() => {
+        _ = ctx.abort.cancelled() => {
             let _ = child.kill().await;
         }
         status = child.wait() => {
@@ -107,6 +108,32 @@ async fn run_web_process(
         }
     }
     Ok(())
+}
+
+fn pipe_child_output(
+    child: &mut tokio::process::Child,
+    prefix: String,
+    log: UnboundedSender<(String, String)>,
+) {
+    if let Some(stdout) = child.stdout.take() {
+        spawn_line_pump(prefix.clone(), stdout, log.clone());
+    }
+    if let Some(stderr) = child.stderr.take() {
+        spawn_line_pump(prefix, stderr, log);
+    }
+}
+
+fn spawn_line_pump(
+    prefix: String,
+    pipe: impl tokio::io::AsyncRead + Unpin + Send + 'static,
+    log: UnboundedSender<(String, String)>,
+) {
+    tokio::spawn(async move {
+        let mut lines = BufReader::new(pipe).lines();
+        while let Ok(Some(line)) = lines.next_line().await {
+            let _ = log.send((prefix.clone(), line));
+        }
+    });
 }
 
 fn spawn_command_chain(
@@ -164,6 +191,8 @@ fn spawn_one(script: &str, opts: &WebProcessOptions) -> Result<tokio::process::C
         .env("APP_ENV", "development")
         .env("NODE_ENV", "development")
         .env("REMIX_DEV_ORIGIN", &opts.proxy_url)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
         .kill_on_drop(true);
     if let Some(hmr) = opts.hmr_port {
         command.env("HMR_SERVER_PORT", hmr.to_string());

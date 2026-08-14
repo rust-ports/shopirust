@@ -287,6 +287,7 @@ pub async fn dev_with_prompter(
     };
 
     let col = crate::services::dev::tui::prefix_column_size(&prefixes);
+    let (log_tx, log_rx) = tokio::sync::mpsc::unbounded_channel();
     let mut handles = Vec::new();
     for proc in setup.processes {
         if proc.kind == crate::services::dev::processes::DevProcessKind::AppLogsPolling
@@ -295,31 +296,41 @@ pub async fn dev_with_prompter(
             continue;
         }
         let prefix = proc.prefix.clone();
-        if tty {
-            eprintln!(
-                "{}",
-                crate::services::dev::tui::format_prefixed_line(&prefix, "started", col)
-            );
-        }
+        let log_err = log_tx.clone();
         let ctx_proc = DevProcessContext {
             abort: cancel.clone(),
             prefix: prefix.clone(),
+            log: log_tx.clone(),
         };
         let run = proc.run;
         handles.push(tokio::spawn(async move {
             if let Err(e) = run(ctx_proc).await {
+                let _ = log_err.send((prefix.clone(), format!("error: {e}")));
                 eprintln!("[{prefix}] error: {e}");
             }
         }));
     }
+    drop(log_tx);
+
+    let shop_fqdn = store.shop_domain.clone();
+    let preview_ready = || {
+        matches!(
+            setup.status.status(),
+            crate::services::dev::processes::dev_session::DevSessionStatus::Ready
+        )
+    };
 
     if tty {
         let tui = crate::services::dev::tui::run_dev_tui(
             crate::services::dev::tui::DevTuiOptions {
                 preview_url: setup.preview_url.clone(),
                 graphiql_url: setup.graphiql_url.clone(),
+                dev_console_url: Some(crate::services::dev::tui::build_dev_console_url(
+                    &shop_fqdn,
+                )),
                 prefixes,
                 status: setup.status.clone(),
+                log_rx,
             },
             cancel.clone(),
         );
@@ -329,6 +340,17 @@ pub async fn dev_with_prompter(
             _ = tui => {}
         }
     } else {
+        tokio::spawn(async move {
+            let mut log_rx = log_rx;
+            while let Some((prefix, text)) = log_rx.recv().await {
+                for chunk in text.split('\n') {
+                    eprintln!(
+                        "{}",
+                        crate::services::dev::tui::format_prefixed_line(&prefix, chunk, col)
+                    );
+                }
+            }
+        });
         tokio::select! {
             _ = cancel.cancelled() => {}
             _ = logs_fut => {}
@@ -343,7 +365,11 @@ pub async fn dev_with_prompter(
         let _ = h.await;
     }
 
-    println!("\nStopped app dev.");
+    if preview_ready() {
+        println!("\n{}", crate::services::dev::tui::persist_preview_message(&shop_fqdn));
+    } else {
+        println!("\nStopped app dev.");
+    }
     Ok(())
 }
 

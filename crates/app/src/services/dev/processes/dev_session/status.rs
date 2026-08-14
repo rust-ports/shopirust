@@ -2,6 +2,7 @@
 
 use crate::services::dev::app_events::{AppEvent, ExtensionBuildResult};
 use std::sync::Mutex;
+use tokio::sync::watch;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DevSessionStatus {
@@ -20,6 +21,7 @@ pub struct DevSessionExtensionRow {
 pub struct DevSessionStatusManager {
     status: Mutex<DevSessionStatus>,
     extensions: Mutex<Vec<DevSessionExtensionRow>>,
+    version: watch::Sender<u64>,
 }
 
 impl Default for DevSessionStatusManager {
@@ -27,6 +29,7 @@ impl Default for DevSessionStatusManager {
         Self {
             status: Mutex::new(DevSessionStatus::Loading),
             extensions: Mutex::new(Vec::new()),
+            version: watch::channel(0).0,
         }
     }
 }
@@ -36,17 +39,28 @@ impl DevSessionStatusManager {
         Self::default()
     }
 
+    pub fn subscribe(&self) -> watch::Receiver<u64> {
+        self.version.subscribe()
+    }
+
+    fn bump(&self) {
+        self.version.send_modify(|version| *version += 1);
+    }
+
     pub fn set_loading(&self) {
         *self.status.lock().unwrap() = DevSessionStatus::Loading;
+        self.bump();
     }
 
     pub fn set_ready(&self, rows: Vec<DevSessionExtensionRow>) {
         *self.status.lock().unwrap() = DevSessionStatus::Ready;
         *self.extensions.lock().unwrap() = rows;
+        self.bump();
     }
 
     pub fn set_error(&self, message: impl Into<String>) {
         *self.status.lock().unwrap() = DevSessionStatus::Error(message.into());
+        self.bump();
     }
 
     pub fn status(&self) -> DevSessionStatus {
@@ -71,8 +85,8 @@ impl DevSessionStatusManager {
                     _ => None,
                 })
                 .unwrap_or_else(|| "extension build failed".into());
-            self.set_error(msg);
             *self.extensions.lock().unwrap() = rows;
+            self.set_error(msg);
         } else {
             self.set_ready(rows);
         }
@@ -176,6 +190,15 @@ mod tests {
         assert_eq!(mgr.extension_rows()[0].handle, "ui");
         mgr.set_error("boom");
         assert!(matches!(mgr.status(), DevSessionStatus::Error(_)));
+    }
+
+    #[tokio::test]
+    async fn status_subscribe_notifies_on_ready() {
+        let mgr = DevSessionStatusManager::new();
+        let mut rx = mgr.subscribe();
+        mgr.set_ready(vec![]);
+        rx.changed().await.unwrap();
+        assert_eq!(mgr.status(), DevSessionStatus::Ready);
     }
 
     #[test]

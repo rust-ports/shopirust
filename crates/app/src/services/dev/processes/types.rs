@@ -3,6 +3,7 @@
 use crate::error::AppError;
 use std::future::Future;
 use std::pin::Pin;
+use tokio::sync::mpsc::UnboundedSender;
 use tokio_util::sync::CancellationToken;
 
 /// Context passed to each concurrent dev process.
@@ -10,6 +11,14 @@ use tokio_util::sync::CancellationToken;
 pub struct DevProcessContext {
     pub abort: CancellationToken,
     pub prefix: String,
+    pub log: UnboundedSender<(String, String)>,
+}
+
+impl DevProcessContext {
+    /// Emit a process log line to the concurrent TUI (prefix, text).
+    pub fn emit(&self, line: impl AsRef<str>) {
+        let _ = self.log.send((self.prefix.clone(), line.as_ref().to_string()));
+    }
 }
 
 /// Async process body.
