@@ -224,12 +224,12 @@ impl DeveloperPlatformClient for PartnersPlatformClient {
 
     async fn specifications(
         &self,
-        _app: &MinimalAppIdentifiers,
+        app: &MinimalAppIdentifiers,
     ) -> Result<Vec<RemoteSpecification>, CliApiError> {
-        Err(CliApiError::unsupported(
-            ClientName::Partners.as_str(),
-            "specifications",
-        ))
+        self.inner
+            .extension_specifications(&app.api_key)
+            .await
+            .map_err(Self::map_err)
     }
 
     async fn template_specifications(
@@ -264,11 +264,11 @@ impl DeveloperPlatformClient for PartnersPlatformClient {
         ))
     }
 
-    async fn app_versions(&self, _app: &OrganizationApp) -> Result<Value, CliApiError> {
-        Err(CliApiError::unsupported(
-            ClientName::Partners.as_str(),
-            "app_versions",
-        ))
+    async fn app_versions(&self, app: &OrganizationApp) -> Result<Value, CliApiError> {
+        self.inner
+            .app_versions_list(&app.api_key)
+            .await
+            .map_err(Self::map_err)
     }
 
     async fn app_version_by_tag(
@@ -348,6 +348,18 @@ impl DeveloperPlatformClient for PartnersPlatformClient {
         })
     }
 
+    async fn update_extension(
+        &self,
+        input: &cli_api::types::ExtensionUpdateDraftInput,
+    ) -> Result<cli_api::types::ExtensionUpdateDraftResult, CliApiError> {
+        let result = self
+            .inner
+            .update_extension_draft(input)
+            .await
+            .map_err(Self::map_err)?;
+        Ok(result)
+    }
+
     async fn deploy(&self, input: Value) -> Result<Value, CliApiError> {
         let result = self
             .inner
@@ -359,13 +371,17 @@ impl DeveloperPlatformClient for PartnersPlatformClient {
 
     async fn release(
         &self,
-        _app: &MinimalOrganizationApp,
-        _version: &AppVersionIdentifiers,
+        app: &MinimalOrganizationApp,
+        version: &AppVersionIdentifiers,
     ) -> Result<Value, CliApiError> {
-        Err(CliApiError::unsupported(
-            ClientName::Partners.as_str(),
-            "release",
-        ))
+        self.inner
+            .release_app_version(
+                &app.identifiers.api_key,
+                None,
+                Some(version.app_version_id),
+            )
+            .await
+            .map_err(Self::map_err)
     }
 
     async fn update_urls(&self, input: Value) -> Result<Value, CliApiError> {
@@ -474,5 +490,69 @@ impl DeveloperPlatformClient for PartnersPlatformClient {
             .fetch_app_logs(jwt_token, cursor, filters.cloned())
             .await
             .map_err(CliApiError::message)
+    }
+
+    async fn migrate_app_module(
+        &self,
+        api_key: &str,
+        registration_id: &str,
+        type_name: &str,
+    ) -> Result<bool, CliApiError> {
+        self.inner
+            .migrate_app_module(api_key, registration_id, type_name)
+            .await
+            .map_err(Self::map_err)
+    }
+
+    async fn migrate_flow_extension(
+        &self,
+        api_key: &str,
+        registration_id: &str,
+    ) -> Result<bool, CliApiError> {
+        self.inner
+            .migrate_flow_extension(api_key, registration_id)
+            .await
+            .map_err(Self::map_err)
+    }
+
+    async fn migrate_to_ui_extension(
+        &self,
+        api_key: &str,
+        registration_id: &str,
+    ) -> Result<bool, CliApiError> {
+        self.inner
+            .migrate_to_ui_extension(api_key, registration_id)
+            .await
+            .map_err(Self::map_err)
+    }
+
+    async fn convert_to_transfer_disabled_store(
+        &self,
+        organization_id: &str,
+        shop_id: &str,
+    ) -> Result<bool, CliApiError> {
+        let org_num = organization_id.parse::<i64>().unwrap_or(0);
+        self.inner
+            .convert_dev_to_test_store(org_num, shop_id)
+            .await
+            .map_err(Self::map_err)
+    }
+
+    async fn update_developer_preview(
+        &self,
+        api_key: &str,
+        enabled: bool,
+    ) -> Result<bool, CliApiError> {
+        self.inner
+            .update_developer_preview(api_key, enabled)
+            .await
+            .map_err(Self::map_err)
+    }
+
+    async fn app_preview_mode(&self, api_key: &str) -> Result<Option<bool>, CliApiError> {
+        self.inner
+            .app_preview_mode(api_key)
+            .await
+            .map_err(Self::map_err)
     }
 }

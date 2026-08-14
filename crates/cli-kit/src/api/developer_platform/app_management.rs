@@ -530,12 +530,23 @@ impl DeveloperPlatformClient for AppManagementPlatformClient {
         &self,
         input: &cli_api::types::ExtensionCreateInput,
     ) -> Result<cli_api::types::CreatedExtension, CliApiError> {
-        // App Management assigns UUIDs on atomic deploy; return the local handle/uid.
+        // App Management assigns UUIDs on atomic deploy; mint a local uid for identifiers.
+        let uuid = uuid::Uuid::new_v4().to_string();
         Ok(cli_api::types::CreatedExtension {
-            id: input.handle.clone(),
-            uuid: input.handle.clone(),
+            id: uuid.clone(),
+            uuid,
             type_name: input.type_name.clone(),
             title: input.title.clone(),
+        })
+    }
+
+    async fn update_extension(
+        &self,
+        _: &cli_api::types::ExtensionUpdateDraftInput,
+    ) -> Result<cli_api::types::ExtensionUpdateDraftResult, CliApiError> {
+        // App Management uses Dev Sessions, not Partners draft push.
+        Ok(cli_api::types::ExtensionUpdateDraftResult {
+            user_errors: vec![],
         })
     }
 
@@ -599,6 +610,15 @@ impl DeveloperPlatformClient for AppManagementPlatformClient {
     }
 
     async fn current_account_info(&self) -> Result<AccountInfo, CliApiError> {
+        if let Some(bp) = self.business_platform.as_ref() {
+            let email = bp
+                .user_email("0")
+                .await
+                .map_err(Self::map_err)
+                .ok()
+                .flatten();
+            return Ok(AccountInfo { email, id: None });
+        }
         Err(CliApiError::unsupported(
             ClientName::AppManagement.as_str(),
             "current_account_info",

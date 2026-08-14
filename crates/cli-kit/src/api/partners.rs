@@ -406,6 +406,90 @@ mutation ExtensionCreate(
 }
 "#;
 
+const EXTENSION_SPECIFICATIONS_QUERY: &str = r#"
+query fetchSpecifications($apiKey: String!) {
+  extensionSpecifications(apiKey: $apiKey) {
+    name
+    identifier
+    experience
+    options { managementExperience registrationLimit }
+    validationSchema { jsonSchema }
+  }
+}
+"#;
+
+const APP_VERSIONS_QUERY: &str = r#"
+query AppVersionsQuery($apiKey: String!) {
+  app(apiKey: $apiKey) {
+    id
+    title
+    appVersions {
+      nodes { createdAt message status versionTag }
+    }
+  }
+}
+"#;
+
+const APP_RELEASE_MUTATION: &str = r#"
+mutation AppRelease($apiKey: String!, $appVersionId: ID, $versionTag: String) {
+  appRelease(input: {apiKey: $apiKey, appVersionId: $appVersionId, versionTag: $versionTag}) {
+    appVersion { versionTag message location }
+    userErrors { message field }
+  }
+}
+"#;
+
+const MIGRATE_APP_MODULE_MUTATION: &str = r#"
+mutation MigrateAppModule($apiKey: String!, $registrationUuid: String, $type: String!) {
+  migrateAppModule(input: {apiKey: $apiKey, registrationUuid: $registrationUuid, type: $type}) {
+    migratedAppModule
+    userErrors { field message }
+  }
+}
+"#;
+
+const MIGRATE_FLOW_EXTENSION_MUTATION: &str = r#"
+mutation MigrateFlowExtension($apiKey: String!, $registrationUuid: String) {
+  migrateFlowExtension(input: {apiKey: $apiKey, registrationUuid: $registrationUuid}) {
+    migratedFlowExtension
+    userErrors { field message }
+  }
+}
+"#;
+
+const MIGRATE_TO_UI_EXTENSION_MUTATION: &str = r#"
+mutation MigrateToUiExtension($apiKey: String!, $registrationUuid: String) {
+  migrateToUiExtension(input: {apiKey: $apiKey, registrationUuid: $registrationUuid}) {
+    migratedToUiExtension
+    userErrors { field message }
+  }
+}
+"#;
+
+const CONVERT_DEV_TO_TEST_STORE_MUTATION: &str = r#"
+mutation convertDevToTestStore($input: ConvertDevToTestStoreInput!) {
+  convertDevToTestStore(input: $input) {
+    convertedToTestStore
+    userErrors { message field }
+  }
+}
+"#;
+
+const FIND_APP_PREVIEW_MODE_QUERY: &str = r#"
+query FindAppPreviewMode($apiKey: String!) {
+  app(apiKey: $apiKey) { developmentStorePreviewEnabled }
+}
+"#;
+
+const DEVELOPMENT_STORE_PREVIEW_UPDATE: &str = r#"
+mutation DevelopmentStorePreviewUpdate($input: DevelopmentStorePreviewUpdateInput!) {
+  developmentStorePreviewUpdate(input: $input) {
+    app { id developmentStorePreviewEnabled }
+    userErrors { message field }
+  }
+}
+"#;
+
 const GENERATE_SIGNED_UPLOAD_URL_MUTATION: &str = r#"
 mutation GenerateSignedUploadUrl($apiKey: String!, $bundleFormat: Int!) {
   appVersionGenerateSignedUploadUrl(input: {apiKey: $apiKey, bundleFormat: $bundleFormat}) {
@@ -688,6 +772,39 @@ impl PartnersClient {
         Ok(resp.extension_create)
     }
 
+    pub async fn update_extension_draft(
+        &self,
+        input: &cli_api::types::ExtensionUpdateDraftInput,
+    ) -> Result<cli_api::types::ExtensionUpdateDraftResult, GraphqlRequestError> {
+        use crate::api::generated::graphql::partners::update_draft::{
+            ExtensionUpdateDraftResponse, EXTENSION_UPDATE_DRAFT_MUTATION,
+        };
+        let config_value = serde_json::from_str::<serde_json::Value>(&input.config)
+            .unwrap_or_else(|_| serde_json::Value::String(input.config.clone()));
+        let vars = serde_json::json!({
+            "apiKey": input.api_key,
+            "registrationId": input.registration_id,
+            "config": config_value,
+            "context": input.context,
+            "handle": input.handle,
+        });
+        let resp: ExtensionUpdateDraftResponse = self
+            .graphql
+            .query_with_variables(EXTENSION_UPDATE_DRAFT_MUTATION, Some(vars))
+            .await?;
+        let user_errors = resp
+            .extension_update_draft
+            .and_then(|d| d.user_errors)
+            .unwrap_or_default()
+            .into_iter()
+            .map(|e| cli_api::types::UserError {
+                field: e.field,
+                message: e.message,
+            })
+            .collect();
+        Ok(cli_api::types::ExtensionUpdateDraftResult { user_errors })
+    }
+
     pub async fn generate_signed_upload_url(
         &self,
         api_key: &str,
@@ -817,6 +934,256 @@ impl PartnersClient {
                 500,
             )
         })
+    }
+
+    pub async fn extension_specifications(
+        &self,
+        api_key: &str,
+    ) -> Result<Vec<cli_api::RemoteSpecification>, GraphqlRequestError> {
+        #[derive(Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct SpecNode {
+            name: String,
+            identifier: String,
+            experience: String,
+            options: Option<serde_json::Value>,
+            validation_schema: Option<serde_json::Value>,
+        }
+        #[derive(Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct SpecsResponse {
+            extension_specifications: Vec<SpecNode>,
+        }
+        let resp: SpecsResponse = self
+            .graphql
+            .query_with_variables(
+                EXTENSION_SPECIFICATIONS_QUERY,
+                Some(serde_json::json!({ "apiKey": api_key })),
+            )
+            .await?;
+        Ok(resp
+            .extension_specifications
+            .into_iter()
+            .map(|s| cli_api::RemoteSpecification {
+                identifier: s.identifier,
+                name: s.name,
+                experience: s.experience,
+                options: s.options,
+                validation_schema: s.validation_schema,
+            })
+            .collect())
+    }
+
+    pub async fn app_versions_list(&self, api_key: &str) -> Result<serde_json::Value, GraphqlRequestError> {
+        let resp: serde_json::Value = self
+            .graphql
+            .query_with_variables(
+                APP_VERSIONS_QUERY,
+                Some(serde_json::json!({ "apiKey": api_key })),
+            )
+            .await?;
+        Ok(resp)
+    }
+
+    pub async fn release_app_version(
+        &self,
+        api_key: &str,
+        version_tag: Option<&str>,
+        app_version_id: Option<i64>,
+    ) -> Result<serde_json::Value, GraphqlRequestError> {
+        self.graphql
+            .query_with_variables(
+                APP_RELEASE_MUTATION,
+                Some(serde_json::json!({
+                    "apiKey": api_key,
+                    "versionTag": version_tag,
+                    "appVersionId": app_version_id,
+                })),
+            )
+            .await
+    }
+
+    pub async fn migrate_app_module(
+        &self,
+        api_key: &str,
+        registration_uuid: &str,
+        type_name: &str,
+    ) -> Result<bool, GraphqlRequestError> {
+        #[derive(Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct Inner {
+            migrated_app_module: Option<bool>,
+            user_errors: Option<Vec<UserError>>,
+        }
+        #[derive(Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct Resp {
+            migrate_app_module: Inner,
+        }
+        let resp: Resp = self
+            .graphql
+            .query_with_variables(
+                MIGRATE_APP_MODULE_MUTATION,
+                Some(serde_json::json!({
+                    "apiKey": api_key,
+                    "registrationUuid": registration_uuid,
+                    "type": type_name,
+                })),
+            )
+            .await?;
+        if resp
+            .migrate_app_module
+            .user_errors
+            .as_ref()
+            .is_some_and(|e| !e.is_empty())
+        {
+            return Ok(false);
+        }
+        Ok(resp.migrate_app_module.migrated_app_module.unwrap_or(false))
+    }
+
+    pub async fn migrate_flow_extension(
+        &self,
+        api_key: &str,
+        registration_uuid: &str,
+    ) -> Result<bool, GraphqlRequestError> {
+        #[derive(Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct Inner {
+            migrated_flow_extension: Option<bool>,
+        }
+        #[derive(Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct Resp {
+            migrate_flow_extension: Inner,
+        }
+        let resp: Resp = self
+            .graphql
+            .query_with_variables(
+                MIGRATE_FLOW_EXTENSION_MUTATION,
+                Some(serde_json::json!({
+                    "apiKey": api_key,
+                    "registrationUuid": registration_uuid,
+                })),
+            )
+            .await?;
+        Ok(resp
+            .migrate_flow_extension
+            .migrated_flow_extension
+            .unwrap_or(false))
+    }
+
+    pub async fn migrate_to_ui_extension(
+        &self,
+        api_key: &str,
+        registration_uuid: &str,
+    ) -> Result<bool, GraphqlRequestError> {
+        #[derive(Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct Inner {
+            migrated_to_ui_extension: Option<bool>,
+        }
+        #[derive(Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct Resp {
+            migrate_to_ui_extension: Inner,
+        }
+        let resp: Resp = self
+            .graphql
+            .query_with_variables(
+                MIGRATE_TO_UI_EXTENSION_MUTATION,
+                Some(serde_json::json!({
+                    "apiKey": api_key,
+                    "registrationUuid": registration_uuid,
+                })),
+            )
+            .await?;
+        Ok(resp
+            .migrate_to_ui_extension
+            .migrated_to_ui_extension
+            .unwrap_or(false))
+    }
+
+    pub async fn convert_dev_to_test_store(
+        &self,
+        organization_id: i64,
+        shop_id: &str,
+    ) -> Result<bool, GraphqlRequestError> {
+        #[derive(Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct Inner {
+            converted_to_test_store: Option<bool>,
+        }
+        #[derive(Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct Resp {
+            convert_dev_to_test_store: Inner,
+        }
+        let resp: Resp = self
+            .graphql
+            .query_with_variables(
+                CONVERT_DEV_TO_TEST_STORE_MUTATION,
+                Some(serde_json::json!({
+                    "input": { "organizationID": organization_id, "shopId": shop_id }
+                })),
+            )
+            .await?;
+        Ok(resp
+            .convert_dev_to_test_store
+            .converted_to_test_store
+            .unwrap_or(false))
+    }
+
+    pub async fn app_preview_mode(&self, api_key: &str) -> Result<Option<bool>, GraphqlRequestError> {
+        #[derive(Deserialize)]
+        struct AppNode {
+            #[serde(rename = "developmentStorePreviewEnabled")]
+            enabled: Option<bool>,
+        }
+        #[derive(Deserialize)]
+        struct Resp {
+            app: Option<AppNode>,
+        }
+        let resp: Resp = self
+            .graphql
+            .query_with_variables(
+                FIND_APP_PREVIEW_MODE_QUERY,
+                Some(serde_json::json!({ "apiKey": api_key })),
+            )
+            .await?;
+        Ok(resp.app.and_then(|a| a.enabled))
+    }
+
+    pub async fn update_developer_preview(
+        &self,
+        api_key: &str,
+        enabled: bool,
+    ) -> Result<bool, GraphqlRequestError> {
+        #[derive(Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct Inner {
+            user_errors: Option<Vec<UserError>>,
+        }
+        #[derive(Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct Resp {
+            development_store_preview_update: Inner,
+        }
+        let resp: Resp = self
+            .graphql
+            .query_with_variables(
+                DEVELOPMENT_STORE_PREVIEW_UPDATE,
+                Some(serde_json::json!({
+                    "input": { "apiKey": api_key, "enabled": enabled }
+                })),
+            )
+            .await?;
+        Ok(resp
+            .development_store_preview_update
+            .user_errors
+            .as_ref()
+            .map(|e| e.is_empty())
+            .unwrap_or(true))
     }
 
     /// Poll the Partners app-logs HTTP endpoint.
@@ -1214,5 +1581,59 @@ mod tests {
             .unwrap();
         assert!(result.app_version.is_some());
         assert_eq!(result.app_version.unwrap().uuid, "ver-uuid");
+    }
+
+    #[tokio::test]
+    async fn migrate_app_module_succeeds() {
+        let mock_server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "data": {
+                    "migrateAppModule": {
+                        "migratedAppModule": true,
+                        "userErrors": []
+                    }
+                }
+            })))
+            .mount(&mock_server)
+            .await;
+        let client = mock_client(&mock_server);
+        assert!(client.migrate_app_module("k", "uuid", "payments_extension").await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn specifications_map_identifier() {
+        let mock_server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "data": {
+                    "extensionSpecifications": [
+                        { "name": "Theme", "identifier": "theme", "experience": "extension", "options": null }
+                    ]
+                }
+            })))
+            .mount(&mock_server)
+            .await;
+        let client = mock_client(&mock_server);
+        let specs = client.extension_specifications("k").await.unwrap();
+        assert_eq!(specs[0].identifier, "theme");
+    }
+
+    #[tokio::test]
+    async fn convert_dev_to_test_store_succeeds() {
+        let mock_server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "data": {
+                    "convertDevToTestStore": { "convertedToTestStore": true, "userErrors": [] }
+                }
+            })))
+            .mount(&mock_server)
+            .await;
+        let client = mock_client(&mock_server);
+        assert!(client.convert_dev_to_test_store(1, "shop-1").await.unwrap());
     }
 }

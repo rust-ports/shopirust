@@ -196,6 +196,24 @@ pub struct CreatedExtension {
     pub title: String,
 }
 
+/// Input for Partners `extensionUpdateDraft`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExtensionUpdateDraftInput {
+    pub api_key: String,
+    pub registration_id: String,
+    /// JSON object serialized as a string (upstream `JSON.stringify(config)`).
+    pub config: String,
+    pub context: Option<String>,
+    pub handle: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ExtensionUpdateDraftResult {
+    pub user_errors: Vec<UserError>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UserError {

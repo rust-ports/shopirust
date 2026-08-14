@@ -78,6 +78,11 @@ pub trait DeveloperPlatformClient: Send + Sync {
         &self,
         input: &crate::types::ExtensionCreateInput,
     ) -> Result<crate::types::CreatedExtension, CliApiError>;
+    /// Push a draft extension version (Partners `extensionUpdateDraft`).
+    async fn update_extension(
+        &self,
+        input: &crate::types::ExtensionUpdateDraftInput,
+    ) -> Result<crate::types::ExtensionUpdateDraftResult, CliApiError>;
     async fn deploy(&self, input: Value) -> Result<Value, CliApiError>;
     async fn release(
         &self,
@@ -140,6 +145,74 @@ pub trait DeveloperPlatformClient: Send + Sync {
         cursor: Option<&str>,
         filters: Option<&HashMap<String, String>>,
     ) -> Result<AppLogsFetchResult, CliApiError>;
+
+    async fn migrate_app_module(
+        &self,
+        _api_key: &str,
+        _registration_id: &str,
+        _type_name: &str,
+    ) -> Result<bool, CliApiError> {
+        Err(CliApiError::unsupported(
+            self.client_name().as_str(),
+            "migrate_app_module",
+        ))
+    }
+
+    async fn migrate_flow_extension(
+        &self,
+        _api_key: &str,
+        _registration_id: &str,
+    ) -> Result<bool, CliApiError> {
+        Err(CliApiError::unsupported(
+            self.client_name().as_str(),
+            "migrate_flow_extension",
+        ))
+    }
+
+    async fn migrate_to_ui_extension(
+        &self,
+        _api_key: &str,
+        _registration_id: &str,
+    ) -> Result<bool, CliApiError> {
+        Err(CliApiError::unsupported(
+            self.client_name().as_str(),
+            "migrate_to_ui_extension",
+        ))
+    }
+
+    async fn convert_to_transfer_disabled_store(
+        &self,
+        _organization_id: &str,
+        _shop_id: &str,
+    ) -> Result<bool, CliApiError> {
+        Err(CliApiError::unsupported(
+            self.client_name().as_str(),
+            "convert_to_transfer_disabled_store",
+        ))
+    }
+
+    async fn update_developer_preview(
+        &self,
+        _api_key: &str,
+        _enabled: bool,
+    ) -> Result<bool, CliApiError> {
+        Err(CliApiError::unsupported(
+            self.client_name().as_str(),
+            "update_developer_preview",
+        ))
+    }
+
+    async fn app_preview_mode(&self, _api_key: &str) -> Result<Option<bool>, CliApiError> {
+        Ok(None)
+    }
+
+    async fn app_install_count(&self, _api_key: &str) -> Result<Option<u64>, CliApiError> {
+        Ok(None)
+    }
+
+    fn get_create_dev_store_link(&self, organization_id: &str) -> String {
+        format!("https://partners.shopify.com/{organization_id}/stores/new")
+    }
 }
 
 /// Options for selecting which developer-platform client to use.
@@ -325,6 +398,14 @@ mod tests {
                 title: input.title.clone(),
             })
         }
+        async fn update_extension(
+            &self,
+            _: &crate::types::ExtensionUpdateDraftInput,
+        ) -> Result<crate::types::ExtensionUpdateDraftResult, CliApiError> {
+            Ok(crate::types::ExtensionUpdateDraftResult {
+                user_errors: vec![],
+            })
+        }
         async fn deploy(&self, _: Value) -> Result<Value, CliApiError> {
             Ok(Value::Null)
         }
@@ -466,5 +547,16 @@ mod tests {
         let clients = all_developer_platform_clients(Some(partners()), app_mgmt(), true);
         assert_eq!(clients.len(), 1);
         assert_eq!(clients[0].client_name(), ClientName::AppManagement);
+    }
+
+    #[tokio::test]
+    async fn default_migrate_is_unsupported_on_stub() {
+        let client = app_mgmt();
+        let err = client
+            .migrate_app_module("k", "id", "payments_extension")
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("migrate_app_module"));
+        assert!(client.get_create_dev_store_link("1").contains("partners.shopify.com"));
     }
 }

@@ -82,6 +82,20 @@ query ListAppDevStores($searchTerm: String) {
 }
 "#;
 
+const CREATE_APP_DEVELOPMENT_STORE_MUTATION: &str = r#"
+mutation CreateAppDevelopmentStore($shopName: String!, $priceLookupKey: String!, $prepopulateTestData: Boolean) {
+  createAppDevelopmentStore(
+    shopName: $shopName
+    priceLookupKey: $priceLookupKey
+    prepopulateTestData: $prepopulateTestData
+  ) {
+    shopAdminUrl
+    shopDomain
+    userErrors { code field message }
+  }
+}
+"#;
+
 const FETCH_STORE_BY_DOMAIN_QUERY: &str = r#"
 query FetchStoreByDomain($domain: String, $filters: [ShopFilterInput!]) {
   organization {
@@ -433,6 +447,26 @@ impl BusinessPlatformClient {
             )
             .await?;
         parse_org_shops(resp)
+    }
+
+    pub async fn create_app_development_store(
+        &self,
+        organization_id: &str,
+        shop_name: &str,
+    ) -> Result<serde_json::Value, GraphqlRequestError> {
+        let vars = serde_json::json!({
+            "shopName": shop_name,
+            "priceLookupKey": "SHOPIFY_PLUS_APP_DEVELOPMENT",
+            "prepopulateTestData": false,
+        });
+        self.organizations_request(
+            organization_id,
+            CREATE_APP_DEVELOPMENT_STORE_MUTATION,
+            Some(vars),
+            None,
+            None,
+        )
+        .await
     }
 
     /// Find a store by domain, filtered by store type (`app_development`, `production`, …).
