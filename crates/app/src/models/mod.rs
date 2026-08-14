@@ -1,9 +1,11 @@
 pub mod app;
 pub mod config_file_naming;
+pub mod error_parsing;
 pub mod extensions;
 pub mod identifiers;
 pub mod loader;
 pub mod project;
+pub mod validation;
 
 pub use app::{AppConfiguration, AppHiddenConfig, BuildConfig};
 pub use config_file_naming::{

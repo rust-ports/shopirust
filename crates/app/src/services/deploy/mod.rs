@@ -2,6 +2,7 @@ pub mod upload;
 
 use crate::error::AppError;
 use crate::models::extensions::ExtensionInstance;
+use crate::validations::{validate_message, validate_version};
 use crate::prompts::deploy_release::{
     deploy_or_release_confirmation_prompt, DeployConfirmOptions,
 };
@@ -51,6 +52,8 @@ pub async fn deploy(
     options: DeployOptions,
     prompter: Option<&dyn Prompter>,
 ) -> Result<DeployResult, AppError> {
+    validate_version(options.version.as_deref())?;
+    validate_message(options.message.as_deref())?;
     import_extensions_if_needed(ctx, client, prompter).await?;
 
     let ids = ensure_deployment_ids_presence(
@@ -407,5 +410,60 @@ mod tests {
     #[test]
     fn confirm_deploy_force_skips() {
         assert!(should_skip_confirmation_prompt(&opts(false, false, true, false), &with_updates()).unwrap());
+    }
+
+    #[test]
+    fn rejects_invalid_version_name() {
+        use crate::test_support::{sample_org_app, MockClient};
+        use crate::services::context::LinkedAppContext;
+        use crate::models::loader::LoadedApp;
+        use std::path::PathBuf;
+
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let err = rt.block_on(async {
+            let client = MockClient::with_app(sample_org_app("k"));
+            let ctx = LinkedAppContext {
+                app: LoadedApp {
+                    directory: PathBuf::from("."),
+                    configuration_path: PathBuf::from("shopify.app.toml"),
+                    configuration: Default::default(),
+                    hidden_config: Default::default(),
+                    extensions: vec![],
+                    webs: vec![],
+                    identifiers: Default::default(),
+                    name: "Demo".into(),
+                    errors: vec![],
+                    dev_application_urls: None,
+                },
+                remote_app: sample_org_app("k"),
+                organization: cli_api::Organization {
+                    id: "org-1".into(),
+                    business_name: "Acme".into(),
+                    source: cli_api::OrganizationSource::BusinessPlatform,
+                },
+            };
+            super::deploy(
+                &ctx,
+                &client,
+                super::DeployOptions {
+                    message: None,
+                    version: Some("bad version!".into()),
+                    no_build: true,
+                    no_release: true,
+                    allow_updates: true,
+                    allow_deletes: true,
+                    force: true,
+                    is_tty: false,
+                    source_control_url: None,
+                },
+                None,
+            )
+            .await
+        })
+        .unwrap_err();
+        assert!(err.to_string().contains("Invalid version"));
     }
 }

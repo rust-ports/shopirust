@@ -6,6 +6,8 @@ use crate::models::extensions::specification::{
 use std::sync::OnceLock;
 
 mod admin_link;
+mod channel_config;
+mod checkout_post_purchase;
 mod app_config_app_access;
 mod app_config_app_home;
 mod app_config_app_proxy;
@@ -17,8 +19,11 @@ mod app_config_webhook;
 mod checkout_ui;
 mod editor_extension_collection;
 mod flow_action;
+mod flow_trigger;
 mod function;
 mod payments;
+mod pos_ui_extension;
+mod product_subscription;
 mod tax_calculation;
 mod theme;
 mod ui_extension;
@@ -131,43 +136,9 @@ fn all_specs() -> &'static [ExtensionSpecification] {
         let mut webhook_sub = config_spec("webhook_subscription");
         webhook_sub.uid_strategy = UidStrategy::Dynamic;
 
-        let mut channel = ext_spec(
-            "channel_config",
-            None,
-            vec![],
-            &[],
-            1,
-            Some("Channels"),
-            "admin",
-        );
-        channel.uid_strategy = UidStrategy::Single;
-
-        let mut order_attr = ext_spec(
-            "order_attribution_config",
-            None,
-            vec![],
-            &[],
-            1,
-            None,
-            "admin",
-        );
-        order_attr.uid_strategy = UidStrategy::Single;
-
-        let mut product_sub = ext_spec(
-            "product_subscription",
-            None,
-            vec![
-                ExtensionFeature::UiPreview,
-                ExtensionFeature::Esbuild,
-                ExtensionFeature::SingleJsEntryPath,
-            ],
-            &["subscription_management"],
-            1,
-            Some("Checkout"),
-            "admin",
-        );
-        product_sub.graph_ql_type = Some("subscription_management".into());
-        product_sub.dependency = Some("@shopify/admin-ui-extensions".into());
+        let channel = channel_config::channel_config_specification();
+        let order_attr = channel_config::order_attribution_config_specification();
+        let product_sub = product_subscription::product_subscription_specification();
 
         let mut checkout_ui = ext_spec(
             "checkout_ui_extension",
@@ -186,36 +157,8 @@ fn all_specs() -> &'static [ExtensionSpecification] {
         );
         checkout_ui.dependency = Some("@shopify/checkout-ui-extensions".into());
 
-        let mut post_purchase = ext_spec(
-            "checkout_post_purchase",
-            Some("post_purchase"),
-            vec![
-                ExtensionFeature::UiPreview,
-                ExtensionFeature::CartUrl,
-                ExtensionFeature::Esbuild,
-                ExtensionFeature::SingleJsEntryPath,
-            ],
-            &[],
-            1,
-            Some("Checkout"),
-            "post_purchase",
-        );
-        post_purchase.dependency = Some("@shopify/post-purchase-ui-extensions".into());
-
-        let mut pos_ui = ext_spec(
-            "pos_ui_extension",
-            None,
-            vec![
-                ExtensionFeature::UiPreview,
-                ExtensionFeature::Esbuild,
-                ExtensionFeature::SingleJsEntryPath,
-            ],
-            &[],
-            50,
-            Some("Point of Sale"),
-            "pos",
-        );
-        pos_ui.dependency = Some("@shopify/retail-ui-extensions".into());
+        let post_purchase = checkout_post_purchase::checkout_post_purchase_specification();
+        let pos_ui = pos_ui_extension::pos_ui_extension_specification();
 
         let mut web_pixel = ext_spec(
             "web_pixel_extension",
@@ -253,16 +196,8 @@ fn all_specs() -> &'static [ExtensionSpecification] {
                 "admin",
             ),
             ext_spec("flow_action", None, vec![], &[], 50, Some("Flow"), "admin"),
-            ext_spec(
-                "flow_template",
-                None,
-                vec![ExtensionFeature::UiPreview],
-                &[],
-                50,
-                Some("Flow"),
-                "admin",
-            ),
-            ext_spec("flow_trigger", None, vec![], &[], 50, Some("Flow"), "admin"),
+            flow_trigger::flow_template_specification(),
+            flow_trigger::flow_trigger_specification(),
             function_specification(),
             ext_spec(
                 "payments_extension",

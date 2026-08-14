@@ -1,6 +1,8 @@
 use crate::error::AppError;
 use crate::models::extensions::deploy::DeployConfigContext;
-use crate::models::extensions::specification::{ExtensionFeature, ExtensionSpecification};
+use crate::models::extensions::specification::{
+    ExtensionFeature, ExtensionSpecification, UidStrategy,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -78,6 +80,31 @@ impl ExtensionInstance {
     /// Upstream `isPreviewable` — UI extensions served by the extension preview server.
     pub fn is_previewable(&self) -> bool {
         self.is_ui_extension()
+    }
+
+    /// UUID-strategy extensions (and app_access) can be pushed as Partners drafts.
+    pub fn is_uuid_strategy_extension(&self) -> bool {
+        matches!(self.specification.uid_strategy, UidStrategy::Uuid)
+    }
+
+    /// Upstream `draftableExtensions` membership.
+    pub fn is_draftable(&self) -> bool {
+        self.is_uuid_strategy_extension() || self.specification.identifier == "app_access"
+    }
+
+    pub fn is_app_config_extension(&self) -> bool {
+        self.specification.is_app_config()
+    }
+
+    pub fn has_esbuild_feature(&self) -> bool {
+        self.specification
+            .features
+            .contains(&ExtensionFeature::Esbuild)
+    }
+
+    /// GraphQL `context` for draft/create (first targeting target).
+    pub fn context_value(&self) -> Option<String> {
+        self.extension_point_targets().into_iter().next()
     }
 
     pub fn surface(&self) -> &str {
@@ -373,5 +400,142 @@ mod tests {
         );
         assert_eq!(ext.bundle_url(), "dist/theme/my-theme-ext");
         assert!(ext.is_theme_extension());
+        assert!(ext.is_draftable());
+        assert!(ext.is_uuid_strategy_extension());
+        assert!(!ext.is_previewable());
+        assert!(!ext.has_esbuild_feature());
+        assert!(!ext.is_app_config_extension());
+    }
+
+    #[test]
+    fn ui_extension_is_previewable_and_draftable() {
+        let spec = create_extension_specification("ui_extension").unwrap();
+        let mut cfg = HashMap::new();
+        cfg.insert(
+            "targeting".into(),
+            serde_json::json!([{ "target": "purchase.checkout.block.render" }]),
+        );
+        let ext = ExtensionInstance::new(
+            "checkout-ui",
+            PathBuf::from("extensions/checkout-ui"),
+            PathBuf::from("extensions/checkout-ui/shopify.extension.toml"),
+            cfg,
+            spec,
+        );
+        assert!(ext.is_previewable());
+        assert!(ext.is_draftable());
+        assert_eq!(
+            ext.context_value().as_deref(),
+            Some("purchase.checkout.block.render")
+        );
+    }
+
+    #[test]
+    fn function_output_path_defaults() {
+        let spec = create_extension_specification("function").unwrap();
+        let ext = ExtensionInstance::new(
+            "discount",
+            PathBuf::from("extensions/discount"),
+            PathBuf::from("extensions/discount/shopify.extension.toml"),
+            HashMap::new(),
+            spec,
+        );
+        assert!(ext.is_function_extension());
+        assert!(ext.is_draftable());
+        assert_eq!(
+            ext.function_output_path(),
+            PathBuf::from("extensions/discount/dist/index.wasm")
+        );
+        assert_eq!(ext.output_file_name(), "discount.js");
+    }
+
+    #[test]
+    fn watched_files_includes_toml() {
+        let spec = create_extension_specification("theme").unwrap();
+        let toml = PathBuf::from("extensions/my-theme-ext/shopify.extension.toml");
+        let ext = ExtensionInstance::new(
+            "my-theme-ext",
+            PathBuf::from("extensions/my-theme-ext"),
+            toml.clone(),
+            HashMap::new(),
+            spec,
+        );
+        let files = ext.watched_files();
+        assert!(files.contains(&toml));
+    }
+
+    #[test]
+    fn ensure_dev_uuid_is_stable() {
+        let spec = create_extension_specification("ui_extension").unwrap();
+        let mut ext = ExtensionInstance::new(
+            "ui",
+            PathBuf::from("extensions/ui"),
+            PathBuf::from("extensions/ui/shopify.extension.toml"),
+            HashMap::new(),
+            spec,
+        );
+        ext.uid = Some("fixed-uid".into());
+        let first = ext.ensure_dev_uuid().to_string();
+        let second = ext.ensure_dev_uuid().to_string();
+        assert_eq!(first, "dev-fixed-uid");
+        assert_eq!(first, second);
+    }
+
+    #[test]
+    fn config_module_is_not_draftable() {
+        let spec = create_extension_specification("branding").unwrap();
+        let ext = ExtensionInstance::new(
+            "branding",
+            PathBuf::from("."),
+            PathBuf::from("shopify.app.toml"),
+            HashMap::new(),
+            spec,
+        );
+        assert!(ext.is_app_config_extension());
+        assert!(!ext.is_draftable());
+        assert!(!ext.is_previewable());
+    }
+
+    #[test]
+    fn checkout_ui_has_esbuild_and_cart_url() {
+        let spec = create_extension_specification("checkout_ui_extension").unwrap();
+        let ext = ExtensionInstance::new(
+            "checkout-ui",
+            PathBuf::from("extensions/checkout-ui"),
+            PathBuf::from("extensions/checkout-ui/shopify.extension.toml"),
+            HashMap::new(),
+            spec,
+        );
+        assert!(ext.has_esbuild_feature());
+        assert!(ext.is_previewable());
+        assert!(ext.is_draftable());
+    }
+
+    #[test]
+    fn post_purchase_is_previewable() {
+        let spec = create_extension_specification("checkout_post_purchase").unwrap();
+        let ext = ExtensionInstance::new(
+            "post-purchase",
+            PathBuf::from("extensions/pp"),
+            PathBuf::from("extensions/pp/shopify.extension.toml"),
+            HashMap::new(),
+            spec,
+        );
+        assert!(ext.is_previewable());
+        assert_eq!(ext.output_file_name(), "post-purchase.js");
+    }
+
+    #[test]
+    fn payments_is_uuid_strategy() {
+        let spec = create_extension_specification("payments_extension").unwrap();
+        let ext = ExtensionInstance::new(
+            "offsite",
+            PathBuf::from("extensions/offsite"),
+            PathBuf::from("extensions/offsite/shopify.extension.toml"),
+            HashMap::new(),
+            spec,
+        );
+        assert!(ext.is_uuid_strategy_extension());
+        assert!(!ext.is_function_extension());
     }
 }

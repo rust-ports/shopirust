@@ -277,4 +277,26 @@ mod tests {
         );
         assert_eq!(client.created_extensions.lock().unwrap().len(), 1);
     }
+
+    #[test]
+    fn match_by_handle_and_uuid() {
+        use crate::services::context::id_matching::{automatic_matchmaking, LocalSource, RemoteSource};
+        let local = vec![LocalSource {
+            local_identifier: "offsite".into(),
+            handle: "offsite".into(),
+            graph_ql_type: "payments_extension".into(),
+            external_type: "payments_extension".into(),
+            type_name: "payments_extension".into(),
+            uid: Some("uid-1".into()),
+        }];
+        let remote = vec![RemoteSource {
+            uuid: "uid-1".into(),
+            id: "uid-1".into(),
+            title: "Offsite".into(),
+            type_name: "payments_extension".into(),
+        }];
+        let matched = automatic_matchmaking(&local, &remote, &HashMap::new(), true);
+        assert_eq!(matched.identifiers.get("offsite").map(String::as_str), Some("uid-1"));
+        assert!(matched.to_create.is_empty());
+    }
 }

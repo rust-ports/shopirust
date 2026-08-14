@@ -2,6 +2,7 @@ pub mod version_diff;
 
 use crate::error::AppError;
 use crate::services::context::LinkedAppContext;
+use crate::validations::validate_version;
 use crate::services::release::version_diff::version_diff_by_version;
 use cli_api::{
     AppVersionIdentifiers, DeveloperPlatformClient, MinimalAppIdentifiers, MinimalOrganizationApp,
@@ -33,6 +34,7 @@ pub async fn release_version(
     client: &dyn DeveloperPlatformClient,
     options: ReleaseOptions,
 ) -> Result<ReleaseResult, AppError> {
+    validate_version(Some(&options.version))?;
     let remote = &ctx.remote_app;
     let minimal = MinimalOrganizationApp {
         identifiers: MinimalAppIdentifiers {

@@ -47,10 +47,29 @@ pub struct ImportCustomDataResult {
     pub toml_content: String,
 }
 
+/// Reserved / valid metafield namespace (`custom`, `$app`, `$app:…`).
+pub fn is_valid_dcdd_namespace(namespace: &str) -> bool {
+    if namespace == "$app" || namespace.starts_with("$app:") {
+        return true;
+    }
+    !namespace.is_empty()
+        && namespace
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+}
+
 /// Convert store metafield/metaobject definitions into TOML fragments and merge into app config.
 pub fn import_custom_data_definitions(
     options: ImportCustomDataOptions,
 ) -> Result<ImportCustomDataResult, AppError> {
+    for mf in &options.metafields {
+        if !is_valid_dcdd_namespace(&mf.namespace) {
+            return Err(AppError::message(format!(
+                "Invalid metafield namespace: {}",
+                mf.namespace
+            )));
+        }
+    }
     let existing = if options.configuration_path.exists() {
         fs::read_to_string(&options.configuration_path)?
     } else {
@@ -353,5 +372,14 @@ mod tests {
         assert_eq!(mf[0].owner_type, "product");
         assert_eq!(mo.len(), 1);
         assert_eq!(mo[0].fields.len(), 1);
+    }
+
+    #[test]
+    fn namespace_rules() {
+        assert!(is_valid_dcdd_namespace("custom"));
+        assert!(is_valid_dcdd_namespace("$app"));
+        assert!(is_valid_dcdd_namespace("$app:reviews"));
+        assert!(!is_valid_dcdd_namespace("bad namespace"));
+        assert!(!is_valid_dcdd_namespace(""));
     }
 }

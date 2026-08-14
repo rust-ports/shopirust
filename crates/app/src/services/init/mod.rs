@@ -1,6 +1,9 @@
 //! App scaffolding: clone a GitHub template and render Liquid placeholders.
 
+pub mod cleanup;
+pub mod npm;
 pub mod templates;
+pub mod validate;
 
 use crate::error::AppError;
 use crate::services::dependencies::install_app_dependencies;

@@ -7,6 +7,7 @@ pub mod models;
 pub mod prompts;
 pub mod services;
 pub mod utilities;
+pub mod validations;
 
 pub use error::AppError;
 pub use models::loader::{load_app, LoadAppOptions, LoadedApp};

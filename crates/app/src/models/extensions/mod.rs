@@ -4,6 +4,7 @@ pub mod schemas;
 pub mod specification;
 pub mod specifications;
 pub mod transform;
+pub mod type_generation;
 
 pub use deploy::{AppDevUrls, AppProxyUrls, DeployConfigContext};
 pub use extension_instance::{ExtensionInstance, FunctionTargeting};

@@ -23,6 +23,13 @@ pub struct LoadAppOptions {
     pub ignore_unknown_extensions: bool,
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct WebCommands {
+    pub dev: Option<String>,
+    pub build: Option<String>,
+    pub predev: Option<String>,
+}
+
 #[derive(Debug, Clone)]
 pub struct WebInstance {
     pub directory: PathBuf,
@@ -32,6 +39,8 @@ pub struct WebInstance {
     pub auth_callback_path: Vec<String>,
     pub webhooks_path: Option<String>,
     pub port: Option<u16>,
+    pub commands: WebCommands,
+    pub hmr_server: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -799,6 +808,11 @@ fn parse_web(directory: &Path, configuration_path: &Path) -> Result<WebInstance,
             .and_then(|i| u16::try_from(i).ok())
             .or_else(|| v.as_str().and_then(|s| s.parse().ok()))
     });
+    let commands = parse_web_commands(&value);
+    let hmr_server = value
+        .get("hmr_server")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
     Ok(WebInstance {
         directory: directory.to_path_buf(),
         configuration_path: configuration_path.to_path_buf(),
@@ -807,7 +821,26 @@ fn parse_web(directory: &Path, configuration_path: &Path) -> Result<WebInstance,
         auth_callback_path,
         webhooks_path,
         port,
+        commands,
+        hmr_server,
     })
+}
+
+pub fn parse_web_commands(value: &toml::Value) -> WebCommands {
+    let Some(table) = value.get("commands").and_then(|v| v.as_table()) else {
+        return WebCommands::default();
+    };
+    WebCommands {
+        dev: table.get("dev").and_then(|v| v.as_str()).map(str::to_string),
+        build: table
+            .get("build")
+            .and_then(|v| v.as_str())
+            .map(str::to_string),
+        predev: table
+            .get("predev")
+            .and_then(|v| v.as_str())
+            .map(str::to_string),
+    }
 }
 
 fn parse_auth_callback_path(value: Option<&toml::Value>) -> Vec<String> {
@@ -1606,5 +1639,105 @@ uri = "/hooks"
                 .and_then(|b| b.include_config_on_deploy),
             Some(false)
         );
+    }
+
+    #[test]
+    fn unknown_extension_type_is_soft_error_when_not_ignored() {
+        let dir = tempdir().unwrap();
+        write_app(
+            dir.path(),
+            "name = \"Demo\"\napplication_url = \"https://e.com\"\n",
+        );
+        let ext = dir.path().join("extensions/weird");
+        fs::create_dir_all(&ext).unwrap();
+        fs::write(
+            ext.join("shopify.extension.toml"),
+            "type = \"not_a_real_spec\"\nhandle = \"weird\"\n",
+        )
+        .unwrap();
+        let app = load_app(LoadAppOptions {
+            directory: dir.path().to_path_buf(),
+            config_name: None,
+            ignore_unknown_extensions: false,
+        })
+        .unwrap();
+        assert!(app.errors.iter().any(|e| e.contains("not_a_real_spec") || e.contains("Unknown")));
+    }
+
+    #[test]
+    fn workspace_nested_app_is_not_loaded_as_extension() {
+        let dir = tempdir().unwrap();
+        write_app(
+            dir.path(),
+            "name = \"Root\"\napplication_url = \"https://e.com\"\n",
+        );
+        let nested = dir.path().join("packages/nested");
+        fs::create_dir_all(&nested).unwrap();
+        fs::write(
+            nested.join("shopify.app.toml"),
+            "name = \"Nested\"\napplication_url = \"https://nested.example\"\n",
+        )
+        .unwrap();
+        let app = load_app(LoadAppOptions {
+            directory: dir.path().to_path_buf(),
+            config_name: None,
+            ignore_unknown_extensions: true,
+        })
+        .unwrap();
+        assert_eq!(app.name, "Root");
+        assert!(!app.extensions.iter().any(|e| e.handle == "nested"));
+    }
+
+    #[test]
+    fn loads_web_commands_and_hmr() {
+        let dir = tempdir().unwrap();
+        write_app(
+            dir.path(),
+            "name = \"Demo\"\napplication_url = \"https://e.com\"\n",
+        );
+        let web = dir.path().join("web");
+        fs::create_dir_all(&web).unwrap();
+        fs::write(
+            web.join("shopify.web.toml"),
+            r#"
+roles = ["frontend"]
+hmr_server = true
+[commands]
+dev = "npm run dev"
+predev = "npm run build"
+"#,
+        )
+        .unwrap();
+        let app = load_app(LoadAppOptions {
+            directory: dir.path().to_path_buf(),
+            config_name: None,
+            ignore_unknown_extensions: true,
+        })
+        .unwrap();
+        assert_eq!(app.webs.len(), 1);
+        assert_eq!(app.webs[0].commands.dev.as_deref(), Some("npm run dev"));
+        assert_eq!(app.webs[0].commands.predev.as_deref(), Some("npm run build"));
+        assert!(app.webs[0].hmr_server);
+    }
+
+    #[test]
+    fn multi_config_explicit_file() {
+        let dir = tempdir().unwrap();
+        write_app(
+            dir.path(),
+            "name = \"Default\"\napplication_url = \"https://e.com\"\n",
+        );
+        fs::write(
+            dir.path().join("shopify.app.staging.toml"),
+            "name = \"Staging\"\napplication_url = \"https://staging.example\"\n",
+        )
+        .unwrap();
+        let app = load_app(LoadAppOptions {
+            directory: dir.path().to_path_buf(),
+            config_name: Some("staging".into()),
+            ignore_unknown_extensions: true,
+        })
+        .unwrap();
+        assert_eq!(app.name, "Staging");
     }
 }

@@ -21,9 +21,13 @@ pub struct MockClient {
     pub templates: Vec<ExtensionTemplate>,
     /// When false, mimics Partners (`create_extension` instead of atomic deploy).
     pub atomic: bool,
+    /// Override `supports_dev_sessions` (defaults to `atomic`).
+    pub dev_sessions: Option<bool>,
     pub update_urls_calls: Mutex<Vec<Value>>,
     pub update_urls_user_errors: Vec<String>,
     pub created_extensions: Mutex<Vec<cli_api::ExtensionCreateInput>>,
+    pub updated_extensions: Mutex<Vec<cli_api::ExtensionUpdateDraftInput>>,
+    pub update_errors: Vec<String>,
     pub signed_upload_url: Option<String>,
     pub deploy_calls: Mutex<Vec<Value>>,
 }
@@ -92,7 +96,7 @@ impl DeveloperPlatformClient for MockClient {
         self.atomic
     }
     fn supports_dev_sessions(&self) -> bool {
-        true
+        self.dev_sessions.unwrap_or(self.atomic)
     }
     fn supports_store_search(&self) -> bool {
         true
@@ -242,6 +246,22 @@ impl DeveloperPlatformClient for MockClient {
             title: input.title.clone(),
         })
     }
+    async fn update_extension(
+        &self,
+        input: &cli_api::ExtensionUpdateDraftInput,
+    ) -> Result<cli_api::ExtensionUpdateDraftResult, CliApiError> {
+        self.updated_extensions.lock().unwrap().push(input.clone());
+        Ok(cli_api::ExtensionUpdateDraftResult {
+            user_errors: self
+                .update_errors
+                .iter()
+                .map(|m| cli_api::UserError {
+                    field: None,
+                    message: m.clone(),
+                })
+                .collect(),
+        })
+    }
     async fn deploy(&self, input: Value) -> Result<Value, CliApiError> {
         self.deploy_calls.lock().unwrap().push(input);
         Ok(Value::Null)
@@ -319,5 +339,26 @@ impl DeveloperPlatformClient for MockClient {
             cursor: None,
             errors: vec![],
         })
+    }
+    async fn migrate_app_module(
+        &self,
+        _: &str,
+        _: &str,
+        _: &str,
+    ) -> Result<bool, CliApiError> {
+        Ok(true)
+    }
+    async fn migrate_flow_extension(&self, _: &str, _: &str) -> Result<bool, CliApiError> {
+        Ok(true)
+    }
+    async fn migrate_to_ui_extension(&self, _: &str, _: &str) -> Result<bool, CliApiError> {
+        Ok(true)
+    }
+    async fn convert_to_transfer_disabled_store(
+        &self,
+        _: &str,
+        _: &str,
+    ) -> Result<bool, CliApiError> {
+        Ok(true)
     }
 }

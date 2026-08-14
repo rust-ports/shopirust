@@ -2,6 +2,11 @@
 
 pub mod app_events;
 pub mod extension;
+pub mod fetch_extensions;
+pub mod format_config_info;
+pub mod migrate;
+pub mod select_store;
+pub mod update_extension;
 pub mod mkcert;
 pub mod notify;
 pub mod port_warnings;
