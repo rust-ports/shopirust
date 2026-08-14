@@ -2,7 +2,7 @@ use assert_cmd::Command;
 use predicates::prelude::*;
 
 fn cli() -> Command {
-    Command::cargo_bin("cli-kit").unwrap()
+    Command::cargo_bin("shopify").unwrap()
 }
 
 #[test]

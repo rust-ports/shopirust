@@ -30,18 +30,85 @@ impl CloudflareTunnel {
         }
     }
 
-    fn bin_path() -> Result<String, TunnelError> {
+    async fn bin_path() -> Result<String, TunnelError> {
         if let Ok(path) = std::env::var("SHOPIFY_CLI_CLOUDFLARED_PATH") {
             if !path.is_empty() {
                 return Ok(path);
             }
         }
-        which_cloudflared().ok_or(TunnelError::CloudflaredMissing)
+        if let Some(path) = which_cloudflared() {
+            return Ok(path);
+        }
+        let dest = default_install_path()?;
+        if dest.is_file() {
+            return Ok(dest.display().to_string());
+        }
+        download_cloudflared(&dest).await?;
+        Ok(dest.display().to_string())
     }
 
     fn tunnel_domain() -> String {
         std::env::var("SHOPIFY_CLI_CLOUDFLARED_DOMAIN").unwrap_or_else(|_| DEFAULT_DOMAIN.into())
     }
+}
+
+pub const CLOUDFLARED_VERSION: &str = "2024.8.3";
+pub const CLOUDFLARED_REPO: &str = "cloudflare/cloudflared";
+
+pub fn cloudflared_asset_name(os: &str, arch: &str) -> Option<&'static str> {
+    match (os, arch) {
+        ("linux", "x86_64") => Some("cloudflared-linux-amd64"),
+        ("linux", "aarch64") => Some("cloudflared-linux-arm64"),
+        ("macos" | "darwin", "aarch64") => Some("cloudflared-darwin-arm64.tgz"),
+        ("macos" | "darwin", _) => Some("cloudflared-darwin-amd64.tgz"),
+        ("windows", _) => Some("cloudflared-windows-amd64.exe"),
+        _ => None,
+    }
+}
+
+pub fn github_release_url(os: &str, arch: &str) -> Option<String> {
+    let asset = cloudflared_asset_name(os, arch)?;
+    Some(format!(
+        "https://github.com/{CLOUDFLARED_REPO}/releases/download/{CLOUDFLARED_VERSION}/{asset}"
+    ))
+}
+
+fn default_install_path() -> Result<std::path::PathBuf, TunnelError> {
+    let home = dirs::home_dir().ok_or_else(|| TunnelError::message("no home directory"))?;
+    let dir = home.join(".shopify");
+    std::fs::create_dir_all(&dir).map_err(|e| TunnelError::message(e.to_string()))?;
+    let name = if cfg!(windows) {
+        "cloudflared.exe"
+    } else {
+        "cloudflared"
+    };
+    Ok(dir.join(name))
+}
+
+async fn download_cloudflared(target: &std::path::Path) -> Result<(), TunnelError> {
+    let url = github_release_url(std::env::consts::OS, std::env::consts::ARCH)
+        .ok_or_else(|| TunnelError::message("unsupported platform for cloudflared"))?;
+    let bytes = reqwest::get(&url)
+        .await
+        .map_err(|e| TunnelError::message(format!("Failed to download cloudflared: {e}")))?
+        .bytes()
+        .await
+        .map_err(|e| TunnelError::message(format!("Failed to read cloudflared download: {e}")))?;
+    if let Some(parent) = target.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| TunnelError::message(e.to_string()))?;
+    }
+    std::fs::write(target, &bytes).map_err(|e| TunnelError::message(e.to_string()))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = std::fs::metadata(target)
+            .map_err(|e| TunnelError::message(e.to_string()))?
+            .permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(target, perms)
+            .map_err(|e| TunnelError::message(e.to_string()))?;
+    }
+    Ok(())
 }
 
 fn which_cloudflared() -> Option<String> {
@@ -152,7 +219,7 @@ impl TunnelClient for CloudflareTunnel {
         }
         *self.status.lock().unwrap() = TunnelStatus::Starting;
 
-        let bin = Self::bin_path()?;
+        let bin = Self::bin_path().await?;
         let domain = Self::tunnel_domain();
         let url_arg = format!("http://localhost:{}", self.port);
         let args = ["tunnel", "--url", &url_arg, "--no-autoupdate"];
@@ -226,5 +293,31 @@ impl TunnelClient for CloudflareTunnel {
             let _ = child.wait().await;
         }
         *self.status.lock().unwrap() = TunnelStatus::NotStarted;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn asset_names() {
+        assert_eq!(
+            cloudflared_asset_name("linux", "x86_64"),
+            Some("cloudflared-linux-amd64")
+        );
+        assert!(github_release_url("linux", "x86_64")
+            .unwrap()
+            .contains("cloudflare/cloudflared"));
+        assert!(cloudflared_asset_name("plan9", "x86").is_none());
+    }
+
+    #[test]
+    fn find_url_from_log_line() {
+        let line = "INF |  https://abc.trycloudflare.com ";
+        assert_eq!(
+            find_url(line, "trycloudflare.com").as_deref(),
+            Some("https://abc.trycloudflare.com")
+        );
     }
 }

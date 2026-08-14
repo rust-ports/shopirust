@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::path::Path;
 
 pub fn is_terminal_interactive() -> bool {
     is_terminal::is_terminal(std::io::stdout()) && !is_dumb_terminal()
@@ -132,6 +133,38 @@ fn is_truthy(variable: &str) -> bool {
     matches!(variable, "1" | "true" | "TRUE" | "yes" | "YES")
 }
 
+/// Load `.env` from `directory` (or cwd) and export keys that are not already set.
+/// Returns the parsed map (including pre-existing env values that were not overwritten).
+pub fn load_environment(directory: Option<&Path>) -> HashMap<String, String> {
+    let dir = directory
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| Path::new(".").to_path_buf()));
+    let path = dir.join(".env");
+    let mut out = HashMap::new();
+    let Ok(raw) = std::fs::read_to_string(path) else {
+        return out;
+    };
+    for line in raw.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let Some((key, value)) = line.split_once('=') else {
+            continue;
+        };
+        let key = key.trim();
+        let value = value.trim().trim_matches('"').trim_matches('\'').to_string();
+        if key.is_empty() {
+            continue;
+        }
+        out.insert(key.to_string(), value.clone());
+        if std::env::var(key).is_err() {
+            std::env::set_var(key, value);
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -254,5 +287,22 @@ mod tests {
         env.insert("CODESPACE_NAME".into(), "my-codespace".into());
         assert_eq!(codespace_name(Some(&env)), Some("my-codespace".into()));
         assert!(codespace_name(None).is_none());
+    }
+
+    #[test]
+    fn load_environment_parses_dotenv() {
+        let dir = std::env::temp_dir().join(format!("cli-env-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        std::fs::write(
+            dir.join(".env"),
+            "SHOPIFY_FLAG_STORE=demo.myshopify.com\n# comment\nEMPTY=\n",
+        )
+        .unwrap();
+        let map = load_environment(Some(&dir));
+        assert_eq!(
+            map.get("SHOPIFY_FLAG_STORE").map(String::as_str),
+            Some("demo.myshopify.com")
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

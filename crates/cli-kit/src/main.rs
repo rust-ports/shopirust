@@ -2,7 +2,7 @@ use clap::Parser;
 use cli_core::command::TopicCommand;
 use cli_core::flags::GlobalFlags;
 use cli_core::runner::run_cli;
-use cli_kit::commands::{CliSubcommand, CliTopic, CliTopicArgs};
+use cli_kit::commands::{did_you_mean, CliSubcommand, CliTopic, CliTopicArgs};
 use std::collections::HashMap;
 
 #[derive(Debug, Parser)]
@@ -22,7 +22,29 @@ struct CliArgs {
 #[tokio::main]
 async fn main() -> ! {
     cli_core::runner::init_tracing();
-    let args = CliArgs::parse();
+    cli_core::environment::load_environment(None);
+    let argv: Vec<String> = std::env::args().collect();
+    let args = match CliArgs::try_parse() {
+        Ok(args) => args,
+        Err(err) => {
+            use clap::error::ErrorKind;
+            if matches!(
+                err.kind(),
+                ErrorKind::InvalidSubcommand | ErrorKind::UnknownArgument
+            ) {
+                if let Some(token) = argv.get(1) {
+                    if !token.starts_with('-') {
+                        if let Some(suggestion) = did_you_mean(token) {
+                            eprintln!(
+                                "Unknown command `{token}`. Did you mean `shopify {suggestion}`?"
+                            );
+                        }
+                    }
+                }
+            }
+            err.exit();
+        }
+    };
     let topic = CliTopic::from_args(CliTopicArgs {
         command: args.command,
     });

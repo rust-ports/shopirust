@@ -20,6 +20,7 @@ pub async fn run_cli(
     global: &GlobalFlags,
     flush_metadata: impl FnOnce(HashMap<String, String>),
 ) -> Result<(), CliError> {
+    crate::environment::load_environment(global.path.as_deref().map(std::path::Path::new));
     let metadata = MetadataCollector::new();
     metadata.add_from_parsed_flags(global);
 
@@ -135,7 +136,7 @@ mod tests {
         let flags = GlobalFlags {
             verbose: true,
             no_color: false,
-            path: Some(std::path::PathBuf::from("/tmp")),
+            path: Some("/tmp".into()),
         };
 
         run_cli(MockTopic::Mock(MockCmd), &flags, |data| {

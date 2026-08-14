@@ -8,6 +8,7 @@ members = [
     "crates/codegen",
     "crates/graphql-codegen",
     "crates/theme",
+    "crates/store",
 ]
 
 [workspace.package]

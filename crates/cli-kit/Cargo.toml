@@ -4,6 +4,15 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+default-run = "shopify"
+
+[[bin]]
+name = "shopify"
+path = "src/main.rs"
+
+[[bin]]
+name = "create-app"
+path = "src/bin/create-app.rs"
 
 [dependencies]
 cli-core = { path = "../cli-core" }
@@ -11,6 +20,8 @@ cli-api = { path = "../cli-api" }
 clap = { version = "4", features = ["derive", "env"] }
 theme = { path = "../theme" }
 app = { path = "../app" }
+store = { path = "../store" }
+strsim = "0.11"
 async-trait = "0.1"
 tokio.workspace = true
 tokio-util = { version = "0.7", features = ["rt"] }
