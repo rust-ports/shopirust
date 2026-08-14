@@ -96,3 +96,40 @@ async fn run_dev_session(
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::loader::LoadedApp;
+    use crate::services::dev::processes::DevProcessKind;
+    use std::path::PathBuf;
+
+    #[test]
+    fn setup_returns_dev_session_kind() {
+        let watcher = Arc::new(AppEventWatcher::new(LoadedApp {
+            directory: PathBuf::from("/tmp"),
+            configuration_path: PathBuf::from("/tmp/shopify.app.toml"),
+            configuration: Default::default(),
+            hidden_config: Default::default(),
+            extensions: vec![],
+            webs: vec![],
+            identifiers: crate::models::identifiers::Identifiers::new(),
+            name: "t".into(),
+            errors: vec![],
+            dev_application_urls: None,
+        }));
+        let proc = setup_dev_session_process(
+            DevSessionProcessOptions {
+                client: DevSessionClient::new("shop.myshopify.com", "", "https://example/graphql"),
+                app_id: "1".into(),
+                assets_url: "https://example.com".into(),
+                websocket_url: None,
+                app_preview_url: "https://shop.myshopify.com/admin/apps/1".into(),
+            },
+            watcher,
+            Arc::new(DevSessionStatusManager::new()),
+        );
+        assert_eq!(proc.kind, DevProcessKind::DevSession);
+        assert_eq!(proc.prefix, "app-preview");
+    }
+}

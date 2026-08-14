@@ -1,4 +1,5 @@
 pub mod execute_helpers;
+pub mod fetch_product_variant;
 pub mod json_schema;
 pub mod liquid;
 pub mod locales;

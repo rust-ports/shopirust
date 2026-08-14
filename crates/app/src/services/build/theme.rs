@@ -46,3 +46,30 @@ fn copy_dir(src: &std::path::Path, dest: &std::path::Path) -> Result<(), AppErro
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::extensions::create_extension_specification;
+    use std::collections::HashMap;
+    use tempfile::tempdir;
+
+    #[test]
+    fn copies_blocks_and_root_liquid() {
+        let dir = tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("blocks")).unwrap();
+        std::fs::write(dir.path().join("blocks/app.liquid"), "{% comment %}x{% endcomment %}").unwrap();
+        std::fs::write(dir.path().join("settings_data.json"), "{}").unwrap();
+        let spec = create_extension_specification("theme").unwrap();
+        let ext = ExtensionInstance::new(
+            "theme-ext",
+            dir.path().to_path_buf(),
+            dir.path().join("shopify.extension.toml"),
+            HashMap::new(),
+            spec,
+        );
+        let dist = build_theme_extension(&ext).unwrap();
+        assert!(dist.join("blocks/app.liquid").exists());
+        assert!(dist.join("settings_data.json").exists());
+    }
+}

@@ -1,7 +1,9 @@
 //! Extension preview server orchestrator + surface/cart helpers.
 
+pub mod localization;
 pub mod payload;
 pub mod server;
+pub mod templates;
 pub mod utilities;
 pub mod websocket;
 

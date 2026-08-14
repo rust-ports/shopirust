@@ -46,6 +46,9 @@ pub struct DevOptions {
     pub app_dev_token: String,
     pub app_dev_graphql_url: String,
     pub webhook_sample_client: Option<Arc<dyn WebhookSampleClient>>,
+    pub platform_client: Option<Arc<dyn DeveloperPlatformClient>>,
+    pub admin_graphql_url: Option<String>,
+    pub admin_access_token: Option<String>,
 }
 
 /// Run `app dev`: prepare network → setup processes → run until Ctrl+C.
@@ -235,6 +238,9 @@ pub async fn dev_with_prompter(
             app_dev_token: options.app_dev_token.clone(),
             app_dev_graphql_url: options.app_dev_graphql_url.clone(),
             webhook_sample_client: options.webhook_sample_client.clone(),
+            platform_client: options.platform_client.clone(),
+            admin_graphql_url: options.admin_graphql_url.clone(),
+            admin_access_token: options.admin_access_token.clone(),
         },
     )
     .await;
@@ -259,7 +265,12 @@ pub async fn dev_with_prompter(
     });
 
     let shop_id_parsed = store.shop_id.parse::<i64>().ok();
+    let process_polls_logs = options.platform_client.is_some();
     let logs_fut = async {
+        if process_polls_logs {
+            cancel.cancelled().await;
+            return;
+        }
         if let Some(shop_id) = shop_id_parsed {
             let opts = AppLogsPollingOptions {
                 organization_id: ctx.organization.id.clone(),
@@ -267,6 +278,7 @@ pub async fn dev_with_prompter(
                 shop_ids: vec![shop_id],
                 store_name: store.shop_domain.clone(),
                 logs_dir: Some(ctx.app.directory.join(".shopify").join("logs")),
+                client: None,
             };
             let _ = run_app_logs_polling(cancel.clone(), client, opts).await;
         } else {
@@ -277,7 +289,9 @@ pub async fn dev_with_prompter(
     let col = crate::services::dev::tui::prefix_column_size(&prefixes);
     let mut handles = Vec::new();
     for proc in setup.processes {
-        if proc.kind == crate::services::dev::processes::DevProcessKind::AppLogsPolling {
+        if proc.kind == crate::services::dev::processes::DevProcessKind::AppLogsPolling
+            && !process_polls_logs
+        {
             continue;
         }
         let prefix = proc.prefix.clone();

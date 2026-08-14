@@ -37,11 +37,7 @@ async fn run_theme_ext(
     let port = opts
         .theme_extension_port
         .unwrap_or(theme::theme_ext::DEFAULT_THEME_EXT_PORT);
-    let theme_id = opts
-        .theme
-        .as_deref()
-        .and_then(|t| t.parse::<i64>().ok())
-        .unwrap_or(1);
+    let theme_id = resolve_host_theme_id(&opts.store_fqdn, opts.theme.as_deref());
 
     tracing::info!(
         target: "app_dev",
@@ -62,6 +58,17 @@ async fn run_theme_ext(
     abort.cancelled().await;
     handle.close().await;
     Ok(())
+}
+
+/// Prefer `--theme`, then persisted host theme id. Never invent `1`.
+pub fn resolve_host_theme_id(store_fqdn: &str, theme_flag: Option<&str>) -> i64 {
+    if let Some(flag) = theme_flag {
+        if let Ok(id) = flag.parse::<i64>() {
+            theme::local_storage::store_host_theme_id(store_fqdn, id);
+            return id;
+        }
+    }
+    theme::local_storage::host_theme_id(store_fqdn).unwrap_or(0)
 }
 
 #[cfg(test)]
@@ -99,5 +106,20 @@ mod tests {
             extensions: vec![ext],
         });
         assert!(proc.is_some());
+    }
+
+    #[test]
+    fn resolve_theme_id_from_flag() {
+        let id = resolve_host_theme_id("unused.myshopify.com", Some("4242"));
+        assert_eq!(id, 4242);
+    }
+
+    #[test]
+    fn resolve_theme_id_does_not_default_to_one() {
+        let id = resolve_host_theme_id(
+            "definitely-missing-host-theme.myshopify.com",
+            None,
+        );
+        assert_ne!(id, 1);
     }
 }

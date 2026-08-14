@@ -98,6 +98,8 @@ impl BaseCommand for Dev {
 
     async fn run(&self) -> Result<(), CliError> {
         let client = authenticated_developer_platform().await?;
+        let client: std::sync::Arc<dyn cli_api::DeveloperPlatformClient> =
+            std::sync::Arc::from(client);
         let prompter = CliKitPrompter;
         let ctx = linked_app_context(
             linked_ctx_options(
@@ -143,6 +145,26 @@ impl BaseCommand for Dev {
             .ok()
             .map(webhooks_sample_client);
 
+        let admin_creds = crate::session::public::session::ensure_authenticated_admin(
+            store.shop_domain.clone(),
+            vec![],
+            crate::session::EnsureAuthenticatedOptions {
+                no_prompt: true,
+                ..Default::default()
+            },
+        )
+        .await
+        .ok()
+        .map(|session| {
+            (
+                format!(
+                    "https://{}/admin/api/2026-01/graphql.json",
+                    session.store_fqdn
+                ),
+                session.token,
+            )
+        });
+
         let result = dev(
             &ctx,
             client.as_ref(),
@@ -164,6 +186,9 @@ impl BaseCommand for Dev {
                 app_dev_token,
                 app_dev_graphql_url,
                 webhook_sample_client,
+                platform_client: Some(client.clone()),
+                admin_graphql_url: admin_creds.as_ref().map(|(url, _)| url.clone()),
+                admin_access_token: admin_creds.map(|(_, tok)| tok),
             },
         )
         .await;

@@ -158,7 +158,11 @@ pub fn get_ui_extension_payload(
             error,
         },
         extension_points,
-        localization: current_localization,
+        localization: current_localization.or_else(|| {
+            crate::services::dev::extension::localization::get_localization(extension, None)
+                .ok()
+                .and_then(|(loc, _)| loc)
+        }),
         metafields,
         type_name: extension.type_name().to_string(),
         external_type: extension.external_type().to_string(),

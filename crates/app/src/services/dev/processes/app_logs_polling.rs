@@ -18,18 +18,21 @@ pub struct AppLogsPollingOptions {
     pub store_name: String,
     /// When set, persist JSON log files under this directory (`.shopify/logs`).
     pub logs_dir: Option<PathBuf>,
+    pub client: Option<std::sync::Arc<dyn DeveloperPlatformClient>>,
 }
 
-/// Build a process that idles until cancel (client is not `'static`).
-/// Prefer [`run_app_logs_polling`] from the orchestrator when a live client is available.
+/// Poll app logs when a platform client is available; otherwise idle until cancel.
 pub fn setup_app_logs_polling_process(opts: AppLogsPollingOptions) -> DevProcess {
     DevProcess::new(
         "app-logs",
         DevProcessKind::AppLogsPolling,
         move |ctx| async move {
-            let _ = opts;
-            ctx.abort.cancelled().await;
-            Ok(())
+            if let Some(client) = opts.client.clone() {
+                run_app_logs_polling(ctx.abort, client.as_ref(), opts).await
+            } else {
+                ctx.abort.cancelled().await;
+                Ok(())
+            }
         },
     )
 }

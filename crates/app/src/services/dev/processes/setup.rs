@@ -42,6 +42,10 @@ pub struct SetupDevProcessFlags {
     pub app_dev_token: String,
     pub app_dev_graphql_url: String,
     pub webhook_sample_client: Option<Arc<dyn WebhookSampleClient>>,
+    /// Shared platform client for Partners draft push / logs polling.
+    pub platform_client: Option<Arc<dyn cli_api::DeveloperPlatformClient>>,
+    pub admin_graphql_url: Option<String>,
+    pub admin_access_token: Option<String>,
 }
 
 pub struct SetupDevProcessesResult {
@@ -136,6 +140,8 @@ pub async fn setup_dev_processes(
             checkout_cart_url: flags.checkout_cart_url.clone(),
             subscription_product_url: flags.subscription_product_url.clone(),
             build_directory: Some(app_watcher.build_output_path.clone()),
+            admin_graphql_url: flags.admin_graphql_url.clone(),
+            admin_access_token: flags.admin_access_token.clone(),
         },
         app_watcher.clone(),
     ) {
@@ -159,13 +165,18 @@ pub async fn setup_dev_processes(
             app_watcher.clone(),
             status.clone(),
         ));
-    } else {
-        processes.push(setup_draftable_extensions_process(
-            DraftableExtensionOptions {
-                api_key: api_key.clone(),
-                proxy_url: network.proxy_url.clone(),
-            },
-        ));
+    } else if let Some(p) = setup_draftable_extensions_process(
+        DraftableExtensionOptions {
+            api_key: api_key.clone(),
+            proxy_url: network.proxy_url.clone(),
+            extensions: local_app.extensions.clone(),
+            remote_extension_ids: local_app.identifiers.extensions.clone(),
+            app_configuration: Some(serde_json::to_value(&local_app.configuration).unwrap_or_default()),
+            client: flags.platform_client.clone(),
+        },
+        app_watcher.clone(),
+    ) {
+        processes.push(p);
     }
 
     if let Some(p) = setup_preview_theme_app_extensions_process(ThemeAppExtensionOptions {
@@ -193,6 +204,7 @@ pub async fn setup_dev_processes(
         processes.push(setup_app_logs_polling_process(AppLogsPollingOptions {
             organization_id: remote_app.organization_id.clone().unwrap_or_default(),
             api_key: api_key.clone(),
+            client: flags.platform_client.clone(),
             shop_ids: vec![shop_id],
             store_name: store_fqdn.to_string(),
             logs_dir: Some(local_app.directory.join(".shopify").join("logs")),
@@ -330,6 +342,9 @@ mod tests {
                 app_dev_token: String::new(),
                 app_dev_graphql_url: "https://example/graphql".into(),
                 webhook_sample_client: None,
+                platform_client: None,
+                admin_graphql_url: None,
+                admin_access_token: None,
             },
         )
         .await;
@@ -344,6 +359,14 @@ mod tests {
     #[tokio::test]
     async fn selects_draftable_when_no_dev_sessions() {
         let mut app = empty_app();
+        let spec = crate::models::extensions::create_extension_specification("function").unwrap();
+        app.extensions.push(crate::models::extensions::ExtensionInstance::new(
+            "discount",
+            PathBuf::from("/tmp/app/extensions/discount"),
+            PathBuf::from("/tmp/app/extensions/discount/shopify.extension.toml"),
+            Default::default(),
+            spec,
+        ));
         app.webs.push(crate::models::loader::WebInstance {
             directory: PathBuf::from("/tmp/app/web"),
             configuration_path: PathBuf::from("/tmp/app/web/shopify.web.toml"),
@@ -352,6 +375,8 @@ mod tests {
             auth_callback_path: vec![],
             webhooks_path: Some("/api/webhooks".into()),
             port: None,
+            commands: Default::default(),
+            hmr_server: false,
         });
         let result = setup_dev_processes(
             app,
@@ -372,6 +397,9 @@ mod tests {
                 app_dev_token: String::new(),
                 app_dev_graphql_url: "https://example/graphql".into(),
                 webhook_sample_client: None,
+                platform_client: None,
+                admin_graphql_url: None,
+                admin_access_token: None,
             },
         )
         .await;
@@ -393,6 +421,8 @@ mod tests {
             auth_callback_path: vec!["/auth/callback".into()],
             webhooks_path: Some("/api/webhooks".into()),
             port: None,
+            commands: Default::default(),
+            hmr_server: false,
         });
         let result = setup_dev_processes(
             app,
@@ -413,6 +443,9 @@ mod tests {
                 app_dev_token: String::new(),
                 app_dev_graphql_url: "https://example/graphql".into(),
                 webhook_sample_client: None,
+                platform_client: None,
+                admin_graphql_url: None,
+                admin_access_token: None,
             },
         )
         .await;

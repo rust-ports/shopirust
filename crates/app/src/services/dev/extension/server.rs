@@ -175,10 +175,22 @@ async fn extension_payload(
         .unwrap_or("");
     if accept.starts_with("text/html") {
         if extension.type_name() == "checkout_post_purchase" {
+            let url = format!(
+                "{}/extensions/{}",
+                state.options.url.trim_end_matches('/'),
+                extension_id
+            );
+            let html = crate::services::dev::extension::templates::get_html(
+                Some("post_purchase"),
+                crate::services::dev::extension::templates::PreviewTemplate::Index,
+                &url,
+                None,
+            )
+            .unwrap_or_else(|_| format!("<html><body>Post-purchase preview: {url}</body></html>"));
             return (
                 StatusCode::OK,
                 [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
-                "<html><body>post_purchase stub</body></html>",
+                html,
             )
                 .into_response();
         }
