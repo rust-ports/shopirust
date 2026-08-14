@@ -1,11 +1,11 @@
 # App Parity Gaps
 
 Checklist for porting `packages/app` from upstream Shopify CLI into the Rust `app` crate (+ cli-kit app commands / tunnel).
-Updated after streams H–L (bulk Admin HTTP, Partners deploy, flow/schema/loader, function/logs/uninstall, console assets + TUI).
+Updated after main-stream UI/API waves (Partners generate/release, GraphiQL Admin auth, theme-ext HTML preview, live app-dev TUI, logs text, reverse-proxy WebSocket handshake).
 
 ## Current Baseline
 
-- Rust `app` crate tests: `cargo test -p app --lib` → **773 tests** (Waves A–E production paths + high-value cases; not a 1:1 Vitest clone).
+- Rust `app` crate tests: `cargo test -p app --lib` → **787 tests** (Waves A–E production paths + main-stream UI/API; not a 1:1 Vitest clone).
 - Upstream Vitest surface for `packages/app` is still ~**2082**. This crate is **not** at that count; `[x]` below means behavior + tests for that item, not a 1:1 Vitest clone.
 - Spec registry: **26/26** identifiers with `deploy_config` / transforms / validation hooks.
 - Commands wired: init, generate, import-*, info, config, build, deploy, release, versions, bulk, function, execute, env, webhook, logs, **dev** (+ clean).
@@ -45,6 +45,7 @@ Updated after streams H–L (bulk Admin HTTP, Partners deploy, flow/schema/loade
 - [x] `import-extensions` remote `app_extension_registrations` fetch (file still optional)
 - [x] Include-assets step matrix (static / pattern / configKey / `[]` flatten / `assert_path_within_app_dir` / manifest)
 - [x] Init catalog (`visibleTemplates` + flavor branches + optional `--name`/`--template`/`--client-id`) and generate catalog (`template_specifications` + flavor subdir)
+- [x] Partners GraphQL: `template_specifications`, `active_app_version`, `app_version_by_tag`, `app_versions_diff`, `FindStoreByDomain`; `create_app` launchable/scopes mapping; AM template CDN catalog
 - [x] Loader URL / webhook URI+dup / missing entry source / `include_config_on_deploy` filter (targeted tests; not the 15 fat TOML novels)
 - [~] Loader Vitest volume (~30 tests vs ~184 upstream)
 - [x] Partners-only deploy path: `create_extension`, signed upload URL, `appModules`/`skipPublish`, import-on-deploy, `include_config_on_deploy`
@@ -61,6 +62,7 @@ Updated after streams H–L (bulk Admin HTTP, Partners deploy, flow/schema/loade
 - [x] `app logs` + `app logs sources`
 - [x] `AppLogsPoller` reusable by T7
 - [x] `camelcase_keys` (shallow + `deep`) + `to_formatted_app_log_json` / text render tests
+- [x] Function-run IQV metafield (namespace/key/JSON), cache write time + TTL, background-exec reason, request Attempt / connect / write-read timings
 - [x] Poll transport/429/5xx retry (5s) + 401 resubscribe fail ×5 session-expired; JSON error lines; default write `.shopify/logs`
 - [~] Full Ink/UI log component parity (`Logs.tsx`, `usePollAppLogs`, `useSelfAdjustingInterval` not ported)
 
@@ -77,10 +79,13 @@ Updated after streams H–L (bulk Admin HTTP, Partners deploy, flow/schema/loade
 - [x] `app dev` + `app dev clean` CLI
 - [x] Tunnel mode + Cloudflare/`cloudflared` client (+ FakeTunnel)
 - [x] Process setup: web, previewable, draftable, theme-ext, GraphiQL CDN explorer, APP_UNINSTALLED HMAC POST, app logs polling, app watcher, dev session, reverse proxy
+- [x] GraphiQL Admin client-credentials token, HMAC key, authenticated `/graphql` proxy, `/graphiql/status`
+- [x] Theme-ext `:9293` HTML/proxy/SFR + storefront session + HR on file change + Dawn host-theme find-or-create + next-steps banner
+- [x] Reverse-proxy WebSocket: complete upstream HTTP upgrade handshake (Dev Console / extension live-reload)
 - [x] `--no-update` / skip-deps / `--notify`; mkcert localhost TLS; `https://localhost:{port}` application URLs
 - [x] Vendored ui-extensions-dev-console assets (`rust-embed`; `GET /extensions/dev-console` + `/assets/*`; `make console-assets`)
 - [x] Dev session subscribes to `AppEventWatcher` and calls `devSessionUpdate`; `DevSessionStatusManager`
-- [x] TTY concurrent prefixed logs + status table + shortcuts `p`/`g`/`q` (cli-kit widget UX, not Ink)
+- [x] TTY concurrent prefixed process logs + live DevSession status + shortcuts `p`/`g`/`c`/`q` + persist-preview copy on quit (cli-kit widget UX, not Ink)
 - [~] Pixel-identical Ink DevSessionUI
 - [x] Theme-app-extension host via `crates/theme` (`theme_ext`)
 

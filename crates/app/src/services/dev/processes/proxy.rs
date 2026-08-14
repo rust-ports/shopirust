@@ -12,7 +12,8 @@ use hyper_util::rt::TokioIo;
 use std::collections::BTreeMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use tokio::net::TcpListener;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::{TcpListener, TcpStream};
 use tokio_util::sync::CancellationToken;
 
 #[derive(Debug, Clone)]
@@ -261,33 +262,119 @@ async fn proxy_websocket(
         .uri()
         .path_and_query()
         .map(|p| p.as_str())
-        .unwrap_or("/");
-    let ws_url = format!("{}{path}", target.trim_end_matches('/'))
-        .replacen("http://", "ws://", 1)
-        .replacen("https://", "wss://", 1);
+        .unwrap_or("/")
+        .to_string();
+    let http_url = format!("{}{path}", target.trim_end_matches('/'));
+    let Ok(target_url) = url::Url::parse(&http_url) else {
+        return Ok(bad_gateway("invalid websocket target"));
+    };
+    let host = target_url.host_str().unwrap_or("127.0.0.1").to_string();
+    let port = target_url.port_or_known_default().unwrap_or(80);
+    let host_header = if port == 80 || port == 443 {
+        host.clone()
+    } else {
+        format!("{host}:{port}")
+    };
+
+    let Ok(mut upstream) = TcpStream::connect((host.as_str(), port)).await else {
+        return Ok(bad_gateway("failed to connect websocket target"));
+    };
+
+    let mut head = format!("{} {path} HTTP/1.1\r\nHost: {host_header}\r\n", req.method());
+    for (name, value) in req.headers() {
+        if name == hyper::header::HOST {
+            continue;
+        }
+        if let Ok(value) = value.to_str() {
+            head.push_str(&format!("{name}: {value}\r\n"));
+        }
+    }
+    head.push_str("\r\n");
+    if upstream.write_all(head.as_bytes()).await.is_err() {
+        return Ok(bad_gateway("failed to write websocket handshake"));
+    }
+
+    let Ok((status, headers, leftover)) = read_http_head(&mut upstream).await else {
+        return Ok(bad_gateway("failed to read websocket handshake"));
+    };
+    if status != u16::from(StatusCode::SWITCHING_PROTOCOLS) {
+        let mut builder = Response::builder().status(status);
+        for (name, value) in &headers {
+            builder = builder.header(name, value);
+        }
+        return Ok(builder
+            .body(Full::new(Bytes::from(leftover)))
+            .unwrap_or_else(|_| bad_gateway("invalid handshake response")));
+    }
 
     let upgrade = hyper::upgrade::on(&mut req);
     tokio::spawn(async move {
         let Ok(upgraded) = upgrade.await else {
             return;
         };
-        let Ok(target_url) = url::Url::parse(&ws_url) else {
-            return;
-        };
-        let host = target_url.host_str().unwrap_or("127.0.0.1");
-        let port = target_url.port_or_known_default().unwrap_or(80);
-        if let Ok(mut stream) = tokio::net::TcpStream::connect((host, port)).await {
-            let mut io = TokioIo::new(upgraded);
-            let _ = tokio::io::copy_bidirectional(&mut io, &mut stream).await;
+        let mut io = TokioIo::new(upgraded);
+        if !leftover.is_empty() {
+            let _ = tokio::io::AsyncWriteExt::write_all(&mut io, &leftover).await;
         }
+        let _ = tokio::io::copy_bidirectional(&mut io, &mut upstream).await;
     });
 
-    Ok(Response::builder()
-        .status(StatusCode::SWITCHING_PROTOCOLS)
-        .header(hyper::header::UPGRADE, "websocket")
-        .header(hyper::header::CONNECTION, "Upgrade")
-        .body(Full::new(Bytes::new()))
-        .unwrap())
+    let mut builder = Response::builder().status(StatusCode::SWITCHING_PROTOCOLS);
+    for (name, value) in headers {
+        builder = builder.header(name, value);
+    }
+    Ok(builder.body(Full::new(Bytes::new())).unwrap())
+}
+
+fn bad_gateway(message: &'static str) -> Response<BoxBody> {
+    Response::builder()
+        .status(StatusCode::BAD_GATEWAY)
+        .body(Full::new(Bytes::from(message)))
+        .unwrap()
+}
+
+async fn read_http_head(
+    stream: &mut TcpStream,
+) -> Result<(u16, Vec<(String, String)>, Vec<u8>), std::io::Error> {
+    let mut buf = Vec::new();
+    let mut tmp = [0u8; 1024];
+    loop {
+        let n = stream.read(&mut tmp).await?;
+        if n == 0 {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::UnexpectedEof,
+                "eof before websocket handshake headers",
+            ));
+        }
+        buf.extend_from_slice(&tmp[..n]);
+        if let Some(end) = buf.windows(4).position(|window| window == b"\r\n\r\n") {
+            let head = buf[..end].to_vec();
+            let leftover = buf[end + 4..].to_vec();
+            let parsed = parse_http_head(&head).ok_or_else(|| {
+                std::io::Error::new(std::io::ErrorKind::InvalidData, "invalid handshake")
+            })?;
+            return Ok((parsed.0, parsed.1, leftover));
+        }
+        if buf.len() > 64 * 1024 {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "handshake headers too large",
+            ));
+        }
+    }
+}
+
+fn parse_http_head(head: &[u8]) -> Option<(u16, Vec<(String, String)>)> {
+    let text = std::str::from_utf8(head).ok()?;
+    let mut lines = text.split("\r\n");
+    let status_line = lines.next()?;
+    let status = status_line.split_whitespace().nth(1)?.parse().ok()?;
+    let mut headers = Vec::new();
+    for line in lines {
+        let (name, value) = line.split_once(':')?;
+        headers.push((name.trim().to_string(), value.trim().to_string()));
+    }
+    Some((status, headers))
 }
 
 /// Bind and serve a proxy until `abort` is cancelled. Used by unit tests.
@@ -461,5 +548,76 @@ mod tests {
 
         abort.cancel();
         let _ = SocketAddr::from(([127, 0, 0, 1], port));
+    }
+
+    #[tokio::test]
+    async fn websocket_completes_upstream_handshake() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let upstream_port = listener.local_addr().unwrap().port();
+        tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut buf = vec![0u8; 4096];
+            let mut n = 0usize;
+            loop {
+                let read = stream.read(&mut buf[n..]).await.unwrap();
+                n += read;
+                if buf[..n].windows(4).any(|window| window == b"\r\n\r\n") {
+                    break;
+                }
+            }
+            stream
+                .write_all(b"HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: dummy\r\n\r\n")
+                .await
+                .unwrap();
+            let mut payload = vec![0u8; 16];
+            let k = stream.read(&mut payload).await.unwrap();
+            stream.write_all(&payload[..k]).await.unwrap();
+        });
+
+        let mut rules = BTreeMap::new();
+        rules.insert(
+            "websocket".into(),
+            format!("http://127.0.0.1:{upstream_port}"),
+        );
+        let abort = CancellationToken::new();
+        let port = serve_proxy_for_tests(rules, abort.clone(), None)
+            .await
+            .unwrap();
+
+        let mut client = tokio::net::TcpStream::connect(("127.0.0.1", port))
+            .await
+            .unwrap();
+        client
+            .write_all(b"GET /ext HTTP/1.1\r\nHost: 127.0.0.1\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n")
+            .await
+            .unwrap();
+
+        let mut buf = vec![0u8; 4096];
+        let mut n = 0usize;
+        loop {
+            let read = client.read(&mut buf[n..]).await.unwrap();
+            n += read;
+            if buf[..n].windows(4).any(|window| window == b"\r\n\r\n") {
+                break;
+            }
+        }
+        let head = String::from_utf8_lossy(&buf[..n]);
+        assert!(head.contains("101"), "handshake was not 101: {head}");
+        assert!(
+            head.to_ascii_lowercase().contains("sec-websocket-accept"),
+            "missing accept header in: {head}"
+        );
+        assert!(
+            head.contains("dummy"),
+            "upstream accept not forwarded in: {head}"
+        );
+
+        client.write_all(b"hello-ws").await.unwrap();
+        let mut echo = vec![0u8; 8];
+        client.read_exact(&mut echo).await.unwrap();
+        assert_eq!(&echo, b"hello-ws");
+        abort.cancel();
     }
 }

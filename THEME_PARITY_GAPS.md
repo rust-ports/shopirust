@@ -5,7 +5,7 @@ Generated from deep analysis of upstream `packages/theme/src/cli` vs the Rust `c
 
 ## Current Baseline
 
-- Rust `theme` crate tests: `cargo test -p theme --lib` → **265 tests**.
+- Rust `theme` crate tests: `cargo test -p theme --lib` → **276 tests**.
 - Rust CLI theme boundary tests: `cargo test -p cli-kit theme::` → **30 tests**.
 - All 20 theme subcommands wired and dispatched in `cli-kit/src/commands/theme.rs`.
 - Dev-server core + theme-ext environment live in `crates/theme`.
@@ -39,6 +39,9 @@ Generated from deep analysis of upstream `packages/theme/src/cli` vs the Rust `c
 
 - [x] `theme-ext-fs` — whitelist mount, in-memory write/delete, 5ms unsynced clear, templates helpers
 - [x] `theme-ext-server` — port 9293, host `127.0.0.1`, host validation, unconditional hot-reload SSE
+- [x] Theme-ext HTML/proxy/SFR fallback (ignored paths 204; CDN/cart proxy; storefront HTML + `replace_extension_templates` + HR inject)
+- [x] Theme-ext file-watcher triggers hot-reload Update events
+- [x] Host theme find-or-create (Dawn zip + fallback catalog zip + wait-until-processed) + next-steps banner
 - [x] Proxy differences for extensions in main theme `dev`
   - `/ext/cdn/` route + local extension asset serving
   - CDN rewrite of local ext assets → `/ext/cdn/...`
@@ -69,7 +72,7 @@ Generated from deep analysis of upstream `packages/theme/src/cli` vs the Rust `c
 ### Ported / strengthened
 
 - [x] plan_pull / plan_push ignore-only-mismatch-nodelete scenarios
-- [x] theme-ext-fs / theme-ext-server unit tests
+- [x] theme-ext-fs / theme-ext-server unit tests (ignored 204, HTML SFR mock, local assets, HR on file change, host-theme manager)
 - [x] hot-reload payload differential + previewPath/`&` + wildcard hosts
 - [x] package zip membership for listings/release-notes/update_extension
 - [x] push JSON path-keyed errors

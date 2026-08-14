@@ -142,6 +142,7 @@ pub fn format_log_text(app_log: &AppLogData, store_name: &str) -> String {
                     out.push_str(&format!("    {line}\n"));
                 }
             }
+            out.push_str(&format_iqv_block(&payload));
             if let Some(input) = payload.get("input") {
                 if !input.is_null() {
                     let bytes = payload
@@ -168,6 +169,15 @@ pub fn format_log_text(app_log: &AppLogData, store_name: &str) -> String {
             }
         }
         LOG_TYPE_RESPONSE_FROM_CACHE => {
+            if let Some(epoch) = payload.get("cache_entry_epoch_ms").and_then(json_i64) {
+                out.push_str(&format!(
+                    "    Cache write time: {}\n",
+                    epoch_ms_to_iso(epoch)
+                ));
+            }
+            if let Some(ttl) = payload.get("cache_ttl_ms").and_then(|v| v.as_f64()) {
+                out.push_str(&format!("    Cache TTL: {} s\n", ttl / 1000.0));
+            }
             out.push_str(&format!(
                 "    HTTP request:\n      {}\n",
                 pretty_json(payload.get("http_request").unwrap_or(&Value::Null))
@@ -177,7 +187,26 @@ pub fn format_log_text(app_log: &AppLogData, store_name: &str) -> String {
                 pretty_json(payload.get("http_response").unwrap_or(&Value::Null))
             ));
         }
-        LOG_TYPE_REQUEST_EXECUTION | LOG_TYPE_REQUEST_EXECUTION_IN_BACKGROUND => {
+        LOG_TYPE_REQUEST_EXECUTION_IN_BACKGROUND => {
+            out.push_str(&format!(
+                "    Reason: {}\n",
+                background_execution_reason(payload.get("reason").and_then(|v| v.as_str()))
+            ));
+            out.push_str(&format!(
+                "    HTTP request:\n      {}\n",
+                pretty_json(payload.get("http_request").unwrap_or(&Value::Null))
+            ));
+        }
+        LOG_TYPE_REQUEST_EXECUTION => {
+            if let Some(attempt) = payload.get("attempt") {
+                out.push_str(&format!("    Attempt: {}\n", display_json_scalar(attempt)));
+            }
+            if let Some(connect) = payload.get("connect_time_ms").and_then(json_i64) {
+                out.push_str(&format!("    Connect time: {connect} ms\n"));
+            }
+            if let Some(write_read) = payload.get("write_read_time_ms").and_then(json_i64) {
+                out.push_str(&format!("    Write read time: {write_read} ms\n"));
+            }
             out.push_str(&format!(
                 "    HTTP request:\n      {}\n",
                 pretty_json(payload.get("http_request").unwrap_or(&Value::Null))
@@ -240,6 +269,54 @@ fn pretty_json(value: &Value) -> String {
         return s.to_string();
     }
     serde_json::to_string_pretty(value).unwrap_or_else(|_| value.to_string())
+}
+
+fn format_iqv_block(payload: &Value) -> String {
+    let namespace = payload
+        .get("input_query_variables_metafield_namespace")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty());
+    let key = payload
+        .get("input_query_variables_metafield_key")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty());
+    let (Some(namespace), Some(key)) = (namespace, key) else {
+        return String::new();
+    };
+    let value = payload.get("input_query_variables_metafield_value");
+    let rendered = match value {
+        Some(v) if !v.is_null() => pretty_json(v),
+        _ => "Metafield is not set".to_string(),
+    };
+    format!(
+        "    Input Query Variables:\n      Namespace: {namespace}\n      Key: {key}\n      {rendered}\n"
+    )
+}
+
+fn background_execution_reason(reason: Option<&str>) -> &'static str {
+    match reason {
+        Some("no_cached_response") => "No cached response available",
+        Some("cached_response_about_to_expire") => "Cache is about to expire",
+        _ => "Unknown reason",
+    }
+}
+
+fn epoch_ms_to_iso(ms: i64) -> String {
+    chrono::DateTime::from_timestamp_millis(ms)
+        .map(|dt| dt.to_rfc3339_opts(chrono::SecondsFormat::Millis, true))
+        .unwrap_or_else(|| ms.to_string())
+}
+
+fn json_i64(value: &Value) -> Option<i64> {
+    value.as_i64().or_else(|| value.as_f64().map(|n| n as i64))
+}
+
+fn display_json_scalar(value: &Value) -> String {
+    match value {
+        Value::String(s) => s.clone(),
+        Value::Number(n) => n.to_string(),
+        other => other.to_string(),
+    }
 }
 
 #[cfg(test)]
@@ -394,5 +471,84 @@ mod tests {
         assert!(text.contains("discount"));
         assert!(text.contains("export \"run\""));
         assert!(text.contains("hello"));
+    }
+
+    #[test]
+    fn text_format_function_run_iqv_metafield() {
+        let log = AppLogData {
+            shop_id: 1,
+            api_client_id: 2,
+            payload: r#"{"export":"run","fuel_consumed":1,"input_query_variables_metafield_namespace":"n","input_query_variables_metafield_key":"k","input_query_variables_metafield_value":"{\"a\":1}"}"#.into(),
+            log_type: LOG_TYPE_FUNCTION_RUN.into(),
+            source: "discount".into(),
+            source_namespace: "extensions".into(),
+            cursor: "c".into(),
+            status: "success".into(),
+            log_timestamp: "2024-05-23T19:17:00.240053Z".into(),
+        };
+        let text = format_log_text(&log, "shop.myshopify.com");
+        assert!(text.contains("Input Query Variables:"));
+        assert!(text.contains("Namespace: n"));
+        assert!(text.contains("Key: k"));
+        assert!(text.contains("\"a\""));
+    }
+
+    #[test]
+    fn text_format_cache_ttl_and_write_time() {
+        let log = AppLogData {
+            shop_id: 1,
+            api_client_id: 2,
+            payload: r#"{"cache_entry_epoch_ms":1683904621000,"cache_ttl_ms":5000,"http_request":{"url":"https://x"},"http_response":{"status":200}}"#.into(),
+            log_type: LOG_TYPE_RESPONSE_FROM_CACHE.into(),
+            source: "discount".into(),
+            source_namespace: "extensions".into(),
+            cursor: "c".into(),
+            status: "success".into(),
+            log_timestamp: "2024-05-23T19:17:00.240053Z".into(),
+        };
+        let text = format_log_text(&log, "shop.myshopify.com");
+        assert!(
+            text.contains("Cache write time:"),
+            "missing cache write time in: {text}"
+        );
+        assert!(text.contains("Cache TTL: 5 s"), "missing ttl in: {text}");
+        assert!(text.contains("HTTP request:"));
+    }
+
+    #[test]
+    fn text_format_background_reason() {
+        let log = AppLogData {
+            shop_id: 1,
+            api_client_id: 2,
+            payload: r#"{"reason":"no_cached_response","http_request":{"url":"https://x"}}"#.into(),
+            log_type: LOG_TYPE_REQUEST_EXECUTION_IN_BACKGROUND.into(),
+            source: "discount".into(),
+            source_namespace: "extensions".into(),
+            cursor: "c".into(),
+            status: "success".into(),
+            log_timestamp: "2024-05-23T19:17:00.240053Z".into(),
+        };
+        let text = format_log_text(&log, "shop.myshopify.com");
+        assert!(text.contains("Reason: No cached response available"));
+    }
+
+    #[test]
+    fn text_format_request_attempt_and_timings() {
+        let log = AppLogData {
+            shop_id: 1,
+            api_client_id: 2,
+            payload: r#"{"attempt":1,"connect_time_ms":10,"write_read_time_ms":20,"http_request":{"url":"https://x"},"http_response":{"status":200}}"#.into(),
+            log_type: LOG_TYPE_REQUEST_EXECUTION.into(),
+            source: "discount".into(),
+            source_namespace: "extensions".into(),
+            cursor: "c".into(),
+            status: "success".into(),
+            log_timestamp: "2024-05-23T19:17:00.240053Z".into(),
+        };
+        let text = format_log_text(&log, "shop.myshopify.com");
+        assert!(text.contains("Attempt: 1"));
+        assert!(text.contains("Connect time: 10 ms"));
+        assert!(text.contains("Write read time: 20 ms"));
+        assert!(text.contains("executed in 30 ms"));
     }
 }
