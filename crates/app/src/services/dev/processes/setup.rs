@@ -6,7 +6,9 @@ use super::dev_session::{
     setup_dev_session_process, DevSessionClient, DevSessionProcessOptions, DevSessionStatusManager,
 };
 use super::draftable_extension::{setup_draftable_extensions_process, DraftableExtensionOptions};
-use super::graphiql::{setup_graphiql_server_process, GraphiqlOptions};
+use super::graphiql::{
+    resolve_graphiql_key, setup_graphiql_server_process, GraphiqlOptions,
+};
 use super::previewable_extension::{
     setup_previewable_extensions_process, PreviewableExtensionOptions,
 };
@@ -85,10 +87,11 @@ pub async fn setup_dev_processes(
         app_preview_url.clone()
     };
 
-    let graphiql_key = flags
-        .graphiql_key
-        .clone()
-        .unwrap_or_else(|| format!("{}:{}", api_secret, store_fqdn));
+    let graphiql_key = resolve_graphiql_key(
+        flags.graphiql_key.as_deref(),
+        &api_secret,
+        store_fqdn,
+    );
     let graphiql_url = if flags.enable_graphiql {
         Some(format!(
             "http://localhost:{}/graphiql?key={}",
@@ -120,7 +123,12 @@ pub async fn setup_dev_processes(
             key: graphiql_key,
             api_key: api_key.clone(),
             api_secret: api_secret.clone(),
-            graphql_url: None,
+            graphql_url: flags.admin_graphql_url.clone().or_else(|| {
+                Some(format!(
+                    "https://{store_fqdn}/admin/api/unstable/graphql.json"
+                ))
+            }),
+            token_url: None,
         }));
     }
 
