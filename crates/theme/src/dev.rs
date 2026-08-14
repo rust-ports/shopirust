@@ -241,6 +241,8 @@ pub struct HotReloadPayload {
     pub section_names: Vec<String>,
     pub replace_templates: BTreeMap<String, String>,
     pub updated_file_parts: Option<UpdatedFileParts>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub is_theme_extension: bool,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
@@ -702,6 +704,7 @@ pub fn hot_reload_payload(
             BTreeMap::new()
         },
         updated_file_parts: asset.and_then(|asset| updated_file_parts(asset, file_details_cache)),
+        is_theme_extension: false,
     }
 }
 

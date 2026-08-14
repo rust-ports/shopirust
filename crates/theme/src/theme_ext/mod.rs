@@ -3,6 +3,7 @@
 
 mod fs;
 mod server;
+mod session;
 
 pub use fs::{
     get_extension_in_memory_templates, is_valid_theme_ext_file_key,
@@ -12,6 +13,7 @@ pub use fs::{
 };
 pub use server::{
     build_theme_extension_context, run_theme_extension_server, theme_extension_router_from_context,
-    valid_extension_host, ThemeExtServerContext, ThemeExtServerError, ThemeExtServerHandle,
-    DEFAULT_THEME_EXT_HOST, DEFAULT_THEME_EXT_PORT,
+    trigger_hot_reload, valid_extension_host, ThemeExtServerContext, ThemeExtServerError,
+    ThemeExtServerHandle, DEFAULT_THEME_EXT_HOST, DEFAULT_THEME_EXT_PORT,
 };
+pub use session::{empty_dev_session, initialize_dev_server_session};

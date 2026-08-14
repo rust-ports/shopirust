@@ -714,10 +714,20 @@ impl ThemeAdmin for AdminApi<'_> {
     }
 
     async fn create_theme(&self, name: String, role: String) -> Result<Theme, ThemeServiceError> {
+        self.create_theme_with_src(name, role, None).await
+    }
+
+    async fn create_theme_with_src(
+        &self,
+        name: String,
+        role: String,
+        src: Option<String>,
+    ) -> Result<Theme, ThemeServiceError> {
         api::themes::theme_create(
             api::themes::ThemeParams {
                 name: Some(name),
                 role: Some(role),
+                src,
                 ..Default::default()
             },
             self.session,

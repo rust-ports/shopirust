@@ -192,6 +192,11 @@ pub async fn setup_dev_processes(
         theme: flags.theme.clone(),
         theme_extension_port: flags.theme_extension_port,
         extensions: local_app.extensions.clone(),
+        admin_access_token: flags.admin_access_token.clone(),
+        api_key: api_key.clone(),
+        api_secret: api_secret.clone(),
+        app_url: app_preview_url.clone(),
+        admin_graphql_url: flags.admin_graphql_url.clone(),
     }) {
         processes.push(p);
     }

@@ -42,6 +42,25 @@ pub trait ThemeAdmin {
         id: i64,
         name: String,
     ) -> Result<Option<Theme>, ThemeServiceError>;
+
+    async fn fetch_theme(&self, id: i64) -> Result<Option<Theme>, ThemeServiceError> {
+        Ok(self
+            .fetch_themes()
+            .await?
+            .into_iter()
+            .find(|theme| theme.id == id))
+    }
+
+    /// Create a theme, optionally from a zip `src` URL (Dawn / fallback catalog).
+    async fn create_theme_with_src(
+        &self,
+        name: String,
+        role: String,
+        src: Option<String>,
+    ) -> Result<Theme, ThemeServiceError> {
+        let _ = src;
+        self.create_theme(name, role).await
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
