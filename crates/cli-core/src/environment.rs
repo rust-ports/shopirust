@@ -136,9 +136,9 @@ fn is_truthy(variable: &str) -> bool {
 /// Load `.env` from `directory` (or cwd) and export keys that are not already set.
 /// Returns the parsed map (including pre-existing env values that were not overwritten).
 pub fn load_environment(directory: Option<&Path>) -> HashMap<String, String> {
-    let dir = directory
-        .map(Path::to_path_buf)
-        .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| Path::new(".").to_path_buf()));
+    let dir = directory.map(Path::to_path_buf).unwrap_or_else(|| {
+        std::env::current_dir().unwrap_or_else(|_| Path::new(".").to_path_buf())
+    });
     let path = dir.join(".env");
     let mut out = HashMap::new();
     let Ok(raw) = std::fs::read_to_string(path) else {
@@ -153,7 +153,11 @@ pub fn load_environment(directory: Option<&Path>) -> HashMap<String, String> {
             continue;
         };
         let key = key.trim();
-        let value = value.trim().trim_matches('"').trim_matches('\'').to_string();
+        let value = value
+            .trim()
+            .trim_matches('"')
+            .trim_matches('\'')
+            .to_string();
         if key.is_empty() {
             continue;
         }

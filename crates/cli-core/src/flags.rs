@@ -1,8 +1,8 @@
 #[derive(Debug, Clone, clap::Args)]
 pub struct GlobalFlags {
     #[arg(
-        short = 'v',
         long = "verbose",
+        env = "SHOPIFY_FLAG_VERBOSE",
         global = true,
         help = "Increase verbosity"
     )]
@@ -11,14 +11,15 @@ pub struct GlobalFlags {
     #[arg(
         long = "no-color",
         alias = "no-colour",
+        env = "SHOPIFY_FLAG_NO_COLOR",
         global = true,
         help = "Disable color output"
     )]
     pub no_color: bool,
 
     #[arg(
-        short = 'p',
         long = "path",
+        env = "SHOPIFY_FLAG_PATH",
         global = true,
         help = "Path to the project directory"
     )]
@@ -43,9 +44,8 @@ mod tests {
     }
 
     #[test]
-    fn test_verbose_short() {
-        let cli = TestCli::parse_from(["test", "-v"]);
-        assert!(cli.global.verbose);
+    fn test_verbose_has_no_short_alias() {
+        assert!(TestCli::try_parse_from(["test", "-v"]).is_err());
     }
 
     #[test]
@@ -67,13 +67,16 @@ mod tests {
     }
 
     #[test]
-    fn test_path_short() {
-        let cli = TestCli::parse_from(["test", "-p", "/some/project"]);
-        assert_eq!(cli.global.path.as_deref(), Some("/some/project"));
+    fn test_path_has_no_short_alias() {
+        assert!(TestCli::try_parse_from(["test", "-p", "/some/project"]).is_err());
     }
 
     #[test]
     fn test_all_flags_default_false() {
+        std::env::remove_var("SHOPIFY_FLAG_VERBOSE");
+        std::env::remove_var("SHOPIFY_FLAG_NO_COLOR");
+        std::env::remove_var("SHOPIFY_FLAG_PATH");
+
         let cli = TestCli::parse_from(["test"]);
         assert!(!cli.global.verbose);
         assert!(!cli.global.no_color);

@@ -560,6 +560,8 @@ mod tests {
             .await
             .unwrap_err();
         assert!(err.to_string().contains("migrate_app_module"));
-        assert!(client.get_create_dev_store_link("1").contains("partners.shopify.com"));
+        assert!(client
+            .get_create_dev_store_link("1")
+            .contains("partners.shopify.com"));
     }
 }

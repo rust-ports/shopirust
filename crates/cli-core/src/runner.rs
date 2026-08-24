@@ -4,6 +4,16 @@ use crate::flags::GlobalFlags;
 use crate::metadata::MetadataCollector;
 use std::collections::HashMap;
 
+tokio::task_local! {
+    static GLOBAL_FLAGS: GlobalFlags;
+}
+
+/// Return the global flags for the currently executing command without
+/// publishing them through process-global environment variables.
+pub fn current_global_flags() -> Option<GlobalFlags> {
+    GLOBAL_FLAGS.try_with(Clone::clone).ok()
+}
+
 pub fn init_tracing() {
     let _ = tracing_subscriber::fmt()
         .with_env_filter(
@@ -15,18 +25,23 @@ pub fn init_tracing() {
 
 /// Run the CLI with the given topic command and metadata flush callback.
 /// The callback receives collected metadata after the command completes.
-pub async fn run_cli(
-    topic: impl TopicCommand,
+pub async fn run_cli<T, F, Fut>(
+    topic: T,
     global: &GlobalFlags,
-    flush_metadata: impl FnOnce(HashMap<String, String>),
-) -> Result<(), CliError> {
+    flush_metadata: F,
+) -> Result<(), CliError>
+where
+    T: TopicCommand,
+    F: FnOnce(HashMap<String, String>) -> Fut,
+    Fut: std::future::Future<Output = ()>,
+{
     crate::environment::load_environment(global.path.as_deref().map(std::path::Path::new));
     let metadata = MetadataCollector::new();
     metadata.add_from_parsed_flags(global);
 
-    let result = topic.execute().await;
+    let result = GLOBAL_FLAGS.scope(global.clone(), topic.execute()).await;
 
-    flush_metadata(metadata.drain());
+    flush_metadata(metadata.drain()).await;
 
     result
 }
@@ -85,7 +100,7 @@ mod tests {
         let flushed = Arc::new(AtomicBool::new(false));
         let f = flushed.clone();
 
-        let result = run_cli(MockTopic::Mock(MockCmd), &flags, |_data| {
+        let result = run_cli(MockTopic::Mock(MockCmd), &flags, |_data| async move {
             f.store(true, Ordering::SeqCst);
         })
         .await;
@@ -139,7 +154,7 @@ mod tests {
             path: Some("/tmp".into()),
         };
 
-        run_cli(MockTopic::Mock(MockCmd), &flags, |data| {
+        run_cli(MockTopic::Mock(MockCmd), &flags, |data| async move {
             assert_eq!(data.get("cmd_all_verbose").unwrap(), "true");
             assert_eq!(data.get("cmd_all_path_override").unwrap(), "true");
             assert!(data.contains_key("cmd_all_path_override_hash"));
@@ -192,7 +207,7 @@ mod tests {
             no_color: false,
             path: None,
         };
-        let result = run_cli(ErrTopic::Err(ErrCmd), &flags, |_| {}).await;
+        let result = run_cli(ErrTopic::Err(ErrCmd), &flags, |_| async {}).await;
         assert!(result.is_err());
     }
 
@@ -245,7 +260,7 @@ mod tests {
         let flushed = Arc::new(AtomicBool::new(false));
         let f = flushed.clone();
 
-        let _result = run_cli(ErrTopic::Err(ErrCmd), &flags, |_data| {
+        let _result = run_cli(ErrTopic::Err(ErrCmd), &flags, |_data| async move {
             f.store(true, Ordering::SeqCst);
         })
         .await;
