@@ -1,7 +1,92 @@
 use crate::replace_invalid_chars::replace_invalid_characters;
+use rand::seq::SliceRandom;
 use rand::Rng;
 
 pub const API_NAME_LIMIT: usize = 50;
+
+const CREATIVE_ADJECTIVES: &[&str] = &[
+    "bright",
+    "impactful",
+    "stylish",
+    "colorful",
+    "modern",
+    "minimal",
+    "trendy",
+    "creative",
+    "artistic",
+    "spectacular",
+    "glamorous",
+    "luxury",
+    "retro",
+    "nostalgic",
+    "comfy",
+    "polished",
+    "fabulous",
+    "balanced",
+    "monochrome",
+    "glitched",
+    "contrasted",
+    "elegant",
+    "textured",
+    "vibrant",
+    "harmonious",
+    "versatile",
+    "eclectic",
+    "futuristic",
+    "idealistic",
+    "intricate",
+    "bohemian",
+    "abstract",
+    "meticulous",
+    "refined",
+    "flamboyant",
+];
+
+const CREATIVE_NOUNS: &[&str] = &[
+    "vibe",
+    "style",
+    "moment",
+    "mood",
+    "flavor",
+    "look",
+    "appearance",
+    "perspective",
+    "aspect",
+    "ambience",
+    "quality",
+    "backdrop",
+    "focus",
+    "tone",
+    "inspiration",
+    "imagery",
+    "aesthetics",
+    "palette",
+    "ornamentation",
+    "contrast",
+    "colorway",
+    "visuals",
+    "typography",
+    "composition",
+    "scale",
+    "symmetry",
+    "gradients",
+    "proportions",
+    "textures",
+    "harmony",
+    "shapes",
+    "patterns",
+];
+
+pub fn generate_creative_name() -> String {
+    let mut rng = rand::thread_rng();
+    format!(
+        "{}-{}",
+        CREATIVE_ADJECTIVES
+            .choose(&mut rng)
+            .expect("creative adjectives"),
+        CREATIVE_NOUNS.choose(&mut rng).expect("creative nouns")
+    )
+}
 
 pub fn generate_theme_name(context: &str) -> String {
     let hostname = std::env::var("HOSTNAME")
@@ -48,5 +133,13 @@ mod tests {
         let dev = generate_theme_name("Development");
         let staging = generate_theme_name("Staging");
         assert_ne!(dev, staging);
+    }
+
+    #[test]
+    fn creative_name_matches_upstream_shape() {
+        let name = generate_creative_name();
+        let (adjective, noun) = name.split_once('-').unwrap();
+        assert!(CREATIVE_ADJECTIVES.contains(&adjective));
+        assert!(CREATIVE_NOUNS.contains(&noun));
     }
 }

@@ -108,11 +108,7 @@ impl<A: ThemeAdmin + Sync> HostThemeManager<A> {
     }
 
     async fn theme_after_create(&self, created: Theme) -> Result<Theme, HostThemeError> {
-        Ok(self
-            .admin
-            .fetch_theme(created.id)
-            .await?
-            .unwrap_or(created))
+        Ok(self.admin.fetch_theme(created.id).await?.unwrap_or(created))
     }
 
     async fn wait_for_theme_to_be_processed(&self, theme_id: i64) -> Result<(), HostThemeError> {
@@ -197,7 +193,11 @@ impl TokenThemeAdmin {
         self
     }
 
-    async fn graphql(&self, query: &str, variables: serde_json::Value) -> Result<serde_json::Value, ThemeServiceError> {
+    async fn graphql(
+        &self,
+        query: &str,
+        variables: serde_json::Value,
+    ) -> Result<serde_json::Value, ThemeServiceError> {
         let client = reqwest::Client::new();
         let response = client
             .post(&self.graphql_url)
@@ -271,8 +271,7 @@ const THEME_CREATE_MUTATION: &str = r"mutation themeCreate($name: String!, $sour
   }
 }";
 
-const SKELETON_THEME_CDN: &str =
-    "https://cdn.shopify.com/static/online-store/theme-skeleton.zip";
+const SKELETON_THEME_CDN: &str = "https://cdn.shopify.com/static/online-store/theme-skeleton.zip";
 
 #[async_trait::async_trait]
 impl ThemeAdmin for TokenThemeAdmin {
@@ -344,7 +343,9 @@ impl ThemeAdmin for TokenThemeAdmin {
                 }),
             )
             .await?;
-        if let Some(errors) = json.pointer("/data/themeCreate/userErrors").and_then(|v| v.as_array())
+        if let Some(errors) = json
+            .pointer("/data/themeCreate/userErrors")
+            .and_then(|v| v.as_array())
         {
             let messages: Vec<String> = errors
                 .iter()
@@ -360,7 +361,9 @@ impl ThemeAdmin for TokenThemeAdmin {
     }
 
     async fn delete_theme(&self, _id: i64) -> Result<(), ThemeServiceError> {
-        Err(ThemeServiceError::Api("delete_theme is not used by host theme manager".into()))
+        Err(ThemeServiceError::Api(
+            "delete_theme is not used by host theme manager".into(),
+        ))
     }
 
     async fn duplicate_theme(
@@ -368,11 +371,15 @@ impl ThemeAdmin for TokenThemeAdmin {
         _id: i64,
         _name: Option<String>,
     ) -> Result<crate::services::DuplicateResult, ThemeServiceError> {
-        Err(ThemeServiceError::Api("duplicate_theme is not used by host theme manager".into()))
+        Err(ThemeServiceError::Api(
+            "duplicate_theme is not used by host theme manager".into(),
+        ))
     }
 
     async fn publish_theme(&self, _id: i64) -> Result<Option<Theme>, ThemeServiceError> {
-        Err(ThemeServiceError::Api("publish_theme is not used by host theme manager".into()))
+        Err(ThemeServiceError::Api(
+            "publish_theme is not used by host theme manager".into(),
+        ))
     }
 
     async fn update_theme_name(
@@ -380,7 +387,9 @@ impl ThemeAdmin for TokenThemeAdmin {
         _id: i64,
         _name: String,
     ) -> Result<Option<Theme>, ThemeServiceError> {
-        Err(ThemeServiceError::Api("update_theme_name is not used by host theme manager".into()))
+        Err(ThemeServiceError::Api(
+            "update_theme_name is not used by host theme manager".into(),
+        ))
     }
 }
 

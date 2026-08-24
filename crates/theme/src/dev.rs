@@ -1,13 +1,16 @@
 use crate::checksum::Checksum;
-use crate::filesystem::{read_theme_asset, ThemeAsset, ThemeFileSystem, ThemeFsError};
+use crate::filesystem::{ThemeAsset, ThemeFileSystem, ThemeFsError};
 use crate::ignore::{apply_ignore_filters, IgnoreFilters};
 use crate::sync::{self, SyncError, SyncOptions, ThemeSyncAdmin};
 use crate::utilities::notifier::Notifier;
-use crate::watcher::{normalize_event, start_watcher, ThemeFileEvent, ThemeWatchState};
+use crate::watcher::{
+    normalize_event_with_listing, start_watcher, ThemeFileEvent, ThemeWatchState,
+};
 use axum::body::Body;
 use axum::extract::{Path as AxumPath, Query, Request, State};
 use axum::http::header::{ACCEPT, CONTENT_LENGTH, CONTENT_TYPE, HOST, LOCATION};
 use axum::http::{HeaderMap, HeaderValue, Method, StatusCode, Uri};
+use axum::middleware::{self, Next};
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{any, get};
@@ -30,7 +33,7 @@ use tokio::net::TcpListener as TokioTcpListener;
 use tokio::sync::{broadcast, mpsc, watch};
 use tokio_stream::wrappers::BroadcastStream;
 use tokio_stream::StreamExt;
-use tower_http::cors::{AllowOrigin, CorsLayer};
+use tower_http::cors::{AllowHeaders, AllowOrigin, CorsLayer};
 use url::Url;
 
 pub const DEFAULT_DEV_HOST: &str = "127.0.0.1";
@@ -479,7 +482,18 @@ where
                 }
             }
             Some(event) = watch_rx.recv() => {
-                if let Some(event) = normalize_event(&ctx.options.root, event) {
+                let event = match event {
+                    Ok(event) => Ok(event),
+                    Err(error) => {
+                        eprintln!("File watcher error: {error}");
+                        continue;
+                    }
+                };
+                if let Some(event) = normalize_event_with_listing(
+                    &ctx.options.root,
+                    filesystem.listing.as_deref(),
+                    event,
+                ) {
                     let events = apply_ignore_filters(vec![event], &ctx.options.filters);
                     if events.is_empty() {
                         continue;
@@ -514,7 +528,8 @@ where
 
     match event.kind {
         ThemeFileEventKind::CreateOrUpdate => {
-            let Some(asset) = read_theme_asset(&ctx.options.root, &event.key)
+            let Some(asset) = filesystem
+                .read_asset(&event.key)
                 .map_err(|error| DevError::Watch(error.to_string()))?
             else {
                 return Ok(());
@@ -1001,7 +1016,7 @@ pub fn abort_if_multiple_sources_changed(
 ) -> Result<(), DevError> {
     for checksum in changed {
         if let Some(previous) = filesystem.files.get(&checksum.key) {
-            let current = read_theme_asset(&filesystem.root, &checksum.key)?;
+            let current = filesystem.read_asset(&checksum.key)?;
             if current
                 .as_ref()
                 .is_some_and(|current| current.checksum != previous.checksum)
@@ -1135,13 +1150,16 @@ fn router(state: AppState) -> Router {
         format!("https://{}", state.ctx.session.store_fqdn),
         "https://online-store-web.shopifyapps.com".into(),
     ];
-    let cors =
-        CorsLayer::new().allow_origin(AllowOrigin::predicate(move |origin: &HeaderValue, _| {
+    let cors = CorsLayer::new()
+        .allow_origin(AllowOrigin::predicate(move |origin: &HeaderValue, _| {
             origin
                 .to_str()
                 .ok()
                 .is_some_and(|origin| origins.iter().any(|allowed| allowed == origin))
-        }));
+        }))
+        .allow_credentials(true)
+        .allow_methods([Method::GET, Method::POST, Method::HEAD, Method::OPTIONS])
+        .allow_headers(AllowHeaders::mirror_request());
 
     Router::new()
         .route("/__theme_dev/hot-reload", get(hot_reload))
@@ -1155,7 +1173,22 @@ fn router(state: AppState) -> Router {
         )
         .fallback(any(proxy_or_render))
         .layer(cors)
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            validate_host_request,
+        ))
         .with_state(state)
+}
+
+async fn validate_host_request(
+    State(state): State<AppState>,
+    request: Request,
+    next: Next,
+) -> Response {
+    if !valid_host(&state.ctx, request.headers()) {
+        return (StatusCode::BAD_REQUEST, "Invalid Host header").into_response();
+    }
+    next.run(request).await
 }
 
 fn local_origin(ctx: &DevServerContext) -> String {
@@ -1472,9 +1505,6 @@ async fn proxy_or_render(
     Query(query): Query<BTreeMap<String, String>>,
     request: Request,
 ) -> Response {
-    if !valid_host(&state.ctx, request.headers()) {
-        return (StatusCode::BAD_REQUEST, "Invalid Host header").into_response();
-    }
     if should_ignore(request.uri().path()) {
         return StatusCode::NO_CONTENT.into_response();
     }
@@ -3104,6 +3134,7 @@ pub async fn push_initial<A: ThemeSyncAdmin + Sync>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tower::ServiceExt;
 
     fn ctx(mode: LiveReloadMode) -> DevServerContext {
         DevServerContext {
@@ -3177,6 +3208,72 @@ mod tests {
             extension_files: Arc::new(Mutex::new(BTreeMap::new())),
             extension_unsynced: Arc::new(Mutex::new(BTreeSet::new())),
         }
+    }
+
+    #[tokio::test]
+    async fn host_validation_runs_before_every_dev_route() {
+        for uri in [
+            "/__theme_dev/hot-reload",
+            "/assets/theme.css",
+            "/compiled_assets/theme.css",
+            "/cdn/theme.css",
+            "/ext/cdn/theme.css",
+            LOCAL_HOT_RELOAD_SCRIPT_ENDPOINT,
+            "/",
+        ] {
+            let response = router(state_with_files(BTreeMap::new()))
+                .oneshot(
+                    Request::builder()
+                        .uri(uri)
+                        .header(HOST, "attacker.example:9292")
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::BAD_REQUEST, "uri={uri}");
+        }
+    }
+
+    #[tokio::test]
+    async fn cors_allows_credentialed_theme_editor_preflight() {
+        let response = router(state_with_files(BTreeMap::new()))
+            .oneshot(
+                Request::builder()
+                    .method(Method::OPTIONS)
+                    .uri("/assets/theme.css")
+                    .header(HOST, "127.0.0.1:9292")
+                    .header("origin", "https://online-store-web.shopifyapps.com")
+                    .header("access-control-request-method", "POST")
+                    .header("access-control-request-headers", "content-type")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response
+                .headers()
+                .get("access-control-allow-origin")
+                .unwrap(),
+            "https://online-store-web.shopifyapps.com"
+        );
+        assert_eq!(
+            response
+                .headers()
+                .get("access-control-allow-credentials")
+                .unwrap(),
+            "true"
+        );
+        assert!(response
+            .headers()
+            .get("access-control-allow-methods")
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .contains("POST"));
     }
 
     fn headers(values: &[(&'static str, &'static str)]) -> HeaderMap {
@@ -3984,6 +4081,7 @@ mod tests {
                 ),
             ]),
             filters: IgnoreFilters::default(),
+            listing: None,
         };
         let diff = identify_json_reconciliation(
             vec![
@@ -4072,6 +4170,7 @@ mod tests {
                 asset("templates/asset.json", "stale-in-memory"),
             )]),
             filters: IgnoreFilters::default(),
+            listing: None,
         };
         let changed = vec![Checksum {
             key: "templates/asset.json".into(),
@@ -4105,6 +4204,7 @@ mod tests {
             root,
             files: BTreeMap::from([("templates/asset.json".into(), on_disk)]),
             filters: IgnoreFilters::default(),
+            listing: None,
         };
         let changed = vec![Checksum {
             key: "templates/asset.json".into(),
@@ -4120,6 +4220,7 @@ mod tests {
             root: PathBuf::new(),
             files: BTreeMap::new(),
             filters: IgnoreFilters::default(),
+            listing: None,
         };
         let checksums = vec![
             Checksum {
@@ -4234,6 +4335,7 @@ mod tests {
             root,
             files: BTreeMap::from([("config/local.json".into(), local)]),
             filters: IgnoreFilters::default(),
+            listing: None,
         };
         let plan = JsonReconciliationPlan {
             local_files_to_delete: vec!["config/local.json".into()],
@@ -4289,6 +4391,7 @@ mod tests {
                 ),
             ]),
             filters: IgnoreFilters::default(),
+            listing: None,
         };
         let filters = IgnoreFilters {
             only: vec!["templates/*".into()],

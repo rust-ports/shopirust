@@ -3,6 +3,11 @@
 Checklist for porting `packages/theme` from upstream Shopify CLI into the Rust theme crate.
 Generated from deep analysis of upstream `packages/theme/src/cli` vs the Rust `crates/theme` + `cli-kit` boundary.
 
+The authoritative baseline and per-test mapping are now
+`parity/theme-upstream.lock.toml` and `parity/theme-test-matrix.csv`. Run
+`make theme-parity-check UPSTREAM_CLI=/path/to/shopify/cli` before changing the
+baseline; this document is only a narrative progress summary.
+
 ## Current Baseline
 
 - Rust `theme` crate tests: `cargo test -p theme --lib` → **276 tests**.

@@ -582,6 +582,7 @@ mod tests {
             root: std::path::PathBuf::new(),
             files: BTreeMap::new(),
             filters: IgnoreFilters::default(),
+            listing: None,
         };
 
         let plan = plan_push(&fs, Vec::new(), &SyncOptions::default());
@@ -611,6 +612,7 @@ mod tests {
             root: std::path::PathBuf::new(),
             files: BTreeMap::new(),
             filters: IgnoreFilters::default(),
+            listing: None,
         };
 
         let plan = plan_push(
@@ -752,6 +754,7 @@ mod tests {
             root: std::path::PathBuf::new(),
             files,
             filters: IgnoreFilters::default(),
+            listing: None,
         };
 
         let report = push(&api, 1, &fs, &SyncOptions::default()).await.unwrap();
@@ -833,6 +836,7 @@ mod tests {
             root: std::path::PathBuf::new(),
             files,
             filters: IgnoreFilters::default(),
+            listing: None,
         };
 
         push(&api, 1, &fs, &SyncOptions::default()).await.unwrap();
@@ -847,6 +851,7 @@ mod tests {
             root: std::path::PathBuf::new(),
             files,
             filters: IgnoreFilters::default(),
+            listing: None,
         }
     }
 

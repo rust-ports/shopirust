@@ -89,8 +89,23 @@ pub fn theme_environment_info_json(
         cli_version: cli_version.to_string(),
         os: npm_platform_arch(std::env::consts::OS, std::env::consts::ARCH),
         shell: shell.unwrap_or("unknown").to_string(),
-        node_version: "node-rust".to_string(),
+        node_version: node_version(),
     }
+}
+
+fn node_version() -> String {
+    let executable = std::env::var("SHOPIFY_CLI_NODE")
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| "node".into());
+    std::process::Command::new(executable)
+        .arg("--version")
+        .output()
+        .ok()
+        .filter(|output| output.status.success())
+        .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_string())
+        .filter(|version| !version.is_empty())
+        .unwrap_or_else(|| "Not installed".into())
 }
 
 /// npm/oclif-style platform label, e.g. `darwin-arm64`, `linux-x64`.
@@ -121,7 +136,7 @@ mod tests {
         assert_eq!(info.development_theme_id, None);
         assert_eq!(info.cli_version, "1.2.3");
         assert_eq!(info.shell, "unknown");
-        assert_eq!(info.node_version, "node-rust");
+        assert!(!info.node_version.is_empty());
         assert_eq!(
             info.os,
             npm_platform_arch(std::env::consts::OS, std::env::consts::ARCH)

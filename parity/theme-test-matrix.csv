@@ -1,0 +1,63 @@
+upstream_test,rust_test_location,status,notes
+src/cli/commands/theme/check.test.ts,crates/cli-kit/src/commands/theme.rs,ported,CLI parsing and packaged adapter
+src/cli/commands/theme/info.test.ts,crates/cli-kit/src/commands/theme.rs,ported,command and JSON shape
+src/cli/commands/theme/preview.test.ts,crates/cli-kit/src/commands/theme.rs,ported,command and preview client
+src/cli/flags.test.ts,crates/cli-kit/src/commands/theme.rs,ported,Clap parsing tests
+src/cli/services/check.test.ts,crates/cli-kit/src/commands/theme.rs,ported,packaged Theme Check invocation
+src/cli/services/console.test.ts,crates/theme/src/console.rs,ported,REPL service
+src/cli/services/delete.test.ts,crates/theme/src/services.rs,ported,service contract
+src/cli/services/dev-override.test.ts,crates/theme/src/dev.rs,ported,dev overrides
+src/cli/services/dev.test.ts,crates/theme/src/dev.rs,ported,dev lifecycle
+src/cli/services/duplicate.test.ts,crates/theme/src/services.rs,ported,service and JSON contract
+src/cli/services/info.test.ts,crates/theme/src/services.rs,ported,service and JSON contract
+src/cli/services/init.test.ts,crates/theme/src/init.rs,ported,initialization flow
+src/cli/services/list.test.ts,crates/theme/src/listing.rs,ported,listing filters
+src/cli/services/local-storage.test.ts,crates/theme/src/local_storage.rs,ported,atomic and task-local storage
+src/cli/services/metafields-pull.test.ts,crates/cli-kit/src/commands/theme.rs,ported,metafield pull command
+src/cli/services/open.test.ts,crates/cli-kit/src/commands/theme.rs,ported,open command
+src/cli/services/package.test.ts,crates/theme/src/package.rs,ported,archive membership
+src/cli/services/profile.test.ts,crates/theme/src/profile.rs,ported,profile output
+src/cli/services/publish.test.ts,crates/theme/src/services.rs,ported,publish service
+src/cli/services/pull.test.ts,crates/theme/src/sync.rs,ported,pull planning and execution
+src/cli/services/push.test.ts,crates/theme/src/sync.rs,ported,push planning and JSON errors
+src/cli/services/rename.test.ts,crates/theme/src/services.rs,ported,rename service
+src/cli/utilities/asset-checksum.test.ts,crates/theme/src/checksum.rs,ported,checksum behavior
+src/cli/utilities/asset-ignore.test.ts,crates/theme/src/ignore.rs,ported,ignore and only patterns
+src/cli/utilities/cli-config.test.ts,crates/theme/src/utilities/cli_config.rs,ported,config behavior
+src/cli/utilities/development-theme-manager.test.ts,crates/theme/src/utilities/development_theme_manager.rs,ported,find create and cleanup
+src/cli/utilities/errors.test.ts,crates/theme/src/utilities/errors.rs,ported,error formatting
+src/cli/utilities/log-request-line.test.ts,crates/theme/src/dev.rs,ported,request logging
+src/cli/utilities/notifier.test.ts,crates/theme/src/utilities/notifier.rs,ported,notification behavior
+src/cli/utilities/repl/evaluator.test.ts,crates/theme/src/console.rs,ported,Liquid evaluation
+src/cli/utilities/repl/presenter.test.ts,crates/theme/src/console.rs,ported,REPL presentation
+src/cli/utilities/repl/repl-theme-manager.test.ts,crates/theme/src/console.rs,ported,REPL theme lifecycle
+src/cli/utilities/repl/repl.test.ts,crates/theme/src/console.rs,ported,interactive loop
+src/cli/utilities/theme-command.test.ts,crates/cli-kit/src/commands/theme.rs,ported,multi-environment runner
+src/cli/utilities/theme-downloader.test.ts,crates/theme/src/downloader.rs,ported,batching filters and partial errors
+src/cli/utilities/theme-environment/cookies.test.ts,crates/theme/src/dev.rs,ported,cookie forwarding
+src/cli/utilities/theme-environment/dev-server-session.test.ts,crates/theme/src/dev.rs,ported,session lifecycle
+src/cli/utilities/theme-environment/host-validation.test.ts,crates/theme/src/dev.rs,ported,host validation
+src/cli/utilities/theme-environment/hot-reload/server.test.ts,crates/theme/src/dev.rs,ported,SSE and reload payloads
+src/cli/utilities/theme-environment/html.test.ts,crates/theme/src/dev.rs,ported,HTML rewriting and fallback
+src/cli/utilities/theme-environment/liquid-tag-content.test.ts,crates/theme/src/dev.rs,ported,Liquid tag extraction
+src/cli/utilities/theme-environment/local-assets.test.ts,crates/theme/src/dev.rs,ported,local asset serving
+src/cli/utilities/theme-environment/proxy.test.ts,crates/theme/src/dev.rs,ported,proxy routing
+src/cli/utilities/theme-environment/remote-theme-watcher.test.ts,crates/theme/src/dev.rs,ported,remote polling
+src/cli/utilities/theme-environment/standard-events.test.ts,crates/theme/src/dev.rs,ported,standard events injection
+src/cli/utilities/theme-environment/storefront-password-prompt.test.ts,crates/theme/src/dev.rs,ported,password flow
+src/cli/utilities/theme-environment/storefront-renderer.test.ts,crates/theme/src/dev.rs,ported,SFR requests and fallback
+src/cli/utilities/theme-environment/storefront-session.test.ts,crates/theme/src/dev.rs,ported,session retry and refresh
+src/cli/utilities/theme-environment/storefront-utils.test.ts,crates/theme/src/dev.rs,ported,storefront helpers
+src/cli/utilities/theme-environment/theme-environment.test.ts,crates/theme/src/dev.rs,partial,core lifecycle is ported; hermetic full bootstrap remains tracked
+src/cli/utilities/theme-environment/theme-polling.test.ts,crates/theme/src/dev.rs,ported,dual-source polling
+src/cli/utilities/theme-environment/theme-reconciliation.test.ts,crates/theme/src/dev.rs,ported,conflict reconciliation
+src/cli/utilities/theme-ext-environment/theme-ext-fs.test.ts,crates/theme/src/theme_ext/fs.rs,ported,extension virtual filesystem
+src/cli/utilities/theme-ext-environment/theme-ext-server.test.ts,crates/theme/src/theme_ext/server.rs,ported,extension server and hot reload
+src/cli/utilities/theme-fs.test.ts,crates/theme/src/filesystem.rs,ported,filesystem ordering and binary files
+src/cli/utilities/theme-listing.test.ts,crates/theme/src/listing.rs,ported,listing parsing
+src/cli/utilities/theme-previews/preview.test.ts,crates/theme/src/preview.rs,ported,preview API
+src/cli/utilities/theme-selector.test.ts,crates/theme/src/selector.rs,ported,selection behavior
+src/cli/utilities/theme-selector/fetch.test.ts,crates/theme/src/selector.rs,ported,selection fetch
+src/cli/utilities/theme-selector/filter.test.ts,crates/theme/src/selector.rs,ported,selection filters
+src/cli/utilities/theme-ui.test.ts,crates/theme/src/utilities/theme_ui.rs,partial,semantic output covered; exact concurrent streaming excluded
+src/cli/utilities/theme-uploader.test.ts,crates/theme/src/uploader.rs,ported,batching order retries and progress state

@@ -14,6 +14,7 @@ colored.workspace = true
 crossterm.workspace = true
 dirs.workspace = true
 futures = "0.3"
+fs2 = "0.4"
 inquire.workspace = true
 is-terminal.workspace = true
 mime_guess.workspace = true

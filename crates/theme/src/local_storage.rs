@@ -1,10 +1,34 @@
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
 
 const THEME_STORE_KEY: &str = "themeStore";
+
+tokio::task_local! {
+    /// Store selected for the current asynchronous command. Multi-environment
+    /// commands must not communicate through the process-wide "last used"
+    /// store file while they are running concurrently.
+    static THEME_STORE_CONTEXT: String;
+}
+
+/// Run a future with an isolated current theme store.
+///
+/// The persisted store remains a fallback for ordinary single-store commands;
+/// scoped commands neither read another task's selection nor overwrite that
+/// fallback as a side effect of authentication.
+pub async fn with_theme_store_context<F>(store: impl Into<String>, future: F) -> F::Output
+where
+    F: std::future::Future,
+{
+    THEME_STORE_CONTEXT.scope(store.into(), future).await
+}
+
+fn contextual_theme_store() -> Option<String> {
+    THEME_STORE_CONTEXT.try_with(Clone::clone).ok()
+}
 
 #[derive(Debug, Error)]
 pub enum LocalStorageError {
@@ -229,17 +253,42 @@ fn get_string_i64(path: &Path, key: &str) -> Result<Option<i64>, LocalStorageErr
 }
 
 fn set<T: Serialize>(path: &Path, key: &str, value: &T) -> Result<(), LocalStorageError> {
-    let mut data = load(path)?;
-    data.values.insert(
-        key.to_string(),
-        serde_json::to_value(value).map_err(LocalStorageError::Serialize)?,
-    );
-    save(path, &data)
+    let value = serde_json::to_value(value).map_err(LocalStorageError::Serialize)?;
+    update(path, |data| {
+        data.values.insert(key.to_string(), value);
+    })
 }
 
 fn remove(path: &Path, key: &str) -> Result<(), LocalStorageError> {
+    update(path, |data| {
+        data.values.remove(key);
+    })
+}
+
+fn update(path: &Path, mutate: impl FnOnce(&mut StoreData)) -> Result<(), LocalStorageError> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|source| LocalStorageError::Write {
+            path: parent.to_path_buf(),
+            source,
+        })?;
+    }
+    let lock_path = path.with_extension("lock");
+    let lock = fs::OpenOptions::new()
+        .create(true)
+        .read(true)
+        .write(true)
+        .truncate(false)
+        .open(&lock_path)
+        .map_err(|source| LocalStorageError::Write {
+            path: lock_path.clone(),
+            source,
+        })?;
+    fs2::FileExt::lock_exclusive(&lock).map_err(|source| LocalStorageError::Write {
+        path: lock_path,
+        source,
+    })?;
     let mut data = load(path)?;
-    data.values.remove(key);
+    mutate(&mut data);
     save(path, &data)
 }
 
@@ -268,13 +317,33 @@ fn save(path: &Path, data: &StoreData) -> Result<(), LocalStorageError> {
         })?;
     }
     let content = serde_json::to_string_pretty(data).map_err(LocalStorageError::Serialize)?;
-    fs::write(path, content).map_err(|source| LocalStorageError::Write {
+    let temporary = path.with_extension(format!(
+        "tmp-{}-{}",
+        std::process::id(),
+        rand::random::<u64>()
+    ));
+    let result = (|| {
+        let mut file = fs::OpenOptions::new()
+            .create_new(true)
+            .write(true)
+            .open(&temporary)?;
+        file.write_all(content.as_bytes())?;
+        file.sync_all()?;
+        fs::rename(&temporary, path)
+    })();
+    if result.is_err() {
+        let _ = fs::remove_file(&temporary);
+    }
+    result.map_err(|source| LocalStorageError::Write {
         path: path.to_path_buf(),
         source,
     })
 }
 
 pub fn current_theme_store() -> Option<String> {
+    if let Some(store) = contextual_theme_store() {
+        return Some(store);
+    }
     ThemeLocalStorage::new()
         .current_theme_store()
         .ok()
@@ -282,6 +351,12 @@ pub fn current_theme_store() -> Option<String> {
 }
 
 pub fn store_current_theme_store(store: &str) {
+    // A task-local selection is authoritative for the duration of a
+    // multi-environment command. Persisting here would reintroduce a race over
+    // the last-used-store fallback.
+    if contextual_theme_store().is_some() {
+        return;
+    }
     let _ = ThemeLocalStorage::new().store_current_theme_store(store);
 }
 
@@ -364,6 +439,22 @@ pub fn remove_storefront_password_for_store(store: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::{Arc, Barrier};
+
+    #[tokio::test]
+    async fn task_local_store_contexts_are_isolated() {
+        let one = tokio::spawn(with_theme_store_context("one.myshopify.com", async {
+            tokio::task::yield_now().await;
+            current_theme_store()
+        }));
+        let two = tokio::spawn(with_theme_store_context("two.myshopify.com", async {
+            tokio::task::yield_now().await;
+            current_theme_store()
+        }));
+
+        assert_eq!(one.await.unwrap().as_deref(), Some("one.myshopify.com"));
+        assert_eq!(two.await.unwrap().as_deref(), Some("two.myshopify.com"));
+    }
 
     #[test]
     fn stores_reads_and_removes_current_theme_store() {
@@ -380,6 +471,41 @@ mod tests {
 
         storage.remove_current_theme_store().unwrap();
         assert_eq!(storage.current_theme_store().unwrap(), None);
+    }
+
+    #[test]
+    fn concurrent_store_updates_do_not_lose_entries() {
+        let temp = tempfile::tempdir().unwrap();
+        let storage = ThemeLocalStorage::with_path(temp.path());
+        let barrier = Arc::new(Barrier::new(8));
+        let threads = (0..8)
+            .map(|index| {
+                let storage = storage.clone();
+                let barrier = Arc::clone(&barrier);
+                std::thread::spawn(move || {
+                    barrier.wait();
+                    storage
+                        .store_development_theme_id_for_store(
+                            &format!("store-{index}.myshopify.com"),
+                            index,
+                        )
+                        .unwrap();
+                })
+            })
+            .collect::<Vec<_>>();
+        for thread in threads {
+            thread.join().unwrap();
+        }
+        for index in 0..8 {
+            assert_eq!(
+                storage
+                    .development_theme_id_for_store(&format!("store-{index}.myshopify.com"))
+                    .unwrap(),
+                Some(index)
+            );
+        }
+        let raw = fs::read_to_string(&storage.development_theme_path).unwrap();
+        serde_json::from_str::<serde_json::Value>(&raw).unwrap();
     }
 
     #[test]

@@ -25,7 +25,7 @@ pub async fn initialize_dev_server_session(
     store_fqdn: &str,
     admin_token: &str,
     storefront_password: Option<&str>,
-) -> DevServerSession {
+) -> Result<DevServerSession, String> {
     let mut session = DevServerSession {
         store_fqdn: store_fqdn.to_string(),
         admin_token: admin_token.to_string(),
@@ -33,16 +33,15 @@ pub async fn initialize_dev_server_session(
         theme_access_domain: None,
         session_cookies: BTreeMap::new(),
     };
-    if admin_token.is_empty() && store_fqdn.is_empty() {
-        return session;
+    if admin_token.trim().is_empty() {
+        return Err("A valid Admin API access token is required.".into());
     }
-    match fetch_storefront_session_cookies(theme_id, &session, storefront_password).await {
-        Ok(cookies) => session.session_cookies = cookies,
-        Err(error) => {
-            eprintln!("Theme extension storefront session: {error}");
-        }
+    if store_fqdn.trim().is_empty() {
+        return Err("A store is required to initialize the storefront session.".into());
     }
-    session
+    session.session_cookies =
+        fetch_storefront_session_cookies(theme_id, &session, storefront_password).await?;
+    Ok(session)
 }
 
 async fn fetch_storefront_session_cookies(
@@ -74,19 +73,12 @@ async fn fetch_storefront_session_cookies(
                     continue;
                 }
                 let set_cookies = set_cookie_headers(response.headers());
-                if let Some(essential) =
-                    cookie_from_set_cookie(&set_cookies, "_shopify_essential")
+                if let Some(essential) = cookie_from_set_cookie(&set_cookies, "_shopify_essential")
                 {
-                    let mut cookies =
-                        BTreeMap::from([("_shopify_essential".into(), essential)]);
+                    let mut cookies = BTreeMap::from([("_shopify_essential".into(), essential)]);
                     if let Some(password) = storefront_password {
-                        if let Ok(extra) = enrich_storefront_password(
-                            &client,
-                            &origin,
-                            password,
-                            &cookies,
-                        )
-                        .await
+                        if let Ok(extra) =
+                            enrich_storefront_password(&client, &origin, password, &cookies).await
                         {
                             cookies.extend(extra);
                         }
@@ -157,9 +149,14 @@ mod tests {
             )
             .mount(&server)
             .await;
-        let session = initialize_dev_server_session(11, &server.uri(), "tok", None).await;
+        let session = initialize_dev_server_session(11, &server.uri(), "tok", None)
+            .await
+            .unwrap();
         assert_eq!(
-            session.session_cookies.get("_shopify_essential").map(String::as_str),
+            session
+                .session_cookies
+                .get("_shopify_essential")
+                .map(String::as_str),
             Some("abc")
         );
     }

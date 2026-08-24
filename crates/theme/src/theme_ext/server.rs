@@ -1,17 +1,19 @@
 use crate::dev::{
-    allowed_hosts, can_proxy_request, inject_cdn_proxy, inject_hot_reload_script, serialize_cookies,
-    DevServerSession, HotReloadEvent, HotReloadPayload, LiveReloadMode,
+    allowed_hosts, can_proxy_request, inject_cdn_proxy, inject_hot_reload_script,
+    serialize_cookies, DevServerSession, HotReloadEvent, HotReloadPayload, LiveReloadMode,
 };
 use crate::filesystem::ThemeAsset;
 use crate::theme_ext::fs::{
-    get_extension_in_memory_templates, mount_theme_extension_file_system, replace_extension_templates_params,
-    ThemeExtFsEventName, ThemeExtFsEventPayload, ThemeExtensionFileSystem,
+    get_extension_in_memory_templates, mount_theme_extension_file_system,
+    replace_extension_templates_params, ThemeExtFsEventName, ThemeExtFsEventPayload,
+    ThemeExtensionFileSystem,
 };
 use crate::theme_ext::session::empty_dev_session;
 use crate::utilities::host_theme_manager::storefront_origin;
 use axum::extract::{Path as AxumPath, Request, State};
 use axum::http::header::{CONTENT_TYPE, HOST};
 use axum::http::{HeaderMap, Method, StatusCode};
+use axum::middleware::{self, Next};
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{any, get};
@@ -151,7 +153,22 @@ fn build_theme_extension_router(state: AppState) -> Router {
         .route("/__theme_dev/hot-reload", get(hot_reload))
         .route("/assets/*path", get(asset))
         .fallback(any(fallback))
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            validate_host_request,
+        ))
         .with_state(state)
+}
+
+async fn validate_host_request(
+    State(state): State<AppState>,
+    request: Request,
+    next: Next,
+) -> Response {
+    if !valid_host(&state.ctx, request.headers()) {
+        return (StatusCode::BAD_REQUEST, "Invalid Host header").into_response();
+    }
+    next.run(request).await
 }
 
 /// Builds a router from a server context (for tests / embedding).
@@ -178,7 +195,12 @@ fn attach_hot_reload_listeners(
     let on_update = {
         let reload_tx = reload_tx.clone();
         Arc::new(move |payload: ThemeExtFsEventPayload| {
-            trigger_hot_reload(&reload_tx, theme_id, &payload.file_key, payload.content.as_deref());
+            trigger_hot_reload(
+                &reload_tx,
+                theme_id,
+                &payload.file_key,
+                payload.content.as_deref(),
+            );
         })
     };
     let add = Arc::clone(&on_update);
@@ -246,9 +268,6 @@ async fn asset(State(state): State<AppState>, AxumPath(path): AxumPath<String>) 
 }
 
 async fn fallback(State(state): State<AppState>, request: Request) -> Response {
-    if !valid_host(&state.ctx, request.headers()) {
-        return (StatusCode::BAD_REQUEST, "Invalid Host header").into_response();
-    }
     if should_ignore(request.uri().path()) {
         return StatusCode::NO_CONTENT.into_response();
     }
@@ -315,7 +334,9 @@ async fn forward_to_store(
     let (method, body) = if html && !replace_extension_templates.is_empty() {
         (
             Method::POST,
-            Some(replace_extension_templates_params(&replace_extension_templates)),
+            Some(replace_extension_templates_params(
+                &replace_extension_templates,
+            )),
         )
     } else if method != Method::GET && method != Method::HEAD {
         let bytes = axum::body::to_bytes(request.into_body(), usize::MAX)
@@ -558,13 +579,31 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn middleware_rejects_invalid_host_on_explicit_routes() {
+        for uri in ["/__theme_dev/hot-reload", "/assets/thumbs-up.png", "/"] {
+            let router = theme_extension_router_from_context(fixture_context(None));
+            let (status, _) = send(
+                router,
+                Request::builder()
+                    .uri(uri)
+                    .header(HOST, "attacker.example:9293")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await;
+            assert_eq!(status, StatusCode::BAD_REQUEST, "uri={uri}");
+        }
+    }
+
+    #[tokio::test]
     async fn html_path_hits_storefront_mock_and_injects_hot_reload() {
         let server = MockServer::start().await;
         Mock::given(method("GET"))
             .and(path("/"))
-            .respond_with(ResponseTemplate::new(200).set_body_string(
-                "<html><head></head><body>storefront</body></html>",
-            ))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_string("<html><head></head><body>storefront</body></html>"),
+            )
             .mount(&server)
             .await;
         let router = theme_extension_router_from_context(fixture_context(Some(server.uri())));

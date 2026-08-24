@@ -1,4 +1,4 @@
-use crate::filesystem::{is_valid_theme_file_key, read_theme_asset, ThemeAsset, ThemeFileSystem};
+use crate::filesystem::{logical_key_for_path, read_theme_asset, ThemeAsset, ThemeFileSystem};
 use crate::ignore::ThemeFileKey;
 use crate::sync::{FileOperation, RemoteResult, SyncError, ThemeSyncAdmin};
 use crate::utilities::notifier::{Notifier, NotifierError};
@@ -93,8 +93,26 @@ pub fn start_watcher(
     poll: bool,
     tx: mpsc::Sender<notify::Result<notify::Event>>,
 ) -> Result<RecommendedWatcher, ThemeWatcherError> {
+    let runtime = tokio::runtime::Handle::try_current().map_err(|error| {
+        ThemeWatcherError::Watch(format!("No async runtime for watcher: {error}"))
+    })?;
+    let pending = Arc::new(Mutex::new(
+        BTreeMap::<String, tokio::task::JoinHandle<()>>::new(),
+    ));
     let tx = move |result| {
-        let _ = tx.blocking_send(result);
+        let key = debounce_key(&result);
+        let mut pending = pending.lock().expect("watch debounce state poisoned");
+        if let Some(task) = pending.remove(&key) {
+            task.abort();
+        }
+        let tx = tx.clone();
+        pending.insert(
+            key,
+            runtime.spawn(async move {
+                tokio::time::sleep(Duration::from_millis(250)).await;
+                let _ = tx.send(result).await;
+            }),
+        );
     };
     let config = if poll {
         Config::default().with_poll_interval(Duration::from_millis(500))
@@ -107,6 +125,13 @@ pub fn start_watcher(
         .watch(root, RecursiveMode::Recursive)
         .map_err(|error| ThemeWatcherError::Watch(error.to_string()))?;
     Ok(watcher)
+}
+
+fn debounce_key(result: &notify::Result<notify::Event>) -> String {
+    match result {
+        Ok(event) => format!("{:?}:{:?}", event.kind, event.paths),
+        Err(error) => format!("error:{error}"),
+    }
 }
 
 pub fn normalize_event(
@@ -128,13 +153,26 @@ pub fn normalize_event(
 }
 
 pub fn key_from_path(root: &Path, path: &Path) -> Option<String> {
-    let relative = path.strip_prefix(root).ok()?;
-    let key = relative
-        .components()
-        .map(|component| component.as_os_str().to_string_lossy())
-        .collect::<Vec<_>>()
-        .join("/");
-    is_valid_theme_file_key(&key).then_some(key)
+    logical_key_for_path(root, path, None)
+}
+
+pub fn normalize_event_with_listing(
+    root: &Path,
+    listing: Option<&str>,
+    result: notify::Result<notify::Event>,
+) -> Option<ThemeFileEvent> {
+    let event = result.ok()?;
+    let kind = match event.kind {
+        EventKind::Create(_) | EventKind::Modify(_) => ThemeFileEventKind::CreateOrUpdate,
+        EventKind::Remove(_) => ThemeFileEventKind::Delete,
+        _ => return None,
+    };
+    let path = event
+        .paths
+        .into_iter()
+        .find(|path| path.is_file() || matches!(kind, ThemeFileEventKind::Delete))?;
+    let key = logical_key_for_path(root, &path, listing)?;
+    Some(ThemeFileEvent { key, kind })
 }
 
 #[async_trait]
@@ -285,6 +323,7 @@ mod tests {
             root: root.to_path_buf(),
             files: BTreeMap::new(),
             filters: IgnoreFilters::default(),
+            listing: None,
         }
     }
 
@@ -307,6 +346,22 @@ mod tests {
                 kind: ThemeFileEventKind::CreateOrUpdate,
             })
         );
+    }
+
+    #[test]
+    fn normalizes_active_listing_event_to_base_theme_key() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("listings/summer/templates/product.json");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, "{}").unwrap();
+        let event = notify::Event::new(notify::EventKind::Modify(notify::event::ModifyKind::Any))
+            .add_path(path);
+
+        let normalized = normalize_event_with_listing(temp.path(), Some("summer"), Ok(event))
+            .expect("listing event");
+
+        assert_eq!(normalized.key, "templates/product.json");
+        assert_eq!(normalized.kind, ThemeFileEventKind::CreateOrUpdate);
     }
 
     #[test]

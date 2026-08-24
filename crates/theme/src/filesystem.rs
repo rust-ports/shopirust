@@ -67,6 +67,7 @@ pub struct ThemeFileSystem {
     pub root: PathBuf,
     pub files: BTreeMap<String, ThemeAsset>,
     pub filters: IgnoreFilters,
+    pub listing: Option<String>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -84,6 +85,8 @@ pub enum ThemeFsError {
         key: String,
         source: base64::DecodeError,
     },
+    #[error("Unable to activate theme listing: {0}")]
+    Listing(String),
 }
 
 impl ThemeFileSystem {
@@ -116,11 +119,58 @@ impl ThemeFileSystem {
             root,
             files,
             filters: all_filters,
+            listing: None,
         })
     }
 
+    pub fn activate_listing(&mut self, listing: impl Into<String>) -> Result<(), ThemeFsError> {
+        let listing = listing.into();
+        crate::listing::apply_listing(&self.root, &listing, &mut self.files)
+            .map_err(|error| ThemeFsError::Listing(error.to_string()))?;
+        self.listing = Some(listing);
+        Ok(())
+    }
+
+    pub fn logical_key_for_path(&self, path: &Path) -> Option<String> {
+        logical_key_for_path(&self.root, path, self.listing.as_deref())
+    }
+
+    pub fn read_asset(&self, key: &str) -> Result<Option<ThemeAsset>, ThemeFsError> {
+        let disk_key = self.disk_key(key);
+        let Some(mut asset) = read_theme_asset(&self.root, &disk_key)? else {
+            return Ok(None);
+        };
+        if disk_key != key {
+            asset.key = key.to_string();
+            asset.checksum = calculate_checksum(
+                key,
+                asset.value.clone().map(FileContent::Text).or_else(|| {
+                    asset.attachment.as_ref().and_then(|value| {
+                        BASE64_STANDARD.decode(value).ok().map(FileContent::Binary)
+                    })
+                }),
+            );
+        }
+        Ok(Some(asset))
+    }
+
+    fn disk_key(&self, key: &str) -> String {
+        let Some(listing) = self.listing.as_deref() else {
+            return key.to_string();
+        };
+        if !is_listing_json_key(key) {
+            return key.to_string();
+        }
+        let listing_key = format!("listings/{listing}/{key}");
+        if self.root.join(&listing_key).is_file() {
+            listing_key
+        } else {
+            key.to_string()
+        }
+    }
+
     pub fn read(&mut self, key: &str) -> Result<Option<FileContent>, ThemeFsError> {
-        let Some(asset) = read_theme_asset(&self.root, key)? else {
+        let Some(asset) = self.read_asset(key)? else {
             self.files.remove(key);
             return Ok(None);
         };
@@ -143,8 +193,10 @@ impl ThemeFileSystem {
     }
 
     pub fn write(&mut self, asset: &ThemeAsset) -> Result<(), ThemeFsError> {
-        write_theme_asset(&self.root, asset)?;
-        if let Some(asset) = read_theme_asset(&self.root, &asset.key)? {
+        let mut disk_asset = asset.clone();
+        disk_asset.key = self.disk_key(&asset.key);
+        write_theme_asset(&self.root, &disk_asset)?;
+        if let Some(asset) = self.read_asset(&asset.key)? {
             self.files.insert(asset.key.clone(), asset);
         }
         Ok(())
@@ -159,6 +211,26 @@ impl ThemeFileSystem {
     pub fn is_file_ignored(&self, key: &str) -> bool {
         apply_ignore_filters(vec![key], &self.filters).is_empty()
     }
+}
+
+pub fn is_listing_json_key(key: &str) -> bool {
+    key.ends_with(".json") && (key.starts_with("templates/") || key.starts_with("sections/"))
+}
+
+pub fn logical_key_for_path(root: &Path, path: &Path, listing: Option<&str>) -> Option<String> {
+    let relative = path.strip_prefix(root).ok()?;
+    let key = relative
+        .components()
+        .map(|component| component.as_os_str().to_string_lossy())
+        .collect::<Vec<_>>()
+        .join("/");
+    if let Some(listing) = listing {
+        let prefix = format!("listings/{listing}/");
+        if let Some(logical) = key.strip_prefix(&prefix) {
+            return is_listing_json_key(logical).then(|| logical.to_string());
+        }
+    }
+    is_valid_theme_file_key(&key).then_some(key)
 }
 
 pub fn scan_theme_filesystem(
@@ -470,6 +542,65 @@ mod tests {
     fn default_ignore_patterns_include_upstream_entries() {
         assert!(DEFAULT_IGNORE_PATTERNS.contains(&"**/node_modules/"));
         assert!(DEFAULT_IGNORE_PATTERNS.contains(&".prettierrc.json"));
+    }
+
+    #[test]
+    fn active_listing_reads_and_writes_existing_json_override_by_logical_key() {
+        let temp = tempfile::tempdir().unwrap();
+        write_file(temp.path(), "templates/index.json", r#"{"source":"base"}"#);
+        write_file(
+            temp.path(),
+            "listings/summer/templates/index.json",
+            r#"{"source":"listing"}"#,
+        );
+        let mut filesystem = ThemeFileSystem::scan(temp.path(), IgnoreFilters::default()).unwrap();
+        filesystem.activate_listing("summer").unwrap();
+
+        let asset = filesystem
+            .read_asset("templates/index.json")
+            .unwrap()
+            .unwrap();
+        assert_eq!(asset.key, "templates/index.json");
+        assert_eq!(asset.value.as_deref(), Some(r#"{"source":"listing"}"#));
+
+        filesystem
+            .write(&ThemeAsset {
+                key: "templates/index.json".into(),
+                checksum: String::new(),
+                value: Some(r#"{"source":"remote"}"#.into()),
+                attachment: None,
+                stats: None,
+            })
+            .unwrap();
+
+        assert_eq!(
+            fs::read_to_string(temp.path().join("listings/summer/templates/index.json")).unwrap(),
+            r#"{"source":"remote"}"#
+        );
+        assert_eq!(
+            fs::read_to_string(temp.path().join("templates/index.json")).unwrap(),
+            r#"{"source":"base"}"#
+        );
+    }
+
+    #[test]
+    fn listing_path_maps_to_logical_shopify_key() {
+        let root = Path::new("/theme");
+        assert_eq!(
+            logical_key_for_path(
+                root,
+                Path::new("/theme/listings/summer/sections/header.json"),
+                Some("summer")
+            )
+            .as_deref(),
+            Some("sections/header.json")
+        );
+        assert!(logical_key_for_path(
+            root,
+            Path::new("/theme/listings/summer/assets/app.css"),
+            Some("summer")
+        )
+        .is_none());
     }
 
     #[test]
