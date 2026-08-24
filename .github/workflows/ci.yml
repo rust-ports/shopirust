@@ -16,6 +16,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: Shopify/cli
+          ref: 5ddd8e4391753a9364e9314fe56961e2a966262c
+          path: theme-upstream
+          fetch-depth: 1
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy, rustfmt
@@ -24,14 +30,27 @@ jobs:
           shared-key: lint
       - run: cargo clippy --all-targets --all-features
       - run: cargo fmt --check
+      - run: cargo build -p cli-kit --bin shopify
+      - run: python3 scripts/theme-parity-check.py theme-upstream target/debug/shopify
 
   test:
     name: Test
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: test
-      - run: cargo test --all-features
+      - run: cargo test --workspace --all-features
+
+  security:
+    name: Dependency security audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: rustsec/audit-check@v2

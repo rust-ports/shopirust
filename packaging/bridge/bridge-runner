@@ -1,0 +1,12 @@
+#!/bin/sh
+set -eu
+
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+if [ -x "$SCRIPT_DIR/node/bin/node" ]; then
+  exec "$SCRIPT_DIR/node/bin/node" "$SCRIPT_DIR/bridge-runner.mjs" "$@"
+fi
+if command -v node >/dev/null 2>&1; then
+  exec node "$SCRIPT_DIR/bridge-runner.mjs" "$@"
+fi
+echo "Shopify CLI bridge requires its bundled Node runtime. Reinstall the release artifact." >&2
+exit 1

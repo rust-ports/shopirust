@@ -12,7 +12,10 @@ Licensed under the same terms as upstream Shopify CLI — see [LICENSE](LICENSE)
 
 Optional for app build steps:
 
-- Node.js + package manager (`npm` / `yarn` / `pnpm`) if the app has a `web/` package
+- Node.js 22.12 or newer when running from source. Packaged releases bundle
+  Node for bridge-backed commands, Theme Check, and the theme language server;
+  they never resolve dependencies from the current project's `node_modules`.
+- A package manager (`npm` / `yarn` / `pnpm`) if the app has a `web/` package
 - `npx` available for UI extension esbuild builds
 
 ## Build and run
@@ -38,6 +41,17 @@ alias shopify-rs='cargo run -p cli-kit --'
 shopify-rs app --help
 shopify-rs theme --help
 ```
+
+## Team-release security
+
+Store OAuth access and refresh tokens are kept in the operating system's
+credential store. The metadata file under the user configuration directory is
+atomically updated, locked between CLI processes, and contains no token values.
+Existing plaintext sessions migrate the next time they are read; if the system
+credential store is unavailable, authenticate again after enabling it.
+
+Release artifacts are built with a checksum `manifest.json`; see
+[BRIDGE.md](BRIDGE.md) for the bundled Node bridge and release staging contract.
 
 Global flags:
 

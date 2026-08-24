@@ -1,4 +1,5 @@
 /target
+__pycache__/
 /.idea
 crates/cli-kit/examples/
 docs/*.md
