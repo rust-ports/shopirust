@@ -1,8 +1,8 @@
 //! `shopify app dev` — run the app with hot reload / tunnel / extension preview.
 
 use app::services::{
-    dev, get_available_tcp_port, get_tunnel_mode, linked_app_context, store_context,
-    DevOptions, StoreContextOptions, TunnelMode, TunnelModeFlags,
+    dev, get_available_tcp_port, get_tunnel_mode, linked_app_context, store_context, DevOptions,
+    StoreContextOptions, TunnelMode, TunnelModeFlags,
 };
 use cli_core::command::BaseCommand;
 use cli_core::error::CliError;
@@ -11,8 +11,8 @@ use std::path::PathBuf;
 use super::auth_helpers::{
     authenticated_developer_platform, authenticated_webhooks_client, linked_ctx_options,
 };
-use super::webhook::webhooks_sample_client;
 use super::prompter::CliKitPrompter;
+use super::webhook::webhooks_sample_client;
 use crate::constants::app_management_fqdn;
 use crate::session::ensure_authenticated;
 use crate::session::store::SessionStore;

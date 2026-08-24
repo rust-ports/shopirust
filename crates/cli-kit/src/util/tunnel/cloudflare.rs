@@ -105,8 +105,7 @@ async fn download_cloudflared(target: &std::path::Path) -> Result<(), TunnelErro
             .map_err(|e| TunnelError::message(e.to_string()))?
             .permissions();
         perms.set_mode(0o755);
-        std::fs::set_permissions(target, perms)
-            .map_err(|e| TunnelError::message(e.to_string()))?;
+        std::fs::set_permissions(target, perms).map_err(|e| TunnelError::message(e.to_string()))?;
     }
     Ok(())
 }

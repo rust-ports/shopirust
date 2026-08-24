@@ -1,8 +1,8 @@
 //! `shopify app logs` and `shopify app logs sources`.
 
 use app::services::{
-    linked_app_context, logs as stream_logs, print_log_sources, store_context, Format,
-    LogsOptions, StoreContextOptions,
+    linked_app_context, logs as stream_logs, print_log_sources, store_context, Format, LogsOptions,
+    StoreContextOptions,
 };
 use cli_core::command::BaseCommand;
 use cli_core::error::CliError;
@@ -133,7 +133,10 @@ pub struct LogsSources {
 }
 
 impl LogsSources {
-    pub fn new(path: String, config: Option<String>, client_id: Option<String>,
+    pub fn new(
+        path: String,
+        config: Option<String>,
+        client_id: Option<String>,
         reset: bool,
     ) -> Self {
         Self {

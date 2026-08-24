@@ -1,6 +1,4 @@
-use app::services::{
-    linked_app_context, version_list, VersionListOptions,
-};
+use app::services::{linked_app_context, version_list, VersionListOptions};
 use cli_core::command::BaseCommand;
 use cli_core::error::CliError;
 

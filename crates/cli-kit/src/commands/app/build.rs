@@ -12,7 +12,10 @@ pub struct Build {
 }
 
 impl Build {
-    pub fn new(path: String, config: Option<String>, skip_dependencies_installation: bool,
+    pub fn new(
+        path: String,
+        config: Option<String>,
+        skip_dependencies_installation: bool,
         reset: bool,
     ) -> Self {
         Self {

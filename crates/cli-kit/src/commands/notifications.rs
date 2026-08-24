@@ -66,7 +66,9 @@ impl TopicCommand for NotificationsTopic {
     fn from_args(args: Self::Args) -> Self {
         match args.command {
             NotificationsSubcommand::List { json } => Self::List { json },
-            NotificationsSubcommand::Generate { title, message } => Self::Generate { title, message },
+            NotificationsSubcommand::Generate { title, message } => {
+                Self::Generate { title, message }
+            }
         }
     }
     async fn execute(self) -> Result<(), CliError> {
@@ -112,6 +114,9 @@ mod tests {
     #[test]
     fn parses_list() {
         let cli = TestCli::parse_from(["shopify", "list"]);
-        assert!(matches!(cli.command, NotificationsSubcommand::List { json: false }));
+        assert!(matches!(
+            cli.command,
+            NotificationsSubcommand::List { json: false }
+        ));
     }
 }

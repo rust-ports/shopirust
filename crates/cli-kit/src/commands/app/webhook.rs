@@ -141,10 +141,7 @@ impl BaseCommand for WebhookTrigger {
         .await
         .map_err(|e| CliError::abort(e.to_string()))?;
 
-        let org_id = ctx
-            .organization
-            .id
-            .clone();
+        let org_id = ctx.organization.id.clone();
         let webhooks = authenticated_webhooks_client(&org_id).await?;
         let adapter = WebhooksAdapter(webhooks);
 

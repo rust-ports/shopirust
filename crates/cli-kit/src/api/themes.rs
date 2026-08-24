@@ -1,4 +1,6 @@
-use crate::api::admin::{admin_request_doc_with_retry, AdminError};
+use crate::api::admin::{
+    admin_request_doc_with_retry, admin_request_doc_with_retry_metadata, AdminError,
+};
 use crate::api::generated::graphql::admin::find_development_theme_by_name::{
     FindDevelopmentThemeByNameResponse, FindDevelopmentThemeByNameThemesNodes,
     FindDevelopmentThemeByNameVariables, FIND_DEVELOPMENT_THEME_BY_NAME_QUERY,
@@ -419,16 +421,20 @@ pub async fn theme_duplicate(
     name: Option<String>,
     session: &AdminSession,
 ) -> std::result::Result<ThemeDuplicateResult, AdminError> {
-    let response: ThemeDuplicateResponse = request_theme_admin_doc(
-        THEME_DUPLICATE_MUTATION,
-        session,
-        Some(ThemeDuplicateVariables {
-            id: compose_theme_gid(id),
-            name,
-        }),
-        "Failed to duplicate theme",
-    )
-    .await?;
+    let response =
+        admin_request_doc_with_retry_metadata::<ThemeDuplicateResponse, ThemeDuplicateVariables>(
+            THEME_DUPLICATE_MUTATION,
+            session,
+            Some(ThemeDuplicateVariables {
+                id: compose_theme_gid(id),
+                name,
+            }),
+            theme_api_retry_config(),
+        )
+        .await
+        .map_err(|error| graphql_to_admin_error("Failed to duplicate theme", error))?;
+    let request_id = response.metadata.request_id;
+    let response = response.data;
 
     let Some(payload) = response.theme_duplicate else {
         return Ok(ThemeDuplicateResult {
@@ -437,7 +443,7 @@ pub async fn theme_duplicate(
                 field: None,
                 message: "Failed to duplicate theme".into(),
             }],
-            request_id: None,
+            request_id,
         });
     };
 
@@ -452,7 +458,7 @@ pub async fn theme_duplicate(
                     message: error.message,
                 })
                 .collect(),
-            request_id: None,
+            request_id,
         });
     }
 
@@ -464,7 +470,7 @@ pub async fn theme_duplicate(
     Ok(ThemeDuplicateResult {
         theme,
         user_errors: vec![],
-        request_id: None,
+        request_id,
     })
 }
 

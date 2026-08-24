@@ -821,7 +821,9 @@ mod tests {
             Some("https://github.com/Shopify/checkout-ui")
         );
         assert_eq!(
-            result.templates[0].types[0].get("type").and_then(|v| v.as_str()),
+            result.templates[0].types[0]
+                .get("type")
+                .and_then(|v| v.as_str()),
             Some("checkout_ui_extension")
         );
     }

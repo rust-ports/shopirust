@@ -1,6 +1,12 @@
-use crate::api::generated::graphql::webhooks::available_topics::AVAILABLE_TOPICS_QUERY;
-use crate::api::generated::graphql::webhooks::cli_testing::CLI_TESTING_MUTATION;
-use crate::api::generated::graphql::webhooks::public_api_versions::PUBLIC_API_VERSIONS_QUERY;
+use crate::api::generated::graphql::webhooks::available_topics::{
+    AvailableTopicsResponse, AvailableTopicsVariables, AVAILABLE_TOPICS_QUERY,
+};
+use crate::api::generated::graphql::webhooks::cli_testing::{
+    CliTestingCliTesting, CliTestingResponse, CliTestingVariables, CLI_TESTING_MUTATION,
+};
+use crate::api::generated::graphql::webhooks::public_api_versions::{
+    PublicApiVersionsResponse, PUBLIC_API_VERSIONS_QUERY,
+};
 use crate::api::graphql::{CacheOptions, GraphqlClient, GraphqlRequestError, UnauthorizedHandler};
 use crate::api::rate_limiter::ApiRateLimiter;
 use crate::constants::app_management_fqdn;
@@ -54,40 +60,6 @@ pub struct SampleWebhookUserError {
     pub fields: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct PublicApiVersionsResponse {
-    public_api_versions: Vec<PublicApiVersionHandle>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct PublicApiVersionHandle {
-    handle: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct AvailableTopicsResponse {
-    available_topics: Option<Vec<String>>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct CliTestingResponse {
-    cli_testing: Option<CliTestingPayload>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct CliTestingPayload {
-    headers: Option<String>,
-    sample_payload: Option<String>,
-    success: bool,
-    #[serde(default)]
-    errors: Vec<String>,
-}
-
 pub struct WebhooksClient {
     pub organization_id: String,
     pub token: String,
@@ -126,7 +98,7 @@ impl WebhooksClient {
         unauthorized_handler: Option<Arc<dyn UnauthorizedHandler>>,
     ) -> Result<T, GraphqlRequestError>
     where
-        T: DeserializeOwned + Serialize,
+        T: DeserializeOwned,
         V: Serialize,
     {
         if let Some(ref gql) = self.graphql {
@@ -170,7 +142,9 @@ impl WebhooksClient {
 
     /// Available webhook topics for an API version.
     pub async fn topics(&self, api_version: &str) -> Result<Vec<String>, GraphqlRequestError> {
-        let vars = serde_json::json!({ "apiVersion": api_version });
+        let vars = AvailableTopicsVariables {
+            api_version: api_version.to_string(),
+        };
         let resp: AvailableTopicsResponse = self
             .request(AVAILABLE_TOPICS_QUERY, Some(vars), None, None)
             .await?;
@@ -182,14 +156,14 @@ impl WebhooksClient {
         &self,
         variables: &SendSampleWebhookVariables,
     ) -> Result<SampleWebhook, GraphqlRequestError> {
-        let vars = serde_json::json!({
-            "topic": variables.topic,
-            "apiVersion": variables.api_version,
-            "address": variables.address,
-            "deliveryMethod": variables.delivery_method,
-            "sharedSecret": variables.shared_secret,
-            "apiKey": variables.api_key,
-        });
+        let vars = CliTestingVariables {
+            topic: variables.topic.clone(),
+            api_version: variables.api_version.clone(),
+            address: variables.address.clone(),
+            delivery_method: variables.delivery_method.clone(),
+            shared_secret: variables.shared_secret.clone(),
+            api_key: variables.api_key.clone(),
+        };
         let resp: CliTestingResponse = self
             .request(CLI_TESTING_MUTATION, Some(vars), None, None)
             .await?;
@@ -197,7 +171,7 @@ impl WebhooksClient {
     }
 }
 
-fn map_cli_testing(cli: Option<CliTestingPayload>) -> SampleWebhook {
+fn map_cli_testing(cli: Option<CliTestingCliTesting>) -> SampleWebhook {
     let Some(cli) = cli else {
         return SampleWebhook::default();
     };
@@ -274,7 +248,7 @@ mod tests {
 
     #[test]
     fn map_cli_testing_errors() {
-        let sample = map_cli_testing(Some(CliTestingPayload {
+        let sample = map_cli_testing(Some(CliTestingCliTesting {
             headers: None,
             sample_payload: None,
             success: false,

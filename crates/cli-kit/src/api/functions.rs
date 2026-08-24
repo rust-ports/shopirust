@@ -119,7 +119,7 @@ impl FunctionsClient {
         unauthorized_handler: Option<Arc<dyn UnauthorizedHandler>>,
     ) -> Result<T, GraphqlRequestError>
     where
-        T: DeserializeOwned + Serialize,
+        T: DeserializeOwned,
         V: Serialize,
     {
         if let Some(ref gql) = self.graphql {

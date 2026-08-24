@@ -1,12 +1,12 @@
 //! CLI-kit adapter that renders app prompts via `output::public_api`.
 
-use app::error::AppError;
-use app::prompts::{PromptItem, Prompter};
 use crate::output::components::prompts::select_input::Item;
 use crate::output::public_api::{
     render_autocomplete_prompt, render_confirmation_prompt, render_dangerous_confirmation_prompt,
     render_select_prompt, render_text_prompt,
 };
+use app::error::AppError;
+use app::prompts::{PromptItem, Prompter};
 
 #[derive(Debug, Default, Clone, Copy)]
 pub struct CliKitPrompter;

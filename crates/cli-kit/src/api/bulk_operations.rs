@@ -22,7 +22,9 @@ impl BulkOperationsClient {
         self.graphql
             .query_with_variables(
                 bulk_operation_run_query::BULK_OPERATION_RUN_QUERY_MUTATION,
-                Some(serde_json::json!({ "query": query })),
+                Some(bulk_operation_run_query::BulkOperationRunQueryVariables {
+                    query: query.to_string(),
+                }),
             )
             .await
     }
@@ -35,10 +37,13 @@ impl BulkOperationsClient {
         self.graphql
             .query_with_variables(
                 bulk_operation_run_mutation::BULK_OPERATION_RUN_MUTATION_MUTATION,
-                Some(serde_json::json!({
-                    "mutation": mutation,
-                    "stagedUploadPath": staged_upload_path,
-                })),
+                Some(
+                    bulk_operation_run_mutation::BulkOperationRunMutationVariables {
+                        mutation: mutation.to_string(),
+                        staged_upload_path: staged_upload_path.to_string(),
+                        client_identifier: None,
+                    },
+                ),
             )
             .await
     }
@@ -47,7 +52,7 @@ impl BulkOperationsClient {
         self.graphql
             .query_with_variables(
                 bulk_operation_cancel::BULK_OPERATION_CANCEL_MUTATION,
-                Some(serde_json::json!({ "id": id })),
+                Some(bulk_operation_cancel::BulkOperationCancelVariables { id: id.to_string() }),
             )
             .await
     }
@@ -56,7 +61,9 @@ impl BulkOperationsClient {
         self.graphql
             .query_with_variables(
                 get_bulk_operation_by_id::GET_BULK_OPERATION_BY_ID_QUERY,
-                Some(serde_json::json!({ "id": id })),
+                Some(get_bulk_operation_by_id::GetBulkOperationByIdVariables {
+                    id: id.to_string(),
+                }),
             )
             .await
     }

@@ -1,3 +1,12 @@
+use crate::api::generated::graphql::app_management::app_logs_subscribe::{
+    AppLogsSubscribeResponse, AppLogsSubscribeVariables, APP_LOGS_SUBSCRIBE_MUTATION,
+};
+use crate::api::generated::graphql::app_management::specifications::{
+    FetchSpecificationsResponse, FetchSpecificationsSpecifications,
+    FetchSpecificationsSpecificationsUidStrategy, FetchSpecificationsVariables,
+    FETCH_SPECIFICATIONS_QUERY,
+};
+use crate::api::generated::graphql::app_management::types::OneOrMany;
 use crate::api::graphql::{CacheOptions, GraphqlClient, GraphqlRequestError, UnauthorizedHandler};
 use crate::api::rate_limiter::ApiRateLimiter;
 use crate::api::utilities::add_cursor_and_filters_to_app_logs_url;
@@ -210,26 +219,6 @@ query listApps($query: String) {
       }
     }
     pageInfo { hasNextPage }
-  }
-}
-"#;
-
-const SPECIFICATIONS_QUERY: &str = r#"
-query fetchSpecifications($organizationId: ID!) {
-  specifications(organizationId: $organizationId) {
-    name
-    identifier
-    externalIdentifier
-    experience
-    features
-    uidStrategy {
-      __typename
-      appModuleLimit
-      isClientProvided
-    }
-    validationSchema {
-      jsonSchema
-    }
   }
 }
 "#;
@@ -864,12 +853,6 @@ struct AppListConnection {
 
 #[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct SpecificationsResponse {
-    specifications: Vec<Specification>,
-}
-
-#[derive(Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
 struct TemplateSpecificationsResponse {
     template_specifications: Vec<TemplateSpecification>,
 }
@@ -977,7 +960,7 @@ impl AppManagementClient {
         unauthorized_handler: Option<Arc<dyn UnauthorizedHandler>>,
     ) -> Result<T, GraphqlRequestError>
     where
-        T: DeserializeOwned + Serialize,
+        T: DeserializeOwned,
         V: Serialize,
     {
         // When a pre-configured GraphQL client is injected (test mode), use
@@ -1123,11 +1106,30 @@ impl AppManagementClient {
         &self,
         organization_id: &str,
     ) -> Result<Vec<Specification>, GraphqlRequestError> {
-        let vars = serde_json::json!({ "organizationId": organization_id });
-        let resp: SpecificationsResponse = self
-            .request(SPECIFICATIONS_QUERY, Some(vars), None, None)
+        let vars = FetchSpecificationsVariables {
+            organization_id: organization_id.to_string(),
+        };
+        let raw: serde_json::Value = self
+            .request(FETCH_SPECIFICATIONS_QUERY, Some(vars), None, None)
             .await?;
-        Ok(resp.specifications)
+        match serde_json::from_value::<FetchSpecificationsResponse>(raw.clone()) {
+            Ok(response) => Ok(response
+                .specifications
+                .into_iter()
+                .map(map_generated_specification)
+                .collect()),
+            Err(generated_error) => serde_json::from_value::<LegacySpecificationsResponse>(raw)
+                .map(|response| response.specifications)
+                .map_err(|legacy_error| {
+                    GraphqlRequestError::Parse(
+                        format!(
+                            "unable to parse specifications using generated or legacy models: \
+                             generated: {generated_error}; legacy: {legacy_error}"
+                        ),
+                        String::new(),
+                    )
+                }),
+        }
     }
 
     /// Fetch template specifications for scaffolding new extensions.
@@ -1182,40 +1184,28 @@ impl AppManagementClient {
         shop_ids: &[i64],
         api_key: &str,
     ) -> Result<String, GraphqlRequestError> {
-        use crate::api::generated::graphql::app_management::app_logs_subscribe::APP_LOGS_SUBSCRIBE_MUTATION;
-
-        let vars = serde_json::json!({
-            "shopIds": shop_ids,
-            "apiKey": api_key,
-        });
-        let resp: serde_json::Value = self
+        let vars = AppLogsSubscribeVariables {
+            shop_ids: OneOrMany::Many(shop_ids.to_vec()),
+            api_key: api_key.to_string(),
+        };
+        let resp: AppLogsSubscribeResponse = self
             .request(APP_LOGS_SUBSCRIBE_MUTATION, Some(vars), None, None)
             .await?;
-        let payload = resp.get("appLogsSubscribe").ok_or_else(|| {
+        let payload = resp.app_logs_subscribe.ok_or_else(|| {
             GraphqlRequestError::ApiError(
                 "Failed to subscribe to app logs: No response received".into(),
                 500,
             )
         })?;
-        if let Some(errors) = payload.get("errors").and_then(|e| e.as_array()) {
-            let msgs: Vec<String> = errors
-                .iter()
-                .filter_map(|e| e.as_str().map(str::to_string))
-                .collect();
-            if !msgs.is_empty() {
-                return Err(GraphqlRequestError::ApiError(msgs.join(", "), 400));
-            }
+        if let Some(errors) = payload.errors.filter(|errors| !errors.is_empty()) {
+            return Err(GraphqlRequestError::ApiError(errors.join(", "), 400));
         }
-        payload
-            .get("jwtToken")
-            .and_then(|v| v.as_str())
-            .map(str::to_string)
-            .ok_or_else(|| {
-                GraphqlRequestError::ApiError(
-                    "Failed to subscribe to app logs: No JWT token received".into(),
-                    500,
-                )
-            })
+        payload.jwt_token.ok_or_else(|| {
+            GraphqlRequestError::ApiError(
+                "Failed to subscribe to app logs: No JWT token received".into(),
+                500,
+            )
+        })
     }
 
     /// Poll the App Management app-logs HTTP endpoint.
@@ -1301,6 +1291,52 @@ impl AppManagementClient {
             .await?;
         Ok(resp.app_by_key.versions_diff)
     }
+}
+
+fn map_generated_specification(value: FetchSpecificationsSpecifications) -> Specification {
+    let (type_name, app_module_limit, is_client_provided) = match value.uid_strategy {
+        FetchSpecificationsSpecificationsUidStrategy::UidStrategiesClientProvided(strategy) => (
+            "UidStrategiesClientProvided",
+            strategy.app_module_limit,
+            strategy.is_client_provided,
+        ),
+        FetchSpecificationsSpecificationsUidStrategy::UidStrategiesDynamic(strategy) => (
+            "UidStrategiesDynamic",
+            strategy.app_module_limit,
+            strategy.is_client_provided,
+        ),
+        FetchSpecificationsSpecificationsUidStrategy::UidStrategiesStatic(strategy) => (
+            "UidStrategiesStatic",
+            strategy.app_module_limit,
+            strategy.is_client_provided,
+        ),
+    };
+    Specification {
+        name: value.name,
+        identifier: value.identifier,
+        external_identifier: Some(value.external_identifier),
+        experience: Some(value.experience),
+        features: Some(value.features),
+        uid_strategy: Some(UidStrategy {
+            type_name: type_name.to_string(),
+            app_module_limit: Some(app_module_limit),
+            is_client_provided: Some(is_client_provided),
+        }),
+        validation_schema: value.validation_schema.map(|schema| ValidationSchema {
+            json_schema: serde_json::from_str(&schema.json_schema)
+                .ok()
+                .or_else(|| Some(serde_json::Value::String(schema.json_schema))),
+        }),
+    }
+}
+
+/// Compatibility adapter for App Management responses produced before the
+/// generated schema's `UidStrategies*` union variants and string JSON schema.
+/// New responses are always decoded with `FetchSpecificationsResponse` above.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct LegacySpecificationsResponse {
+    specifications: Vec<Specification>,
 }
 
 /// A single deprecation entry returned in a GraphQL response's `extensions`.
@@ -1587,7 +1623,7 @@ mod tests {
 
     #[test]
     fn specifications_query_has_specifications() {
-        assert!(SPECIFICATIONS_QUERY.contains("specifications"));
+        assert!(FETCH_SPECIFICATIONS_QUERY.contains("specifications"));
     }
 
     #[test]
@@ -1848,6 +1884,36 @@ mod tests {
         let specs = client.specifications("org-1").await.unwrap();
         assert_eq!(specs.len(), 1);
         assert_eq!(specs[0].identifier, "ui_extension");
+    }
+
+    #[test]
+    fn generated_specifications_response_is_compatible_with_current_schema() {
+        let response: FetchSpecificationsResponse = serde_json::from_value(serde_json::json!({
+            "specifications": [{
+                "name": "UI Extension",
+                "identifier": "ui_extension",
+                "externalIdentifier": "ext_1",
+                "experience": "LATEST",
+                "features": ["feature1"],
+                "uidStrategy": {
+                    "__typename": "UidStrategiesStatic",
+                    "appModuleLimit": 10,
+                    "isClientProvided": false
+                },
+                "validationSchema": { "jsonSchema": "{\\\"type\\\":\\\"object\\\"}" }
+            }]
+        }))
+        .unwrap();
+
+        let specifications = response
+            .specifications
+            .into_iter()
+            .map(map_generated_specification)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            specifications[0].uid_strategy.as_ref().unwrap().type_name,
+            "UidStrategiesStatic"
+        );
     }
 
     #[tokio::test]

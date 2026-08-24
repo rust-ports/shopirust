@@ -1,7 +1,7 @@
 use crate::api::generated::graphql::admin::public_api_versions::{
     PublicApiVersionsResponse, PUBLIC_API_VERSIONS_QUERY,
 };
-use crate::api::graphql::{GraphqlClient, GraphqlRequestError};
+use crate::api::graphql::{GraphqlClient, GraphqlRequestError, GraphqlResult};
 use crate::api::rest_api_throttler::{RestClient, RestError, RestResponse};
 use crate::error::{abort_error, bug_error, FatalError};
 pub use crate::session::AdminSession;
@@ -208,6 +208,21 @@ where
 {
     AdminClient::new(session.clone())
         .query_with_retry(query, variables, retry_config)
+        .await
+}
+
+pub async fn admin_request_doc_with_retry_metadata<T, V>(
+    query: &str,
+    session: &AdminSession,
+    variables: Option<V>,
+    retry_config: RetryConfig,
+) -> Result<GraphqlResult<T>, GraphqlRequestError>
+where
+    T: DeserializeOwned,
+    V: Serialize,
+{
+    AdminClient::new(session.clone())
+        .query_with_retry_metadata(query, variables, retry_config)
         .await
 }
 
@@ -439,6 +454,24 @@ impl AdminClient {
             .graphql_client_for_version(&version)
             .with_retry(retry_config);
         client.query_with_variables(query, variables).await
+    }
+
+    pub async fn query_with_retry_metadata<T: DeserializeOwned, V: serde::Serialize>(
+        &self,
+        query: &str,
+        variables: Option<V>,
+        retry_config: RetryConfig,
+    ) -> Result<GraphqlResult<T>, GraphqlRequestError> {
+        let version = self
+            .fetch_latest_api_version()
+            .await
+            .map_err(|e| GraphqlRequestError::ApiError(e.to_string(), 0))?;
+        let client = self
+            .graphql_client_for_version(&version)
+            .with_retry(retry_config);
+        client
+            .query_with_variables_and_metadata(query, variables)
+            .await
     }
 
     pub async fn rest_request<T: DeserializeOwned>(

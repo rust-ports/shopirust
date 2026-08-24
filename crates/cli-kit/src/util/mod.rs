@@ -17,6 +17,7 @@ pub mod json;
 pub mod liquid;
 pub mod metadata;
 pub mod mkcert;
+pub mod node_tool;
 pub mod package_manager;
 pub mod request_ids;
 pub mod retry;

@@ -1130,7 +1130,10 @@ impl PartnersClient {
             .collect())
     }
 
-    pub async fn app_versions_list(&self, api_key: &str) -> Result<serde_json::Value, GraphqlRequestError> {
+    pub async fn app_versions_list(
+        &self,
+        api_key: &str,
+    ) -> Result<serde_json::Value, GraphqlRequestError> {
         let resp: serde_json::Value = self
             .graphql
             .query_with_variables(
@@ -1252,11 +1255,12 @@ impl PartnersClient {
                 Some(serde_json::json!({ "apiKey": api_key })),
             )
             .await?;
-        Ok(resp.app.and_then(|a| a.active_app_version).map(|v| {
-            cli_api::AppVersion {
+        Ok(resp
+            .app
+            .and_then(|a| a.active_app_version)
+            .map(|v| cli_api::AppVersion {
                 app_module_versions: map_partner_modules(v.app_module_versions.unwrap_or_default()),
-            }
-        }))
+            }))
     }
 
     pub async fn app_version_by_tag(
@@ -1289,17 +1293,16 @@ impl PartnersClient {
                 Some(serde_json::json!({ "apiKey": api_key, "versionTag": version_tag })),
             )
             .await?;
-        let version = resp
-            .app
-            .and_then(|a| a.app_version)
-            .ok_or_else(|| {
-                GraphqlRequestError::ApiError(format!("Version {version_tag} not found"), 404)
-            })?;
+        let version = resp.app.and_then(|a| a.app_version).ok_or_else(|| {
+            GraphqlRequestError::ApiError(format!("Version {version_tag} not found"), 404)
+        })?;
         Ok(cli_api::AppVersionWithContext {
             id: version.id,
             uuid: version.uuid,
             version_tag: version.version_tag,
-            app_module_versions: map_partner_modules(version.app_module_versions.unwrap_or_default()),
+            app_module_versions: map_partner_modules(
+                version.app_module_versions.unwrap_or_default(),
+            ),
         })
     }
 
@@ -1505,7 +1508,10 @@ impl PartnersClient {
             .unwrap_or(false))
     }
 
-    pub async fn app_preview_mode(&self, api_key: &str) -> Result<Option<bool>, GraphqlRequestError> {
+    pub async fn app_preview_mode(
+        &self,
+        api_key: &str,
+    ) -> Result<Option<bool>, GraphqlRequestError> {
         #[derive(Deserialize)]
         struct AppNode {
             #[serde(rename = "developmentStorePreviewEnabled")]
@@ -1970,7 +1976,10 @@ mod tests {
             .mount(&mock_server)
             .await;
         let client = mock_client(&mock_server);
-        assert!(client.migrate_app_module("k", "uuid", "payments_extension").await.unwrap());
+        assert!(client
+            .migrate_app_module("k", "uuid", "payments_extension")
+            .await
+            .unwrap());
     }
 
     #[tokio::test]
@@ -2039,7 +2048,10 @@ mod tests {
         let client = mock_client(&mock_server);
         let result = client.template_specifications("key").await.unwrap();
         assert_eq!(result.templates.len(), 2);
-        assert_eq!(result.templates[0].url.as_deref(), Some("https://github.com/Shopify/checkout-ui"));
+        assert_eq!(
+            result.templates[0].url.as_deref(),
+            Some("https://github.com/Shopify/checkout-ui")
+        );
         assert_eq!(result.group_order, vec!["Checkout", "Online store"]);
     }
 
@@ -2070,7 +2082,11 @@ mod tests {
         let version = client.active_app_version("key").await.unwrap().unwrap();
         assert_eq!(version.app_module_versions[0].registration_id, "1");
         assert_eq!(
-            version.app_module_versions[0].config.as_ref().and_then(|v| v.get("name")).and_then(|v| v.as_str()),
+            version.app_module_versions[0]
+                .config
+                .as_ref()
+                .and_then(|v| v.get("name"))
+                .and_then(|v| v.as_str()),
             Some("x")
         );
     }

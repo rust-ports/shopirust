@@ -1,14 +1,21 @@
 use crate::constants::{service_environment, ServiceEnvironment};
 
 pub fn client_id() -> &'static str {
-    match service_environment(None) {
+    client_id_for(service_environment(None))
+}
+
+fn client_id_for(environment: ServiceEnvironment) -> &'static str {
+    match environment {
         ServiceEnvironment::Local => "e5380e02-312a-7408-5718-e07017e9cf52",
         ServiceEnvironment::Production => "fbdb2649-e327-4907-8f67-908d24cfd7e3",
     }
 }
 
 pub fn application_id(api: &str) -> &'static str {
-    let environment = service_environment(None);
+    application_id_for(api, service_environment(None))
+}
+
+fn application_id_for(api: &str, environment: ServiceEnvironment) -> &'static str {
     match (api, environment) {
         ("admin", ServiceEnvironment::Local) => {
             "e92482cebb9bfb9fb5a0199cc770fde3de6c8d16b798ee73e36c9d815e070e52"
@@ -47,40 +54,28 @@ pub const IDENTITY_FQDN: &str = "accounts.shopify.com";
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::constants::EnvVars;
-    use std::sync::Mutex;
-
-    static ENV_LOCK: Mutex<()> = Mutex::new(());
-
-    fn lock_env() -> std::sync::MutexGuard<'static, ()> {
-        ENV_LOCK
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-    }
 
     #[test]
     fn returns_production_ids_by_default() {
-        let _guard = lock_env();
-        std::env::remove_var(EnvVars::SERVICE_ENV);
-
-        assert_eq!(client_id(), "fbdb2649-e327-4907-8f67-908d24cfd7e3");
         assert_eq!(
-            application_id("admin"),
+            client_id_for(ServiceEnvironment::Production),
+            "fbdb2649-e327-4907-8f67-908d24cfd7e3"
+        );
+        assert_eq!(
+            application_id_for("admin", ServiceEnvironment::Production),
             "7ee65a63608843c577db8b23c4d7316ea0a01bd2f7594f8a9c06ea668c1b775c"
         );
     }
 
     #[test]
     fn returns_local_ids_for_local_service_env() {
-        let _guard = lock_env();
-        std::env::set_var(EnvVars::SERVICE_ENV, "local");
-
-        assert_eq!(client_id(), "e5380e02-312a-7408-5718-e07017e9cf52");
         assert_eq!(
-            application_id("partners"),
+            client_id_for(ServiceEnvironment::Local),
+            "e5380e02-312a-7408-5718-e07017e9cf52"
+        );
+        assert_eq!(
+            application_id_for("partners", ServiceEnvironment::Local),
             "df89d73339ac3c6c5f0a98d9ca93260763e384d51d6038da129889c308973978"
         );
-
-        std::env::remove_var(EnvVars::SERVICE_ENV);
     }
 }

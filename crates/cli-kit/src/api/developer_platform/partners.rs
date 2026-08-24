@@ -342,9 +342,9 @@ impl DeveloperPlatformClient for PartnersPlatformClient {
                 .join(", ");
             return Err(CliApiError::message(msg));
         }
-        let reg = result.extension_registration.ok_or_else(|| {
-            CliApiError::message("extensionCreate returned no registration")
-        })?;
+        let reg = result
+            .extension_registration
+            .ok_or_else(|| CliApiError::message("extensionCreate returned no registration"))?;
         Ok(cli_api::types::CreatedExtension {
             id: reg.id,
             uuid: reg.uuid,
@@ -380,11 +380,7 @@ impl DeveloperPlatformClient for PartnersPlatformClient {
         version: &AppVersionIdentifiers,
     ) -> Result<Value, CliApiError> {
         self.inner
-            .release_app_version(
-                &app.identifiers.api_key,
-                None,
-                Some(version.app_version_id),
-            )
+            .release_app_version(&app.identifiers.api_key, None, Some(version.app_version_id))
             .await
             .map_err(Self::map_err)
     }

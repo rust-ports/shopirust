@@ -78,6 +78,17 @@ pub struct GraphqlThrottleStatus {
     pub maximum_available: Option<f64>,
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct GraphqlResponseMetadata {
+    pub request_id: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct GraphqlResult<T> {
+    pub data: T,
+    pub metadata: GraphqlResponseMetadata,
+}
+
 /// Errors that can occur during a GraphQL operation.
 #[derive(Debug)]
 pub enum GraphqlRequestError {
@@ -176,6 +187,7 @@ pub struct GraphqlClient {
     rate_limiter: Option<ApiRateLimiter>,
     token_refresh_handler: Option<Arc<dyn UnauthorizedHandler>>,
     cache_options: Option<CacheOptions>,
+    response_metadata: Arc<Mutex<GraphqlResponseMetadata>>,
 }
 
 impl GraphqlClient {
@@ -196,6 +208,7 @@ impl GraphqlClient {
             rate_limiter: None,
             token_refresh_handler: None,
             cache_options: None,
+            response_metadata: Arc::new(Mutex::new(GraphqlResponseMetadata::default())),
         }
     }
 
@@ -216,6 +229,7 @@ impl GraphqlClient {
             rate_limiter: None,
             token_refresh_handler: None,
             cache_options: None,
+            response_metadata: Arc::new(Mutex::new(GraphqlResponseMetadata::default())),
         }
     }
 
@@ -283,6 +297,7 @@ impl GraphqlClient {
         query: &str,
         variables: Option<V>,
     ) -> Result<T, GraphqlRequestError> {
+        *self.response_metadata.lock().unwrap() = GraphqlResponseMetadata::default();
         let extra_key = self
             .cache_options
             .as_ref()
@@ -327,6 +342,7 @@ impl GraphqlClient {
         let rate_limiter = self.rate_limiter.clone();
         let token_refresh = self.token_refresh_handler.clone();
         let token_mutex = Arc::new(Mutex::new(self.token.clone()));
+        let response_metadata = Arc::clone(&self.response_metadata);
 
         let result: Result<T, GraphqlRequestError> = self
             .retry_config
@@ -341,6 +357,7 @@ impl GraphqlClient {
                 let cache = cache.clone();
                 let cache_options = cache_options.clone();
                 let composite_key = composite_key_for_write.clone();
+                let response_metadata = Arc::clone(&response_metadata);
 
                 async move {
                     if let Some(ref limiter) = rate_limiter {
@@ -389,6 +406,13 @@ impl GraphqlClient {
                     };
 
                     let status = response.status();
+                    *response_metadata.lock().unwrap() = GraphqlResponseMetadata {
+                        request_id: response
+                            .headers()
+                            .get("x-request-id")
+                            .and_then(|value| value.to_str().ok())
+                            .map(str::to_string),
+                    };
 
                     // 401 → refresh token and retry
                     if status == StatusCode::UNAUTHORIZED {
@@ -509,6 +533,16 @@ impl GraphqlClient {
             .await;
 
         result
+    }
+
+    pub async fn query_with_variables_and_metadata<T: DeserializeOwned, V: serde::Serialize>(
+        &self,
+        query: &str,
+        variables: Option<V>,
+    ) -> Result<GraphqlResult<T>, GraphqlRequestError> {
+        let data = self.query_with_variables(query, variables).await?;
+        let metadata = self.response_metadata.lock().unwrap().clone();
+        Ok(GraphqlResult { data, metadata })
     }
 }
 

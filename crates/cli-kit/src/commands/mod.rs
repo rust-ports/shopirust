@@ -1,11 +1,19 @@
 pub mod app;
 mod auth;
 mod cache;
+mod commands_cmd;
+mod compat;
 mod config_cmd;
+mod demo;
 mod did_you_mean;
+mod docs;
+mod doctor_release;
+mod hydrogen;
 mod kitchen_sink;
 mod notifications;
 mod organization;
+mod plugins;
+pub mod registry;
 mod search;
 mod store;
 mod theme;
@@ -14,10 +22,16 @@ mod upgrade;
 use app::{AppSubcommand, AppTopic, AppTopicArgs};
 use auth::{AuthSubcommand, AuthTopic, AuthTopicArgs};
 use cache::{CacheSubcommand, CacheTopic, CacheTopicArgs};
+use commands_cmd::Commands;
 use config_cmd::{ConfigSubcommand, ConfigTopic, ConfigTopicArgs};
-use kitchen_sink::KitchenSink;
+use demo::{DemoSubcommand, DemoTopic, DemoTopicArgs};
+use docs::{DocsSubcommand, DocsTopic, DocsTopicArgs};
+use doctor_release::{DoctorReleaseArgs, DoctorReleaseTopic};
+use hydrogen::{HydrogenSubcommand, HydrogenTopic, HydrogenTopicArgs};
+use kitchen_sink::{KitchenSinkTopic, KitchenSinkTopicArgs};
 use notifications::{NotificationsSubcommand, NotificationsTopic, NotificationsTopicArgs};
 use organization::{OrganizationSubcommand, OrganizationTopic, OrganizationTopicArgs};
+use plugins::{PluginsTopic, PluginsTopicArgs};
 use search::Search;
 use store::{StoreSubcommand, StoreTopic, StoreTopicArgs};
 use theme::{ThemeSubcommand, ThemeTopic, ThemeTopicArgs};
@@ -39,6 +53,8 @@ pub enum CliSubcommand {
     #[command(subcommand)]
     App(AppSubcommand),
     #[command(subcommand)]
+    Hydrogen(HydrogenSubcommand),
+    #[command(subcommand)]
     Organization(OrganizationSubcommand),
     #[command(subcommand)]
     Theme(ThemeSubcommand),
@@ -50,12 +66,23 @@ pub enum CliSubcommand {
     Notifications(NotificationsSubcommand),
     #[command(subcommand)]
     Config(ConfigSubcommand),
-    Search { query: String },
+    Commands(Commands),
+    #[command(hide = true, subcommand)]
+    Docs(DocsSubcommand),
+    Search {
+        query: String,
+    },
     Upgrade,
     Help,
     Version,
+    #[command(hide = true, name = "doctor-release")]
+    DoctorRelease(DoctorReleaseArgs),
+    #[command(hide = true, subcommand)]
+    Demo(DemoSubcommand),
+    #[command(hide = true, name = "kitchen-sink")]
+    KitchenSink(KitchenSinkTopicArgs),
     #[command(hide = true)]
-    KitchenSink,
+    Plugins(PluginsTopicArgs),
     #[command(hide = true, name = "debug")]
     Debug {
         #[arg(long = "command-flags")]
@@ -73,17 +100,23 @@ pub struct CliTopicArgs {
 pub enum CliTopic {
     Auth(AuthTopic),
     App(AppTopic),
+    Hydrogen(HydrogenTopic),
     Organization(OrganizationTopic),
     Theme(ThemeTopic),
     Store(StoreTopic),
     Cache(CacheTopic),
     Notifications(NotificationsTopic),
     Config(ConfigTopic),
+    Commands(Commands),
+    Docs(DocsTopic),
     Search(Search),
     Upgrade,
     Help,
     Version,
-    KitchenSink,
+    DoctorRelease(DoctorReleaseTopic),
+    Demo(DemoTopic),
+    KitchenSink(KitchenSinkTopic),
+    Plugins(PluginsTopic),
     Debug { command_flags: bool },
 }
 
@@ -99,6 +132,9 @@ impl TopicCommand for CliTopic {
             CliSubcommand::App(cmd) => {
                 Self::App(AppTopic::from_args(AppTopicArgs { command: cmd }))
             }
+            CliSubcommand::Hydrogen(cmd) => {
+                Self::Hydrogen(HydrogenTopic::from_args(HydrogenTopicArgs { command: cmd }))
+            }
             CliSubcommand::Organization(cmd) => {
                 Self::Organization(OrganizationTopic::from_args(OrganizationTopicArgs {
                     command: cmd,
@@ -113,17 +149,32 @@ impl TopicCommand for CliTopic {
             CliSubcommand::Cache(cmd) => {
                 Self::Cache(CacheTopic::from_args(CacheTopicArgs { command: cmd }))
             }
-            CliSubcommand::Notifications(cmd) => Self::Notifications(
-                NotificationsTopic::from_args(NotificationsTopicArgs { command: cmd }),
-            ),
+            CliSubcommand::Notifications(cmd) => {
+                Self::Notifications(NotificationsTopic::from_args(NotificationsTopicArgs {
+                    command: cmd,
+                }))
+            }
             CliSubcommand::Config(cmd) => {
                 Self::Config(ConfigTopic::from_args(ConfigTopicArgs { command: cmd }))
+            }
+            CliSubcommand::Commands(cmd) => Self::Commands(cmd),
+            CliSubcommand::Docs(cmd) => {
+                Self::Docs(DocsTopic::from_args(DocsTopicArgs { command: cmd }))
             }
             CliSubcommand::Search { query } => Self::Search(Search::new(query)),
             CliSubcommand::Upgrade => Self::Upgrade,
             CliSubcommand::Help => Self::Help,
             CliSubcommand::Version => Self::Version,
-            CliSubcommand::KitchenSink => Self::KitchenSink,
+            CliSubcommand::DoctorRelease(args) => {
+                Self::DoctorRelease(DoctorReleaseTopic::from_args(args))
+            }
+            CliSubcommand::Demo(cmd) => {
+                Self::Demo(DemoTopic::from_args(DemoTopicArgs { command: cmd }))
+            }
+            CliSubcommand::KitchenSink(args) => {
+                Self::KitchenSink(KitchenSinkTopic::from_args(args))
+            }
+            CliSubcommand::Plugins(args) => Self::Plugins(PluginsTopic::from_args(args)),
             CliSubcommand::Debug { command_flags } => Self::Debug { command_flags },
         }
     }
@@ -132,15 +183,21 @@ impl TopicCommand for CliTopic {
         match self {
             Self::Auth(topic) => topic.execute().await,
             Self::App(topic) => topic.execute().await,
+            Self::Hydrogen(topic) => topic.execute().await,
             Self::Organization(topic) => topic.execute().await,
             Self::Theme(topic) => topic.execute().await,
             Self::Store(topic) => topic.execute().await,
             Self::Cache(topic) => topic.execute().await,
             Self::Notifications(topic) => topic.execute().await,
             Self::Config(topic) => topic.execute().await,
+            Self::Commands(cmd) => cmd.run().await,
+            Self::Docs(topic) => topic.execute().await,
             Self::Search(cmd) => cmd.run().await,
             Self::Upgrade => Upgrade.run().await,
-            Self::KitchenSink => KitchenSink.run().await,
+            Self::DoctorRelease(topic) => topic.execute().await,
+            Self::Demo(topic) => topic.execute().await,
+            Self::KitchenSink(topic) => topic.execute().await,
+            Self::Plugins(topic) => topic.execute().await,
             Self::Debug { command_flags } => {
                 if command_flags {
                     println!("command-flags debug: ok");
@@ -148,14 +205,17 @@ impl TopicCommand for CliTopic {
                 Ok(())
             }
             Self::Help => {
-                println!("A CLI tool to build for the Shopify platform\n\nUSAGE\n  $ shopify [COMMAND]\n\nTOPICS\n  app           Build Shopify apps.\n  auth          Auth operations.\n  organization  List organizations you have access to.\n  theme         Manage Shopify themes.\n  store         Manage Shopify stores.\n  cache         CLI cache.\n  config        CLI configuration.\n  notifications CLI notifications.\n\nCOMMANDS\n  help          Display help for Shopify CLI\n  version       Shopify CLI version currently installed.\n  search        Search CLI commands.\n  upgrade       Upgrade Shopify CLI.");
+                println!("A CLI tool to build for the Shopify platform\n\nUSAGE\n  $ shopify [COMMAND]\n\nTOPICS\n  app           Build Shopify apps.\n  auth          Auth operations.\n  hydrogen      Build Hydrogen storefronts.\n  organization  List organizations you have access to.\n  theme         Manage Shopify themes.\n  store         Manage Shopify stores.\n  cache         CLI cache.\n  config        CLI configuration.\n  notifications CLI notifications.\n\nCOMMANDS\n  commands      List Shopify CLI commands.\n  help          Display help for Shopify CLI\n  version       Shopify CLI version currently installed.\n  search        Search CLI commands.\n  upgrade       Upgrade Shopify CLI.");
                 Ok(())
             }
             Self::Version => {
+                let bridge_version =
+                    compat::bridge_version().unwrap_or_else(|| "unavailable".into());
                 println!(
-                    "@shopify/cli/{} {} node-rust",
+                    "@shopify/cli/{} {} node-rust\nBridge CLI: {}",
                     env!("CARGO_PKG_VERSION"),
-                    crate::util::system::host_npm_platform_arch()
+                    crate::util::system::host_npm_platform_arch(),
+                    bridge_version
                 );
                 Ok(())
             }

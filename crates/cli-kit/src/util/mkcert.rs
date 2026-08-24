@@ -184,9 +184,13 @@ mod tests {
     #[tokio::test]
     async fn env_override_wins() {
         let dir = tempfile::tempdir().unwrap();
-        let path = get_mkcert_path(dir.path(), Some("/custom/mkcert"), MkcertPlatform::LinuxAmd64)
-            .await
-            .unwrap();
+        let path = get_mkcert_path(
+            dir.path(),
+            Some("/custom/mkcert"),
+            MkcertPlatform::LinuxAmd64,
+        )
+        .await
+        .unwrap();
         assert_eq!(path, PathBuf::from("/custom/mkcert"));
     }
 

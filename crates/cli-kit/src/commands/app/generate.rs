@@ -92,9 +92,7 @@ impl BaseCommand for GenerateExtension {
                         .unwrap_or_default()
                         .into(),
                 };
-                if let Ok(result) =
-                    fetch_extension_templates(&*client, &ids, &local_specs).await
-                {
+                if let Ok(result) = fetch_extension_templates(&*client, &ids, &local_specs).await {
                     remote_templates = result.templates;
                 }
             }
@@ -103,12 +101,16 @@ impl BaseCommand for GenerateExtension {
         let prompter = CliKitPrompter;
         let name = match &self.name {
             Some(n) if !n.is_empty() => n.clone(),
-            _ => prompt_extension_name(&prompter, None).map_err(|e| CliError::abort(e.to_string()))?,
+            _ => prompt_extension_name(&prompter, None)
+                .map_err(|e| CliError::abort(e.to_string()))?,
         };
         let catalog: Vec<String> = if remote_templates.is_empty() {
             local_specs
         } else {
-            remote_templates.iter().map(|t| t.identifier.clone()).collect()
+            remote_templates
+                .iter()
+                .map(|t| t.identifier.clone())
+                .collect()
         };
         let extension_type = match &self.extension_type {
             Some(t) if !t.is_empty() => t.clone(),

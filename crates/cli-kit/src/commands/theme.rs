@@ -10,6 +10,7 @@ use crate::output::{
 use crate::session::public::session::ensure_authenticated_storefront;
 use crate::session::{ensure_authenticated_themes, AdminSession, EnsureAuthenticatedOptions};
 use crate::util::fqdn::normalize_store_fqdn;
+use crate::util::node_tool::{child_exit_error, PackagedNodeTool};
 use crate::util::system::{is_ci, terminal_supports_prompting};
 use async_trait::async_trait;
 use clap::{Args, Subcommand, ValueEnum};
@@ -31,7 +32,7 @@ use theme::local_storage::{
     remove_development_theme_id_for_store, remove_host_theme_id,
     remove_storefront_password_for_store, store_current_theme_store,
     store_development_theme_id_for_store, store_storefront_password_for_store,
-    storefront_password_for_store,
+    storefront_password_for_store, with_theme_store_context,
 };
 use theme::models::{theme_editor_url, theme_environment_info_json, theme_preview_url, Theme};
 use theme::preview::{ThemePreviewError, ThemePreviewHttpClient, ThemePreviewPayload};
@@ -199,6 +200,46 @@ pub enum Role {
     Development,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+#[value(rename_all = "lower")]
+enum CheckFailLevel {
+    Crash,
+    Error,
+    Suggestion,
+    Style,
+    Warning,
+    Info,
+}
+
+impl CheckFailLevel {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Crash => "crash",
+            Self::Error => "error",
+            Self::Suggestion => "suggestion",
+            Self::Style => "style",
+            Self::Warning => "warning",
+            Self::Info => "info",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+#[value(rename_all = "lower")]
+enum CheckOutput {
+    Text,
+    Json,
+}
+
+impl CheckOutput {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Text => "text",
+            Self::Json => "json",
+        }
+    }
+}
+
 impl Role {
     fn as_str(self) -> &'static str {
         match self {
@@ -303,14 +344,14 @@ impl ThemeCommandRunner {
 
         reject_global_path_for_multi(&config.common)?;
 
-        let loaded = Self::load_environments(
+        let validation = Self::load_multi_environments(
             &environments,
             env_base_path(&config.common),
             &EnvironmentFlags::new(),
             &config.cli_flags,
             true,
-        )?;
-        let validation = Self::validate(loaded, &config.required_flags);
+            &config.required_flags,
+        );
         Self::output_validation_summary(config.command_name, &config.required_flags, &validation);
 
         if validation.valid.is_empty() {
@@ -339,8 +380,15 @@ impl ThemeCommandRunner {
         for group in groups {
             let futures = group.into_iter().map(|environment| {
                 let environment_name = environment.environment;
+                let store = environment.flags.get("store").and_then(value_as_string);
                 let future = make_command(command.clone(), environment_name.clone(), auto_force);
-                async move { (environment_name, future.await) }
+                async move {
+                    let result = match store {
+                        Some(store) => with_theme_store_context(store, future).await,
+                        None => future.await,
+                    };
+                    (environment_name, result)
+                }
             });
 
             for (environment_name, result) in join_all(futures).await {
@@ -353,34 +401,50 @@ impl ThemeCommandRunner {
         Ok(())
     }
 
-    pub(crate) fn load_environments(
+    fn load_multi_environments(
         environments: &[String],
         base_path: PathBuf,
         default_flags: &EnvironmentFlags,
         cli_flags: &EnvironmentFlags,
         requires_auth: bool,
-    ) -> Result<Vec<ThemeCommandEnvironment>, CliError> {
-        environments
-            .iter()
-            .map(|environment| {
-                let environment_flags = load_environment(environment, &base_path)
-                    .map_err(|_| CliError::abort("Please provide a valid environment."))?;
-                let validation_flags = Self::merge_flags(
-                    &EnvironmentFlags::new(),
-                    &environment_flags,
-                    cli_flags,
-                    environment,
-                );
-                let flags =
-                    Self::merge_flags(default_flags, &environment_flags, cli_flags, environment);
-                Ok(ThemeCommandEnvironment {
+        required_flags: &[RequiredFlag],
+    ) -> ThemeCommandValidation {
+        let mut loaded = Vec::new();
+        let mut invalid = Vec::new();
+
+        for environment in environments {
+            match load_environment(environment, &base_path) {
+                Ok(environment_flags) => {
+                    let validation_flags = Self::merge_flags(
+                        &EnvironmentFlags::new(),
+                        &environment_flags,
+                        cli_flags,
+                        environment,
+                    );
+                    let flags = Self::merge_flags(
+                        default_flags,
+                        &environment_flags,
+                        cli_flags,
+                        environment,
+                    );
+                    loaded.push(ThemeCommandEnvironment {
+                        environment: environment.clone(),
+                        flags,
+                        validation_flags,
+                        requires_auth,
+                    });
+                }
+                Err(error) => invalid.push(InvalidThemeCommandEnvironment {
                     environment: environment.clone(),
-                    flags,
-                    validation_flags,
-                    requires_auth,
-                })
-            })
-            .collect()
+                    reason: error.to_string(),
+                }),
+            }
+        }
+
+        let mut validation = Self::validate(loaded, required_flags);
+        invalid.append(&mut validation.invalid);
+        validation.invalid = invalid;
+        validation
     }
 
     pub(crate) fn validate(
@@ -1207,9 +1271,13 @@ impl Info {
                 output_info(
                     OutputContent::new().add(Token::Raw(format!("Store: {}", value.store))),
                 );
-                output_info(
-                    OutputContent::new().add(Token::Raw("Development Theme ID: Not set".into())),
-                );
+                output_info(OutputContent::new().add(Token::Raw(format!(
+                        "Development Theme ID: {}",
+                        value
+                            .development_theme_id
+                            .map(|id| id.to_string())
+                            .unwrap_or_else(|| "Not set".into())
+                    ))));
                 output_info(OutputContent::new().add(Token::Raw("Tooling and System".into())));
                 output_info(
                     OutputContent::new()
@@ -1229,9 +1297,19 @@ impl Info {
 
         let session = session_for(&self.common).await?;
         if self.development && self.theme.is_none() {
-            self.theme =
-                development_theme_id_for_store(&session.store_fqdn).map(|id| id.to_string());
-            self.development = self.theme.is_none();
+            let mut manager =
+                theme::utilities::development_theme_manager::DevelopmentThemeManager::new(
+                    AdminApi { session: &session },
+                );
+            if let Some(id) = development_theme_id_for_store(&session.store_fqdn) {
+                manager = manager.with_theme_id(id.to_string());
+            }
+            let development_theme = manager
+                .find_or_create(Some("Development"), theme::models::DEVELOPMENT_THEME_ROLE)
+                .await
+                .map_err(|error| CliError::abort(error.to_string()))?;
+            self.theme = Some(development_theme.id.to_string());
+            self.development = false;
         }
         let filter = ThemeFilter {
             theme: self.theme,
@@ -1566,9 +1644,10 @@ impl Duplicate {
             .map_err(service_error)?;
 
         if !result.user_errors.is_empty() {
+            let errors = result.user_errors.clone();
             let output = json!({
                 "message": format!("The theme '{}' could not be duplicated due to errors", original.name),
-                "errors": result.user_errors,
+                "errors": errors,
                 "requestId": result.request_id,
             });
             if self.json {
@@ -1824,16 +1903,16 @@ pub struct Check {
         env = "SHOPIFY_FLAG_FAIL_LEVEL",
         default_value = "error"
     )]
-    fail_level: String,
+    fail_level: CheckFailLevel,
     #[arg(long, env = "SHOPIFY_FLAG_INIT")]
     init: bool,
     #[arg(long, env = "SHOPIFY_FLAG_LIST")]
     list: bool,
     #[arg(short = 'o', long, env = "SHOPIFY_FLAG_OUTPUT", default_value = "text")]
-    output: String,
+    output: CheckOutput,
     #[arg(long, env = "SHOPIFY_FLAG_PRINT")]
     print: bool,
-    #[arg(long, env = "SHOPIFY_FLAG_VERSION")]
+    #[arg(short = 'v', long, env = "SHOPIFY_FLAG_VERSION")]
     version: bool,
     #[arg(short = 'e', long, env = "SHOPIFY_FLAG_ENVIRONMENT", action = clap::ArgAction::Append)]
     environment: Vec<String>,
@@ -1841,38 +1920,71 @@ pub struct Check {
 
 impl Check {
     async fn run(self) -> Result<(), CliError> {
-        let root = self.path.unwrap_or_else(cwd_path);
+        let base_root = self.path.clone().unwrap_or_else(cwd_path);
+        let tool =
+            PackagedNodeTool::resolve("@shopify/theme-check-node", "theme-check.cjs", &base_root)?;
+        if self.version {
+            output_result(tool.version().unwrap_or_else(|| "unknown".into()));
+            return Ok(());
+        }
+        if self.environment.is_empty() {
+            return run_node_package_bin(tool, &base_root, self.check_args(&base_root, None, None));
+        }
+
+        let mut first_error = None;
+        for environment in &self.environment {
+            let flags = load_environment(environment, &base_root)
+                .map_err(|_| CliError::abort("Please provide a valid environment."))?;
+            let root = if self.path.is_some() {
+                base_root.clone()
+            } else if let Some(path) = flags.get("path").and_then(value_as_string) {
+                parse_existing_directory(&path).map_err(CliError::abort)?
+            } else {
+                return Err(CliError::abort(format!(
+                    "Environment {environment}: path is required."
+                )));
+            };
+            let config = self
+                .config
+                .clone()
+                .or_else(|| flags.get("config").and_then(value_as_string));
+            let args = self.check_args(&root, Some(environment), config);
+            if let Err(error) = run_node_package_bin(tool.clone(), &root, args) {
+                first_error.get_or_insert(error);
+            }
+        }
+        first_error.map_or(Ok(()), Err)
+    }
+
+    fn check_args(
+        &self,
+        root: &std::path::Path,
+        environment: Option<&str>,
+        config: Option<String>,
+    ) -> Vec<String> {
         let mut args = Vec::new();
         if self.auto_correct {
             args.push("--auto-correct".into());
         }
-        if let Some(config) = self.config {
+        if let Some(config) = config.or_else(|| self.config.clone()) {
             args.extend(["--config".into(), config]);
         }
-        args.extend(["--fail-level".into(), self.fail_level]);
+        args.extend(["--fail-level".into(), self.fail_level.as_str().into()]);
         if self.init {
             args.push("--init".into());
         }
         if self.list {
             args.push("--list".into());
         }
-        args.extend(["--output".into(), self.output]);
+        args.extend(["--output".into(), self.output.as_str().into()]);
         if self.print {
             args.push("--print".into());
         }
-        if self.version {
-            args.push("--version".into());
-        }
-        for environment in self.environment {
-            args.extend(["--environment".into(), environment]);
+        if let Some(environment) = environment {
+            args.extend(["--environment".into(), environment.into()]);
         }
         args.push(root.to_string_lossy().into_owned());
-        run_node_package_bin(
-            "@shopify/theme-check-node",
-            &root,
-            args,
-            "Unable to launch Theme Check",
-        )
+        args
     }
 }
 
@@ -2062,6 +2174,20 @@ impl Dev {
         .await
         .map_err(|error| CliError::abort(error.to_string()))?;
         let api = AdminApi { session: &session };
+        let metafields_session = session.clone();
+        let metafields_root = root.clone();
+        tokio::spawn(async move {
+            let api = AdminApi {
+                session: &metafields_session,
+            };
+            if let Ok(result) = pull_metafield_definitions(&api).await {
+                if let Err(error) =
+                    write_metafield_definitions(&metafields_root, &result.definitions)
+                {
+                    output_debug(format!("Unable to refresh metafield definitions: {error}"));
+                }
+            }
+        });
         let mut selected = if let Some(theme) = self.theme.clone() {
             select_or_prompt_theme(
                 &api,
@@ -2229,7 +2355,8 @@ fn build_dev_filesystem(
     let mut filesystem = theme::filesystem::ThemeFileSystem::scan(root, filters)
         .map_err(|error| CliError::abort(error.to_string()))?;
     if let Some(listing) = listing {
-        theme::listing::apply_listing(root, listing, &mut filesystem.files)
+        filesystem
+            .activate_listing(listing)
             .map_err(|error| CliError::abort(error.to_string()))?;
     }
     Ok(filesystem)
@@ -2925,12 +3052,12 @@ pub struct LanguageServer {}
 impl LanguageServer {
     async fn run(self) -> Result<(), CliError> {
         let root = cwd_path();
-        run_node_package_bin(
+        let tool = PackagedNodeTool::resolve(
             "@shopify/theme-language-server-node",
+            "language-server.cjs",
             &root,
-            Vec::new(),
-            "Unable to launch Theme Language Server",
-        )
+        )?;
+        run_node_package_bin(tool, &root, Vec::new())
     }
 }
 
@@ -3677,7 +3804,7 @@ impl Share {
             common: self.common,
             glob: GlobFlags::default(),
             json: false,
-            theme: Some(theme::generate_name::generate_theme_name("Share")),
+            theme: Some(theme::generate_name::generate_creative_name()),
             development: false,
             development_context: None,
             live: false,
@@ -3695,9 +3822,7 @@ impl Share {
 }
 
 fn recognizable_theme(root: &std::path::Path) -> bool {
-    root.join("layout/theme.liquid").is_file()
-        || root.join("config/settings_schema.json").is_file()
-        || root.join("templates").is_dir()
+    has_required_theme_directories(root)
 }
 
 fn validate_pull_directory(root: &std::path::Path, force: bool) -> Result<(), CliError> {
@@ -3809,58 +3934,15 @@ async fn create_theme(session: &AdminSession, name: String, role: &str) -> Resul
 }
 
 fn run_node_package_bin(
-    package: &str,
+    tool: PackagedNodeTool,
     root: &std::path::Path,
     args: Vec<String>,
-    error_context: &str,
 ) -> Result<(), CliError> {
-    let bin = resolve_node_package_bin(package, root)?;
-    let status = std::process::Command::new("node")
-        .arg(bin)
-        .args(args)
-        .current_dir(root)
-        .status()
-        .map_err(|error| CliError::abort(format!("{error_context}: {error}")))?;
+    let status = tool.status(root, &args)?;
     if status.success() {
         Ok(())
     } else {
-        Err(CliError::abort(format!(
-            "{error_context}: process exited with {}",
-            status
-                .code()
-                .map(|code| code.to_string())
-                .unwrap_or_else(|| "a signal".into())
-        )))
-    }
-}
-
-fn resolve_node_package_bin(package: &str, root: &std::path::Path) -> Result<String, CliError> {
-    let script = r#"
-const path = require('path');
-const packageName = process.argv[1];
-const pkgPath = require.resolve(`${packageName}/package.json`);
-const pkg = require(pkgPath);
-const bin = typeof pkg.bin === 'string' ? pkg.bin : Object.values(pkg.bin || {})[0];
-if (!bin) process.exit(2);
-process.stdout.write(path.resolve(path.dirname(pkgPath), bin));
-"#;
-    let output = std::process::Command::new("node")
-        .args(["-e", script, package])
-        .current_dir(root)
-        .output()
-        .map_err(|error| CliError::abort(format!("Unable to launch Node.js: {error}")))?;
-    if !output.status.success() {
-        return Err(CliError::abort(format!(
-            "Unable to resolve {package}. Install the pinned Node package before retrying."
-        )));
-    }
-    let bin = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    if bin.is_empty() {
-        Err(CliError::abort(format!(
-            "Unable to resolve executable for {package}"
-        )))
-    } else {
-        Ok(bin)
+        Err(child_exit_error(status))
     }
 }
 
@@ -3869,49 +3951,20 @@ fn run_strict_check(
     json_output: bool,
     environment: Option<&String>,
 ) -> Result<(), CliError> {
-    let script = "const path=require('path');const pkgPath=require.resolve('@shopify/theme-check-node/package.json');const pkg=require(pkgPath);const bin=typeof pkg.bin==='string'?pkg.bin:Object.values(pkg.bin||{})[0];if(!bin){process.exit(2)};process.stdout.write(path.resolve(path.dirname(pkgPath),bin));";
-    let output = std::process::Command::new("node")
-        .args(["-e", script])
-        .current_dir(root)
-        .output()
-        .map_err(|error| {
-            CliError::abort(format!(
-                "Unable to launch the pinned Theme Check runtime: {error}"
-            ))
-        })?;
-    if !output.status.success() {
-        let prefix = environment
-            .map(|name| format!("Environment {name}: "))
-            .unwrap_or_default();
-        return Err(CliError::abort(format!("{prefix}Strict push requires @shopify/theme-check-node. Install the pinned checker runtime before retrying{}.", if json_output { " (JSON output requested)" } else { "" })));
-    }
-    let checker = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let tool = PackagedNodeTool::resolve("@shopify/theme-check-node", "theme-check.cjs", root)?;
     let mut args = vec![
-        checker,
-        root.to_string_lossy().into_owned(),
         "--fail-level".into(),
         "error".into(),
+        root.to_string_lossy().into_owned(),
     ];
     if json_output {
         args.extend(["--output".into(), "json".into()]);
     }
-    let result = std::process::Command::new("node")
-        .args(args)
-        .current_dir(root)
-        .output()
-        .map_err(|error| {
-            CliError::abort(format!(
-                "Unable to launch the pinned Theme Check runtime: {error}"
-            ))
-        })?;
+    let result = tool.output(root, &args)?;
     let stdout = String::from_utf8_lossy(&result.stdout).trim().to_string();
     let stderr = String::from_utf8_lossy(&result.stderr).trim().to_string();
-    if !stdout.is_empty() {
-        if json_output {
-            output_result(stdout);
-        } else {
-            output_info(stdout);
-        }
+    if !stdout.is_empty() && !json_output {
+        output_info(stdout);
     }
     if !stderr.is_empty() {
         output_warn(stderr);
@@ -4255,16 +4308,17 @@ theme = "123"
             serde_json::Value::String("cli-password".into()),
         )]);
 
-        let environments = ThemeCommandRunner::load_environments(
+        let validation = ThemeCommandRunner::load_multi_environments(
             &["staging".into()],
             temp.path().to_path_buf(),
             &default_flags,
             &cli_flags,
             true,
-        )
-        .unwrap();
+            &[],
+        );
 
-        let flags = &environments[0].flags;
+        assert!(validation.invalid.is_empty());
+        let flags = &validation.valid[0].flags;
         assert_eq!(
             flags.get("store").and_then(value_as_string).as_deref(),
             Some("env-store.myshopify.com")
@@ -4277,7 +4331,7 @@ theme = "123"
             flags.get("theme").and_then(value_as_string).as_deref(),
             Some("123")
         );
-        assert!(environments[0].requires_auth);
+        assert!(validation.valid[0].requires_auth);
     }
 
     #[test]
@@ -4322,6 +4376,35 @@ theme = "123"
             result.invalid[0].reason,
             "Missing flags: live or development or theme"
         );
+    }
+
+    #[test]
+    fn multi_environment_loading_skips_missing_entries() {
+        let temp = tempfile::tempdir().unwrap();
+        std::fs::write(
+            temp.path().join("shopify.theme.toml"),
+            r#"
+[environments.valid]
+store = "valid-store"
+theme = "123"
+"#,
+        )
+        .unwrap();
+
+        let result = ThemeCommandRunner::load_multi_environments(
+            &["missing".into(), "valid".into()],
+            temp.path().to_path_buf(),
+            &EnvironmentFlags::new(),
+            &EnvironmentFlags::new(),
+            true,
+            &[RequiredFlag::Flag("store"), RequiredFlag::Flag("theme")],
+        );
+
+        assert_eq!(result.valid.len(), 1);
+        assert_eq!(result.valid[0].environment, "valid");
+        assert_eq!(result.invalid.len(), 1);
+        assert_eq!(result.invalid[0].environment, "missing");
+        assert!(result.invalid[0].reason.contains("not found"));
     }
 
     #[test]

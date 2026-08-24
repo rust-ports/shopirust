@@ -53,7 +53,11 @@ impl BaseCommand for Link {
     async fn run(&self) -> Result<(), CliError> {
         let client = authenticated_developer_platform().await?;
         let prompter = CliKitPrompter;
-        let client_id = if self.reset { None } else { self.client_id.clone() };
+        let client_id = if self.reset {
+            None
+        } else {
+            self.client_id.clone()
+        };
         let result = link_config(
             LinkConfigOptions {
                 directory: PathBuf::from(&self.path),
@@ -147,7 +151,12 @@ pub struct Pull {
 }
 
 impl Pull {
-    pub fn new(path: String, config: Option<String>, client_id: Option<String>, reset: bool) -> Self {
+    pub fn new(
+        path: String,
+        config: Option<String>,
+        client_id: Option<String>,
+        reset: bool,
+    ) -> Self {
         Self {
             path,
             config,

@@ -1,10 +1,12 @@
 use clap::{Args, Subcommand};
 use cli_core::command::{BaseCommand, TopicCommand};
 use cli_core::error::CliError;
+use std::io::IsTerminal;
 use store::auth::result::{
     build_store_auth_success_text, manual_auth_url_lines, opening_browser_lines,
     serialize_store_auth_result, StoreAuthPresenter, StoreAuthResult,
 };
+use store::auth::session_store::StoredStoreAppSession;
 use store::auth::{
     authenticate_store_with_app, format_store_auth_list, list_store_auth_sessions,
     DefaultStoreAuthIo, JsonFileStoreSessionStorage, StoreAuthInput, StoreAuthIo,
@@ -15,14 +17,6 @@ use store::execute::{
     ExecuteStoreOperationInput, ReqwestAdminTransport,
 };
 use store::gid::numeric_id_from_encoded_gid;
-use store::list::bp_source::{AccessibleShopsPage, BusinessPlatformStoreListResult};
-use store::list::{
-    list_stores_service, parse_accessible_shops_response, render_store_list_result,
-    select_store_list_organization, ListStoresOptions, OrganizationChoice, OrganizationsAccessInfo,
-    Selection, StoreListBpSource, StoreListIo, StoreListOrg, LIST_ACCESSIBLE_SHOPS_QUERY,
-    STORE_LIST_LIMIT,
-};
-use std::io::IsTerminal;
 use store::info::destinations::{fetch_destinations_context, DestinationsSource};
 use store::info::organization_shop::{fetch_organization_shop, OrganizationShopSource};
 use store::info::types::{
@@ -33,7 +27,13 @@ use store::info::{
     format_store_info_result, get_store_info, GetStoreInfoOptions, StoreInfoIo,
     STORE_INFO_ADMIN_SHOP_QUERY,
 };
-use store::auth::session_store::StoredStoreAppSession;
+use store::list::bp_source::{AccessibleShopsPage, BusinessPlatformStoreListResult};
+use store::list::{
+    list_stores_service, parse_accessible_shops_response, render_store_list_result,
+    select_store_list_organization, ListStoresOptions, OrganizationChoice, OrganizationsAccessInfo,
+    Selection, StoreListBpSource, StoreListIo, StoreListOrg, LIST_ACCESSIBLE_SHOPS_QUERY,
+    STORE_LIST_LIMIT,
+};
 
 use crate::api::business_platform::BusinessPlatformClient;
 use crate::api::graphql::GraphqlClient;
@@ -77,7 +77,11 @@ pub enum StoreSubcommand {
         version: Option<String>,
         #[arg(long = "output-file", env = "SHOPIFY_FLAG_OUTPUT_FILE")]
         output_file: Option<String>,
-        #[arg(long = "allow-mutations", env = "SHOPIFY_FLAG_ALLOW_MUTATIONS", default_value_t = false)]
+        #[arg(
+            long = "allow-mutations",
+            env = "SHOPIFY_FLAG_ALLOW_MUTATIONS",
+            default_value_t = false
+        )]
         allow_mutations: bool,
         #[arg(short = 'j', long = "json")]
         json: bool,
@@ -144,8 +148,15 @@ pub struct StoreTopicArgs {
 }
 
 pub enum StoreTopic {
-    List { organization_id: Option<String>, json: bool },
-    Info { store: String, organization_id: Option<String>, json: bool },
+    List {
+        organization_id: Option<String>,
+        json: bool,
+    },
+    Info {
+        store: String,
+        organization_id: Option<String>,
+        json: bool,
+    },
     Execute {
         store: String,
         query: Option<String>,
@@ -162,9 +173,17 @@ pub enum StoreTopic {
         scopes: String,
         json: bool,
     },
-    AuthList { json: bool },
-    CreateDev { name: String, organization_id: Option<String>, json: bool },
-    CreatePreview { store: Option<String> },
+    AuthList {
+        json: bool,
+    },
+    CreateDev {
+        name: String,
+        organization_id: Option<String>,
+        json: bool,
+    },
+    CreatePreview {
+        store: Option<String>,
+    },
 }
 
 #[async_trait::async_trait]
@@ -477,12 +496,10 @@ impl BaseCommand for ListCmd {
     }
     async fn run(&self) -> Result<(), CliError> {
         let _ = STORE_LIST_LIMIT;
-        let token = ensure_authenticated_business_platform(
-            vec![],
-            EnsureAuthenticatedOptions::default(),
-        )
-        .await
-        .map_err(|e| CliError::abort(e.to_string()))?;
+        let token =
+            ensure_authenticated_business_platform(vec![], EnsureAuthenticatedOptions::default())
+                .await
+                .map_err(|e| CliError::abort(e.to_string()))?;
         let io = CliStoreListIo { token };
         let result = list_stores_service(
             ListStoresOptions {
@@ -760,10 +777,7 @@ impl StoreInfoIo for CliStoreInfoIo {
             .await
             .map_err(|e| store::StoreError::message(e.to_string()))?;
         if !(200..300).contains(&status) {
-            return Err(store::StoreError::http(
-                status,
-                body.to_string(),
-            ));
+            return Err(store::StoreError::http(status, body.to_string()));
         }
         if let Some(errors) = body.get("errors") {
             if !errors.is_null() {
@@ -784,12 +798,18 @@ impl StoreInfoIo for CliStoreInfoIo {
             })?;
         Ok(AdminShopInfo {
             id: shop.get("id").and_then(|v| v.as_str()).map(str::to_string),
-            name: shop.get("name").and_then(|v| v.as_str()).map(str::to_string),
+            name: shop
+                .get("name")
+                .and_then(|v| v.as_str())
+                .map(str::to_string),
             myshopify_domain: shop
                 .get("myshopifyDomain")
                 .and_then(|v| v.as_str())
                 .map(str::to_string),
-            email: shop.get("email").and_then(|v| v.as_str()).map(str::to_string),
+            email: shop
+                .get("email")
+                .and_then(|v| v.as_str())
+                .map(str::to_string),
             shop_owner_name: shop
                 .get("shopOwnerName")
                 .and_then(|v| v.as_str())
@@ -798,7 +818,9 @@ impl StoreInfoIo for CliStoreInfoIo {
                 .pointer("/plan/publicDisplayName")
                 .and_then(|v| v.as_str())
                 .map(str::to_string),
-            partner_development: shop.pointer("/plan/partnerDevelopment").and_then(|v| v.as_bool()),
+            partner_development: shop
+                .pointer("/plan/partnerDevelopment")
+                .and_then(|v| v.as_bool()),
         })
     }
 
@@ -1163,16 +1185,11 @@ async fn resolve_create_dev_organization(
         .await
         .map_err(|e| CliError::abort(e.to_string()))?;
     if access.organizations.is_empty() {
-        return Err(CliError::abort("No organizations found.").with_next_steps(
-            "Make sure you have access to a Shopify organization.",
-        ));
+        return Err(CliError::abort("No organizations found.")
+            .with_next_steps("Make sure you have access to a Shopify organization."));
     }
-    match select_store_list_organization(
-        &access.organizations,
-        organization_id,
-        list_io.is_tty(),
-    )
-    .map_err(|e| CliError::abort(e.to_string()))?
+    match select_store_list_organization(&access.organizations, organization_id, list_io.is_tty())
+        .map_err(|e| CliError::abort(e.to_string()))?
     {
         Selection::Resolved(org) => Ok(org.clone()),
         Selection::NeedsPrompt { choices } => {
@@ -1201,17 +1218,11 @@ impl BaseCommand for CreateDevCmd {
         "Create a development store"
     }
     async fn run(&self) -> Result<(), CliError> {
-        let token = ensure_authenticated_business_platform(
-            vec![],
-            EnsureAuthenticatedOptions::default(),
-        )
-        .await
-        .map_err(|e| CliError::abort(e.to_string()))?;
-        let org = resolve_create_dev_organization(
-            &token,
-            self.organization_id.as_deref(),
-        )
-        .await?;
+        let token =
+            ensure_authenticated_business_platform(vec![], EnsureAuthenticatedOptions::default())
+                .await
+                .map_err(|e| CliError::abort(e.to_string()))?;
+        let org = resolve_create_dev_organization(&token, self.organization_id.as_deref()).await?;
         let io = CliCreateDevIo {
             client: BusinessPlatformClient::new(token, None),
         };
@@ -1290,7 +1301,10 @@ mod tests {
         let cli = TestCli::parse_from(["shopify", "auth", "list", "--json"]);
         match cli.command {
             StoreSubcommand::Auth(args) => {
-                assert!(matches!(args.command, Some(StoreAuthNested::List { json: true })));
+                assert!(matches!(
+                    args.command,
+                    Some(StoreAuthNested::List { json: true })
+                ));
             }
             _ => panic!("expected auth"),
         }

@@ -1,6 +1,4 @@
-use app::services::{
-    bundle_and_build_extensions, deploy, linked_app_context, DeployOptions,
-};
+use app::services::{bundle_and_build_extensions, deploy, linked_app_context, DeployOptions};
 use cli_core::command::BaseCommand;
 use cli_core::error::CliError;
 use is_terminal::IsTerminal;

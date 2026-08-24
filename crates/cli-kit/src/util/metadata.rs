@@ -36,10 +36,7 @@ pub fn get_sensitive_metadata() -> HashMap<String, serde_json::Value> {
 /// Apply store FQDN telemetry fields (matches `@shopify/store` `recordStoreFqdnMetadata`).
 pub fn record_store_fqdn_metadata(store_fqdn: &str, validated: bool, store_id: Option<&str>) {
     let meta = store::attribution::record_store_fqdn_metadata(store_fqdn, validated, store_id);
-    add_sensitive_metadata(
-        "store_fqdn",
-        serde_json::Value::String(meta.store_fqdn),
-    );
+    add_sensitive_metadata("store_fqdn", serde_json::Value::String(meta.store_fqdn));
     add_public_metadata(
         "store_fqdn_hash",
         serde_json::Value::String(meta.store_fqdn_hash),
@@ -48,10 +45,7 @@ pub fn record_store_fqdn_metadata(store_fqdn: &str, validated: bool, store_id: O
         "store_fqdn_validated",
         serde_json::Value::Bool(meta.store_fqdn_validated),
     );
-    add_public_metadata(
-        "store_domain",
-        serde_json::Value::String(meta.store_domain),
-    );
+    add_public_metadata("store_domain", serde_json::Value::String(meta.store_domain));
     if let Some(id) = meta.store_id {
         add_public_metadata("store_id", serde_json::Value::Number(id.into()));
     }

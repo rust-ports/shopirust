@@ -48,11 +48,13 @@ async fn main() -> ! {
     let topic = CliTopic::from_args(CliTopicArgs {
         command: args.command,
     });
+    cli_kit::output::set_verbose(args._global.verbose);
+    if args._global.no_color {
+        colored::control::set_override(false);
+    }
 
-    let result = run_cli(topic, &args._global, |metadata| {
-        tokio::spawn(async move {
-            flush_metadata(metadata).await;
-        });
+    let result = run_cli(topic, &args._global, |metadata| async move {
+        flush_metadata(metadata).await;
     })
     .await;
 
@@ -73,6 +75,10 @@ async fn main() -> ! {
 async fn flush_metadata(metadata: HashMap<String, String>) {
     use cli_kit::util::analytics::{report_analytics_event, AnalyticsEvent};
 
+    if cli_core::environment::analytics_disabled(None) {
+        return;
+    }
+
     let payload: HashMap<String, serde_json::Value> = metadata
         .into_iter()
         .map(|(k, v)| (k, serde_json::Value::String(v)))
@@ -85,5 +91,9 @@ async fn flush_metadata(metadata: HashMap<String, String>) {
         shop_id: None,
     };
 
-    let _ = report_analytics_event(&event).await;
+    let _ = tokio::time::timeout(
+        std::time::Duration::from_secs(2),
+        report_analytics_event(&event),
+    )
+    .await;
 }

@@ -20,10 +20,12 @@ use super::auth_helpers::{authenticated_developer_platform, linked_ctx_options};
 use super::prompter::CliKitPrompter;
 use crate::api::functions::FunctionsClient;
 use crate::api::generated::graphql::functions::schema_definition_by_api_type::{
-    SchemaDefinitionByApiTypeVariables, SCHEMA_DEFINITION_BY_API_TYPE_QUERY,
+    SchemaDefinitionByApiTypeResponse, SchemaDefinitionByApiTypeVariables,
+    SCHEMA_DEFINITION_BY_API_TYPE_QUERY,
 };
 use crate::api::generated::graphql::functions::schema_definition_by_target::{
-    SchemaDefinitionByTargetVariables, SCHEMA_DEFINITION_BY_TARGET_QUERY,
+    SchemaDefinitionByTargetResponse, SchemaDefinitionByTargetVariables,
+    SCHEMA_DEFINITION_BY_TARGET_QUERY,
 };
 use crate::session::ensure_authenticated;
 use crate::session::store::SessionStore;
@@ -50,15 +52,15 @@ impl SchemaDefinitionFetcher for FunctionsSchemaFetcher {
             r#type: api_type.to_string(),
             version: version.to_string(),
         };
-        let resp: serde_json::Value = self
+        let resp: SchemaDefinitionByApiTypeResponse = self
             .client
             .request(SCHEMA_DEFINITION_BY_API_TYPE_QUERY, Some(vars), None, None)
             .await
             .map_err(|e| AppError::message(e.to_string()))?;
         Ok(resp
-            .pointer("/api/schema/definition")
-            .and_then(|v| v.as_str())
-            .map(str::to_string))
+            .api
+            .and_then(|api| api.schema)
+            .map(|schema| schema.definition))
     }
 
     async fn by_target(
@@ -72,15 +74,15 @@ impl SchemaDefinitionFetcher for FunctionsSchemaFetcher {
             handle: target.to_string(),
             version: version.to_string(),
         };
-        let resp: serde_json::Value = self
+        let resp: SchemaDefinitionByTargetResponse = self
             .client
             .request(SCHEMA_DEFINITION_BY_TARGET_QUERY, Some(vars), None, None)
             .await
             .map_err(|e| AppError::message(e.to_string()))?;
         Ok(resp
-            .pointer("/target/api/schema/definition")
-            .and_then(|v| v.as_str())
-            .map(str::to_string))
+            .target
+            .and_then(|target| target.api.schema)
+            .map(|schema| schema.definition))
     }
 }
 
@@ -125,9 +127,7 @@ pub struct FunctionBuild {
 }
 
 impl FunctionBuild {
-    pub fn new(path: String, config: Option<String>,
-        reset: bool,
-    ) -> Self {
+    pub fn new(path: String, config: Option<String>, reset: bool) -> Self {
         Self {
             path,
             config,
@@ -545,9 +545,7 @@ pub struct FunctionTypegen {
 }
 
 impl FunctionTypegen {
-    pub fn new(path: String, config: Option<String>,
-        reset: bool,
-    ) -> Self {
+    pub fn new(path: String, config: Option<String>, reset: bool) -> Self {
         Self {
             path,
             config,

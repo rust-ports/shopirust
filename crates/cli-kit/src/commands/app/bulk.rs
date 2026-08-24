@@ -72,10 +72,7 @@ impl BulkAdminClient for BulkAdapter {
     }
 }
 
-async fn authenticated_client(
-    store: &str,
-    version: &str,
-) -> Result<BulkAdapter, CliError> {
+async fn authenticated_client(store: &str, version: &str) -> Result<BulkAdapter, CliError> {
     let version = if version < BULK_OPERATIONS_MIN_API_VERSION {
         BULK_OPERATIONS_MIN_API_VERSION
     } else {
@@ -85,10 +82,7 @@ async fn authenticated_client(
         .await
         .map_err(|e| CliError::abort(e.to_string()))?;
     let url = admin_graphql_url(&session.store_fqdn, version);
-    Ok(BulkAdapter(BulkOperationsClient::new(
-        url,
-        session.token,
-    )))
+    Ok(BulkAdapter(BulkOperationsClient::new(url, session.token)))
 }
 
 fn print_operation(op: &BulkOperationStatus) {
@@ -198,7 +192,10 @@ impl BaseCommand for BulkExecute {
                     println!();
                 }
             } else {
-                println!("Results written to {}", self.output_file.as_deref().unwrap());
+                println!(
+                    "Results written to {}",
+                    self.output_file.as_deref().unwrap()
+                );
             }
             if result.results_had_user_errors {
                 println!("Bulk operation completed with errors. Check results for details.");
@@ -207,7 +204,12 @@ impl BaseCommand for BulkExecute {
 
         if let Some(op) = &result.operation {
             println!("{}", result.headline);
-            if !self.watch && !matches!(op.status.as_str(), "COMPLETED" | "FAILED" | "CANCELED" | "EXPIRED") {
+            if !self.watch
+                && !matches!(
+                    op.status.as_str(),
+                    "COMPLETED" | "FAILED" | "CANCELED" | "EXPIRED"
+                )
+            {
                 println!(
                     "Monitor its progress with:\nshopify app bulk status --id={}",
                     extract_bulk_operation_id(&op.id)

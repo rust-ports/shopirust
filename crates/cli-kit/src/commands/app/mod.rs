@@ -1,6 +1,4 @@
 mod auth_helpers;
-mod flags;
-mod prompter;
 mod build;
 mod bulk;
 mod config;
@@ -9,6 +7,7 @@ mod dev;
 mod dev_clean;
 mod env;
 mod execute;
+mod flags;
 mod function;
 mod generate;
 mod import_custom_data;
@@ -16,6 +15,7 @@ mod import_extensions;
 mod info;
 mod init;
 mod logs;
+mod prompter;
 mod release;
 mod versions;
 mod webhook;
@@ -32,7 +32,12 @@ pub enum AppConfigSubcommand {
     Link {
         #[arg(long = "client-id", env = "SHOPIFY_FLAG_CLIENT_ID")]
         client_id: Option<String>,
-        #[arg(long = "reset", env = "SHOPIFY_FLAG_RESET", default_value_t = false, conflicts_with = "config")]
+        #[arg(
+            long = "reset",
+            env = "SHOPIFY_FLAG_RESET",
+            default_value_t = false,
+            conflicts_with = "config"
+        )]
         reset: bool,
         #[arg(short = 'c', long = "config", env = "SHOPIFY_FLAG_APP_CONFIG")]
         config: Option<String>,
@@ -57,7 +62,12 @@ pub enum AppConfigSubcommand {
         path: String,
         #[arg(long = "client-id", env = "SHOPIFY_FLAG_CLIENT_ID")]
         client_id: Option<String>,
-        #[arg(long = "reset", env = "SHOPIFY_FLAG_RESET", default_value_t = false, conflicts_with = "config")]
+        #[arg(
+            long = "reset",
+            env = "SHOPIFY_FLAG_RESET",
+            default_value_t = false,
+            conflicts_with = "config"
+        )]
         reset: bool,
     },
     /// Validate app configuration and extensions
@@ -81,7 +91,12 @@ pub enum AppVersionsSubcommand {
         path: String,
         #[arg(long = "client-id", env = "SHOPIFY_FLAG_CLIENT_ID")]
         client_id: Option<String>,
-        #[arg(long = "reset", env = "SHOPIFY_FLAG_RESET", default_value_t = false, conflicts_with = "config")]
+        #[arg(
+            long = "reset",
+            env = "SHOPIFY_FLAG_RESET",
+            default_value_t = false,
+            conflicts_with = "config"
+        )]
         reset: bool,
         #[arg(short = 'j', long = "json")]
         json: bool,
@@ -153,7 +168,12 @@ pub enum AppGenerateSubcommand {
         path: String,
         #[arg(long = "client-id", env = "SHOPIFY_FLAG_CLIENT_ID")]
         client_id: Option<String>,
-        #[arg(long = "reset", env = "SHOPIFY_FLAG_RESET", default_value_t = false, conflicts_with = "config")]
+        #[arg(
+            long = "reset",
+            env = "SHOPIFY_FLAG_RESET",
+            default_value_t = false,
+            conflicts_with = "config"
+        )]
         reset: bool,
     },
 }
@@ -166,7 +186,12 @@ pub enum AppFunctionSubcommand {
         config: Option<String>,
         #[arg(long = "path", env = "SHOPIFY_FLAG_PATH", default_value = ".")]
         path: String,
-        #[arg(long = "reset", env = "SHOPIFY_FLAG_RESET", default_value_t = false, conflicts_with = "config")]
+        #[arg(
+            long = "reset",
+            env = "SHOPIFY_FLAG_RESET",
+            default_value_t = false,
+            conflicts_with = "config"
+        )]
         reset: bool,
     },
     /// Print basic information about your function
@@ -177,7 +202,12 @@ pub enum AppFunctionSubcommand {
         path: String,
         #[arg(long = "client-id", env = "SHOPIFY_FLAG_CLIENT_ID")]
         client_id: Option<String>,
-        #[arg(long = "reset", env = "SHOPIFY_FLAG_RESET", default_value_t = false, conflicts_with = "config")]
+        #[arg(
+            long = "reset",
+            env = "SHOPIFY_FLAG_RESET",
+            default_value_t = false,
+            conflicts_with = "config"
+        )]
         reset: bool,
         #[arg(short = 'j', long = "json")]
         json: bool,
@@ -190,7 +220,12 @@ pub enum AppFunctionSubcommand {
         path: String,
         #[arg(long = "client-id", env = "SHOPIFY_FLAG_CLIENT_ID")]
         client_id: Option<String>,
-        #[arg(long = "reset", env = "SHOPIFY_FLAG_RESET", default_value_t = false, conflicts_with = "config")]
+        #[arg(
+            long = "reset",
+            env = "SHOPIFY_FLAG_RESET",
+            default_value_t = false,
+            conflicts_with = "config"
+        )]
         reset: bool,
         #[arg(short = 'j', long = "json")]
         json: bool,
@@ -207,7 +242,12 @@ pub enum AppFunctionSubcommand {
         path: String,
         #[arg(long = "client-id", env = "SHOPIFY_FLAG_CLIENT_ID")]
         client_id: Option<String>,
-        #[arg(long = "reset", env = "SHOPIFY_FLAG_RESET", default_value_t = false, conflicts_with = "config")]
+        #[arg(
+            long = "reset",
+            env = "SHOPIFY_FLAG_RESET",
+            default_value_t = false,
+            conflicts_with = "config"
+        )]
         reset: bool,
         #[arg(short = 'j', long = "json")]
         json: bool,
@@ -224,7 +264,12 @@ pub enum AppFunctionSubcommand {
         path: String,
         #[arg(long = "client-id", env = "SHOPIFY_FLAG_CLIENT_ID")]
         client_id: Option<String>,
-        #[arg(long = "reset", env = "SHOPIFY_FLAG_RESET", default_value_t = false, conflicts_with = "config")]
+        #[arg(
+            long = "reset",
+            env = "SHOPIFY_FLAG_RESET",
+            default_value_t = false,
+            conflicts_with = "config"
+        )]
         reset: bool,
         #[arg(long = "stdout", env = "SHOPIFY_FLAG_STDOUT")]
         stdout: bool,
@@ -235,7 +280,12 @@ pub enum AppFunctionSubcommand {
         config: Option<String>,
         #[arg(long = "path", env = "SHOPIFY_FLAG_PATH", default_value = ".")]
         path: String,
-        #[arg(long = "reset", env = "SHOPIFY_FLAG_RESET", default_value_t = false, conflicts_with = "config")]
+        #[arg(
+            long = "reset",
+            env = "SHOPIFY_FLAG_RESET",
+            default_value_t = false,
+            conflicts_with = "config"
+        )]
         reset: bool,
     },
 }
@@ -250,7 +300,12 @@ pub enum AppLogsSubcommand {
         path: String,
         #[arg(long = "client-id", env = "SHOPIFY_FLAG_CLIENT_ID")]
         client_id: Option<String>,
-        #[arg(long = "reset", env = "SHOPIFY_FLAG_RESET", default_value_t = false, conflicts_with = "config")]
+        #[arg(
+            long = "reset",
+            env = "SHOPIFY_FLAG_RESET",
+            default_value_t = false,
+            conflicts_with = "config"
+        )]
         reset: bool,
     },
 }
@@ -265,7 +320,12 @@ pub enum AppEnvSubcommand {
         path: String,
         #[arg(long = "client-id", env = "SHOPIFY_FLAG_CLIENT_ID")]
         client_id: Option<String>,
-        #[arg(long = "reset", env = "SHOPIFY_FLAG_RESET", default_value_t = false, conflicts_with = "config")]
+        #[arg(
+            long = "reset",
+            env = "SHOPIFY_FLAG_RESET",
+            default_value_t = false,
+            conflicts_with = "config"
+        )]
         reset: bool,
         #[arg(long = "env-file", env = "SHOPIFY_FLAG_ENV_FILE")]
         env_file: Option<String>,
@@ -278,7 +338,12 @@ pub enum AppEnvSubcommand {
         path: String,
         #[arg(long = "client-id", env = "SHOPIFY_FLAG_CLIENT_ID")]
         client_id: Option<String>,
-        #[arg(long = "reset", env = "SHOPIFY_FLAG_RESET", default_value_t = false, conflicts_with = "config")]
+        #[arg(
+            long = "reset",
+            env = "SHOPIFY_FLAG_RESET",
+            default_value_t = false,
+            conflicts_with = "config"
+        )]
         reset: bool,
         #[arg(short = 'j', long = "json")]
         json: bool,
@@ -295,7 +360,12 @@ pub enum AppWebhookSubcommand {
         path: String,
         #[arg(long = "client-id", env = "SHOPIFY_FLAG_CLIENT_ID")]
         client_id: Option<String>,
-        #[arg(long = "reset", env = "SHOPIFY_FLAG_RESET", default_value_t = false, conflicts_with = "config")]
+        #[arg(
+            long = "reset",
+            env = "SHOPIFY_FLAG_RESET",
+            default_value_t = false,
+            conflicts_with = "config"
+        )]
         reset: bool,
         #[arg(long = "topic", env = "SHOPIFY_FLAG_TOPIC")]
         topic: Option<String>,
@@ -315,22 +385,36 @@ pub enum AppWebhookSubcommand {
 pub enum AppSubcommand {
     /// Create a new app project from a template
     Init {
-        #[arg(long = "name")]
+        #[arg(short = 'n', long = "name", env = "SHOPIFY_FLAG_NAME")]
         name: Option<String>,
-        #[arg(long = "template")]
+        #[arg(long = "template", env = "SHOPIFY_FLAG_TEMPLATE")]
         template: Option<String>,
-        #[arg(long = "flavor")]
+        #[arg(long = "flavor", env = "SHOPIFY_FLAG_TEMPLATE_FLAVOR")]
         flavor: Option<String>,
-        #[arg(long = "client-id", env = "SHOPIFY_FLAG_CLIENT_ID")]
+        #[arg(
+            long = "client-id",
+            env = "SHOPIFY_FLAG_CLIENT_ID",
+            conflicts_with = "organization_id"
+        )]
         client_id: Option<String>,
-        #[arg(long = "organization-id", env = "SHOPIFY_FLAG_ORGANIZATION_ID")]
+        #[arg(
+            long = "organization-id",
+            env = "SHOPIFY_FLAG_ORGANIZATION_ID",
+            conflicts_with = "client_id"
+        )]
         organization_id: Option<String>,
         #[arg(long = "path", env = "SHOPIFY_FLAG_PATH", default_value = ".")]
         path: String,
-        #[arg(long = "package-manager", default_value = "npm")]
+        #[arg(
+            short = 'd',
+            long = "package-manager",
+            env = "SHOPIFY_FLAG_PACKAGE_MANAGER",
+            value_parser = ["npm", "yarn", "pnpm", "bun"],
+            default_value = "npm"
+        )]
         package_manager: String,
         /// Treat `--template` as a local filesystem path
-        #[arg(long = "local")]
+        #[arg(short = 'l', long = "local", env = "SHOPIFY_FLAG_LOCAL", hide = true)]
         local: bool,
     },
     /// Generate app resources
@@ -352,7 +436,12 @@ pub enum AppSubcommand {
         overwrite: bool,
         #[arg(long = "client-id", env = "SHOPIFY_FLAG_CLIENT_ID")]
         client_id: Option<String>,
-        #[arg(long = "reset", env = "SHOPIFY_FLAG_RESET", default_value_t = false, conflicts_with = "config")]
+        #[arg(
+            long = "reset",
+            env = "SHOPIFY_FLAG_RESET",
+            default_value_t = false,
+            conflicts_with = "config"
+        )]
         reset: bool,
     },
     /// Import metafield and metaobject definitions into the app TOML
@@ -367,7 +456,12 @@ pub enum AppSubcommand {
         include_existing: bool,
         #[arg(long = "client-id", env = "SHOPIFY_FLAG_CLIENT_ID")]
         client_id: Option<String>,
-        #[arg(long = "reset", env = "SHOPIFY_FLAG_RESET", default_value_t = false, conflicts_with = "config")]
+        #[arg(
+            long = "reset",
+            env = "SHOPIFY_FLAG_RESET",
+            default_value_t = false,
+            conflicts_with = "config"
+        )]
         reset: bool,
     },
     /// Print basic information about your app and extensions
@@ -382,7 +476,12 @@ pub enum AppSubcommand {
         web_env: bool,
         #[arg(long = "client-id", env = "SHOPIFY_FLAG_CLIENT_ID")]
         client_id: Option<String>,
-        #[arg(long = "reset", env = "SHOPIFY_FLAG_RESET", default_value_t = false, conflicts_with = "config")]
+        #[arg(
+            long = "reset",
+            env = "SHOPIFY_FLAG_RESET",
+            default_value_t = false,
+            conflicts_with = "config"
+        )]
         reset: bool,
     },
     /// Manage app configuration files
@@ -396,7 +495,12 @@ pub enum AppSubcommand {
         path: String,
         #[arg(long = "skip-dependencies-installation")]
         skip_dependencies_installation: bool,
-        #[arg(long = "reset", env = "SHOPIFY_FLAG_RESET", default_value_t = false, conflicts_with = "config")]
+        #[arg(
+            long = "reset",
+            env = "SHOPIFY_FLAG_RESET",
+            default_value_t = false,
+            conflicts_with = "config"
+        )]
         reset: bool,
     },
     /// Deploy your Shopify app
@@ -426,7 +530,12 @@ pub enum AppSubcommand {
         path: String,
         #[arg(long = "client-id", env = "SHOPIFY_FLAG_CLIENT_ID")]
         client_id: Option<String>,
-        #[arg(long = "reset", env = "SHOPIFY_FLAG_RESET", default_value_t = false, conflicts_with = "config")]
+        #[arg(
+            long = "reset",
+            env = "SHOPIFY_FLAG_RESET",
+            default_value_t = false,
+            conflicts_with = "config"
+        )]
         reset: bool,
         #[arg(long = "version", required = true)]
         version: String,
@@ -452,7 +561,12 @@ pub enum AppSubcommand {
         path: String,
         #[arg(long = "client-id", env = "SHOPIFY_FLAG_CLIENT_ID")]
         client_id: Option<String>,
-        #[arg(long = "reset", env = "SHOPIFY_FLAG_RESET", default_value_t = false, conflicts_with = "config")]
+        #[arg(
+            long = "reset",
+            env = "SHOPIFY_FLAG_RESET",
+            default_value_t = false,
+            conflicts_with = "config"
+        )]
         reset: bool,
         /// Output logs as JSON lines
         #[arg(short = 'j', long = "json")]
@@ -479,7 +593,12 @@ pub enum AppSubcommand {
         config: Option<String>,
         #[arg(long = "client-id", env = "SHOPIFY_FLAG_CLIENT_ID")]
         client_id: Option<String>,
-        #[arg(long = "reset", env = "SHOPIFY_FLAG_RESET", default_value_t = false, conflicts_with = "config")]
+        #[arg(
+            long = "reset",
+            env = "SHOPIFY_FLAG_RESET",
+            default_value_t = false,
+            conflicts_with = "config"
+        )]
         reset: bool,
         #[arg(long = "query")]
         query: Option<String>,
@@ -508,7 +627,12 @@ pub enum AppSubcommand {
         path: String,
         #[arg(long = "client-id", env = "SHOPIFY_FLAG_CLIENT_ID")]
         client_id: Option<String>,
-        #[arg(long = "reset", env = "SHOPIFY_FLAG_RESET", default_value_t = false, conflicts_with = "config")]
+        #[arg(
+            long = "reset",
+            env = "SHOPIFY_FLAG_RESET",
+            default_value_t = false,
+            conflicts_with = "config"
+        )]
         reset: bool,
         #[arg(short = 's', long = "store", env = "SHOPIFY_FLAG_STORE")]
         store: Option<String>,
@@ -573,7 +697,12 @@ pub enum AppDevSubcommand {
         path: String,
         #[arg(long = "client-id", env = "SHOPIFY_FLAG_CLIENT_ID")]
         client_id: Option<String>,
-        #[arg(long = "reset", env = "SHOPIFY_FLAG_RESET", default_value_t = false, conflicts_with = "config")]
+        #[arg(
+            long = "reset",
+            env = "SHOPIFY_FLAG_RESET",
+            default_value_t = false,
+            conflicts_with = "config"
+        )]
         reset: bool,
         #[arg(short = 's', long = "store", env = "SHOPIFY_FLAG_STORE")]
         store: Option<String>,
@@ -702,7 +831,9 @@ impl TopicCommand for AppTopic {
                 web_env,
                 client_id,
                 reset,
-            } => Self::Info(info::Info::new(path, config, json, web_env, client_id, reset)),
+            } => Self::Info(info::Info::new(
+                path, config, json, web_env, client_id, reset,
+            )),
             AppSubcommand::Config(AppConfigSubcommand::Link {
                 client_id,
                 reset,
@@ -777,7 +908,9 @@ impl TopicCommand for AppTopic {
                 client_id,
                 reset,
                 json,
-            }) => Self::VersionsList(versions::VersionsList::new(path, config, client_id, json, reset)),
+            }) => Self::VersionsList(versions::VersionsList::new(
+                path, config, client_id, json, reset,
+            )),
             AppSubcommand::Bulk(AppBulkSubcommand::Execute {
                 store,
                 query,
@@ -810,16 +943,20 @@ impl TopicCommand for AppTopic {
                 version,
                 json,
             }) => Self::BulkStatus(bulk::BulkStatus::new(store, id, version, json)),
-            AppSubcommand::Function(AppFunctionSubcommand::Build { config, path, reset }) => {
-                Self::FunctionBuild(function::FunctionBuild::new(path, config, reset))
-            }
+            AppSubcommand::Function(AppFunctionSubcommand::Build {
+                config,
+                path,
+                reset,
+            }) => Self::FunctionBuild(function::FunctionBuild::new(path, config, reset)),
             AppSubcommand::Function(AppFunctionSubcommand::Info {
                 config,
                 path,
                 client_id,
                 reset,
                 json,
-            }) => Self::FunctionInfo(function::FunctionInfo::new(path, config, client_id, json, reset)),
+            }) => Self::FunctionInfo(function::FunctionInfo::new(
+                path, config, client_id, json, reset,
+            )),
             AppSubcommand::Function(AppFunctionSubcommand::Replay {
                 config,
                 path,
@@ -851,9 +988,11 @@ impl TopicCommand for AppTopic {
             }) => Self::FunctionSchema(function::FunctionSchema::new(
                 path, config, client_id, stdout, reset,
             )),
-            AppSubcommand::Function(AppFunctionSubcommand::Typegen { config, path, reset }) => {
-                Self::FunctionTypegen(function::FunctionTypegen::new(path, config, reset))
-            }
+            AppSubcommand::Function(AppFunctionSubcommand::Typegen {
+                config,
+                path,
+                reset,
+            }) => Self::FunctionTypegen(function::FunctionTypegen::new(path, config, reset)),
             AppSubcommand::Logs {
                 config,
                 path,
@@ -961,7 +1100,9 @@ impl TopicCommand for AppTopic {
                     client_id,
                     reset,
                     store,
-                }) => Self::DevClean(dev_clean::DevClean::new(path, config, client_id, store, reset)),
+                }) => Self::DevClean(dev_clean::DevClean::new(
+                    path, config, client_id, store, reset,
+                )),
                 None => Self::Dev(dev::Dev::new(
                     path,
                     config,
@@ -1025,6 +1166,10 @@ impl TopicCommand for AppTopic {
 mod tests {
     use super::*;
     use clap::Parser;
+    use once_cell::sync::Lazy;
+    use std::sync::Mutex;
+
+    static ENV_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
 
     #[derive(Debug, Parser)]
     struct TestAppCli {
@@ -1034,6 +1179,21 @@ mod tests {
 
     fn parse(args: &[&str]) -> Result<AppSubcommand, clap::Error> {
         TestAppCli::try_parse_from(args).map(|c| c.command)
+    }
+
+    fn clear_init_env() {
+        for key in [
+            "SHOPIFY_FLAG_NAME",
+            "SHOPIFY_FLAG_TEMPLATE",
+            "SHOPIFY_FLAG_TEMPLATE_FLAVOR",
+            "SHOPIFY_FLAG_CLIENT_ID",
+            "SHOPIFY_FLAG_ORGANIZATION_ID",
+            "SHOPIFY_FLAG_PATH",
+            "SHOPIFY_FLAG_PACKAGE_MANAGER",
+            "SHOPIFY_FLAG_LOCAL",
+        ] {
+            std::env::remove_var(key);
+        }
     }
 
     #[test]
@@ -1060,6 +1220,9 @@ mod tests {
 
     #[test]
     fn init_name_and_template_are_optional() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        clear_init_env();
+
         let cmd = parse(&["app", "init"]).unwrap();
         match cmd {
             AppSubcommand::Init { name, template, .. } => {
@@ -1068,6 +1231,69 @@ mod tests {
             }
             other => panic!("expected Init, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn init_parses_upstream_aliases() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        clear_init_env();
+
+        let cmd = parse(&[
+            "app",
+            "init",
+            "-n",
+            "Portal",
+            "--template",
+            "reactRouter",
+            "--flavor",
+            "typescript",
+            "-d",
+            "pnpm",
+            "--path",
+            "apps",
+            "--organization-id",
+            "123",
+            "-l",
+        ])
+        .unwrap();
+
+        match cmd {
+            AppSubcommand::Init {
+                name,
+                template,
+                flavor,
+                organization_id,
+                path,
+                package_manager,
+                local,
+                ..
+            } => {
+                assert_eq!(name.as_deref(), Some("Portal"));
+                assert_eq!(template.as_deref(), Some("reactRouter"));
+                assert_eq!(flavor.as_deref(), Some("typescript"));
+                assert_eq!(organization_id.as_deref(), Some("123"));
+                assert_eq!(path, "apps");
+                assert_eq!(package_manager, "pnpm");
+                assert!(local);
+            }
+            other => panic!("expected Init, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn init_client_id_conflicts_with_organization_id() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        clear_init_env();
+
+        assert!(parse(&[
+            "app",
+            "init",
+            "--client-id",
+            "abc",
+            "--organization-id",
+            "123"
+        ])
+        .is_err());
     }
 
     #[test]
@@ -1276,7 +1502,16 @@ mod tests {
             AppSubcommand::Bulk(AppBulkSubcommand::Cancel { id, .. }) => assert_eq!(id, "123"),
             other => panic!("expected Bulk Cancel, got {other:?}"),
         }
-        match parse(&["app", "bulk", "status", "--store", "s.myshopify.com", "--json"]).unwrap() {
+        match parse(&[
+            "app",
+            "bulk",
+            "status",
+            "--store",
+            "s.myshopify.com",
+            "--json",
+        ])
+        .unwrap()
+        {
             AppSubcommand::Bulk(AppBulkSubcommand::Status { json, .. }) => assert!(json),
             other => panic!("expected Bulk Status, got {other:?}"),
         }

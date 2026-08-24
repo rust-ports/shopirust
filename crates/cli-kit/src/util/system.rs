@@ -103,10 +103,7 @@ pub fn is_stdin_piped() -> bool {
 }
 
 /// npm/oclif-style platform label, e.g. `darwin-arm64`, `linux-x64`, `win32-x64`.
-pub fn npm_platform_arch(
-    os: &str,
-    arch: &str,
-) -> String {
+pub fn npm_platform_arch(os: &str, arch: &str) -> String {
     let platform = match os {
         "macos" | "darwin" => "darwin",
         "windows" => "win32",
