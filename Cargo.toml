@@ -67,6 +67,8 @@ rand = "0.8"
 uuid = { version = "1", features = ["v4"] }
 open = "5"
 base64 = "0.22"
+flate2 = "1"
+tar = "0.4"
 
 # filesystem paths
 dirs = "5"

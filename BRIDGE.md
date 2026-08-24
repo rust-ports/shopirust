@@ -47,6 +47,31 @@ Every release bundles its own Node.js runtime. The launchers use that runtime
 first; a system `node` is only a development fallback and must be 22.12 or
 newer.
 
+## crates.io installations
+
+`cargo install` installs the Rust binaries only. On first use of a compatibility
+command, the CLI tells the user to install the optional bridge explicitly:
+
+```bash
+shopify bridge status
+shopify bridge install
+```
+
+The installer downloads the version- and platform-specific archive from this
+repository's GitHub release, verifies its adjacent `.sha256` file, and extracts
+it below the CLI cache. Set `SHOPIFY_CLI_BRIDGE_URL` (or pass `--url`) to use a
+mirror. Remove the current cached bridge with `shopify bridge uninstall`.
+
+For every `v<crate-version>` release, upload these two assets:
+
+```text
+shopify-rust-bridge-<platform>.tar.gz
+shopify-rust-bridge-<platform>.tar.gz.sha256
+```
+
+Create them with `make bridge-archive`; supported platform names follow the
+Node convention, such as `linux-x64`, `darwin-arm64`, and `win32-x64`.
+
 ## Staging
 
 Stage the minimal production bridge payload from a pinned upstream checkout:

@@ -21,12 +21,13 @@ BRIDGE_NODE_OUT ?= $(BRIDGE_OUT)/node-cli
 BRIDGE_THEME_TOOLS_OUT ?= $(BRIDGE_OUT)/theme-tools
 NODE_RUNTIME_DIR ?=
 DIST_DIR ?= target/dist
-DIST_PLATFORM ?= $(shell uname -s | tr '[:upper:]' '[:lower:]')-$(shell uname -m)
+DIST_PLATFORM ?= $(shell os=$$(uname -s | tr '[:upper:]' '[:lower:]'); arch=$$(uname -m); if echo "$$os" | grep -Eq '^(mingw|msys|cygwin)'; then os=win32; fi; if [ "$$arch" = x86_64 ]; then arch=x64; elif [ "$$arch" = aarch64 ] || [ "$$arch" = arm64 ]; then arch=arm64; elif [ "$$arch" = i386 ] || [ "$$arch" = i686 ]; then arch=ia32; fi; echo $$os-$$arch)
 DIST_NAME ?= shopify-rust-$(DIST_PLATFORM)
 RELEASE_ROOT ?= target/release-package/$(DIST_NAME)
 RELEASE_ARCHIVE ?= $(DIST_DIR)/$(DIST_NAME).tar.gz
+BRIDGE_ARCHIVE ?= $(DIST_DIR)/shopify-rust-bridge-$(DIST_PLATFORM).tar.gz
 
-.PHONY: help theme-parity-check codegen-verify-upstream codegen-app codegen-admin codegen codegen-check console-assets bridge-verify-upstream bridge-build-upstream bridge-stage bridge-stage-full bridge-size release-package release-smoke release-manifest
+.PHONY: help theme-parity-check codegen-verify-upstream codegen-app codegen-admin codegen codegen-test codegen-check codegen-verify console-assets bridge-verify-upstream bridge-build-upstream bridge-stage bridge-stage-full bridge-archive bridge-size release-package release-smoke release-manifest
 
 help:
 	@echo "GraphQL codegen targets"
@@ -34,12 +35,15 @@ help:
 	@echo "  make codegen              Regenerate app surfaces + admin modules"
 	@echo "  make codegen-app          Regenerate app surfaces only"
 	@echo "  make codegen-admin        Regenerate admin modules only"
-	@echo "  make codegen-check        codegen + cargo check -p cli-kit"
+	@echo "  make codegen-test         Run graphql-codegen unit tests"
+	@echo "  make codegen-check        codegen + generator tests + cargo check -p cli-kit"
+	@echo "  make codegen-verify       Fail if regenerating changes committed output"
 	@echo "  make codegen-verify-upstream  Fail if upstream paths are missing"
 	@echo "  make console-assets       Build ui-extensions-dev-console → crates/app/assets/dev-console"
 	@echo "  make theme-parity-check   Verify the pinned upstream theme contract"
 	@echo "  make bridge-stage         Stage minimal bundled Node bridge assets"
 	@echo "  make bridge-stage-full    Stage full upstream bridge assets for debugging"
+	@echo "  make bridge-archive       Create the verified bridge download archive"
 	@echo "  make bridge-size          Show full/minimal bridge payload sizes"
 	@echo "  make release-package      Build Rust release + bridge archive + manifest"
 	@echo "  make release-smoke        Smoke test packaged release layout"
@@ -97,8 +101,14 @@ codegen-admin: codegen-verify-upstream
 codegen: codegen-app codegen-admin
 	@echo "Codegen finished → $(OUT_GRAPHQL)"
 
-codegen-check: codegen
+codegen-test:
+	cargo test -p graphql-codegen
+
+codegen-check: codegen codegen-test
 	cargo check -p cli-kit
+
+codegen-verify: codegen-check
+	git diff --exit-code -- $(OUT_GRAPHQL)
 
 console-assets:
 	@if [ ! -d "$(CONSOLE_SRC)" ]; then \
@@ -167,13 +177,20 @@ bridge-stage-full: bridge-verify-upstream
 	rm -rf "$(BRIDGE_NODE_OUT)/.git"
 	@echo "Full bridge staged → $(BRIDGE_OUT)"
 
+bridge-archive: bridge-stage
+	mkdir -p "$(DIST_DIR)"
+	rm -f "$(BRIDGE_ARCHIVE)" "$(BRIDGE_ARCHIVE).sha256"
+	tar -C "$(dir $(BRIDGE_OUT))" -czf "$(BRIDGE_ARCHIVE)" "$(notdir $(BRIDGE_OUT))"
+	python3 -c 'import hashlib, pathlib; p = pathlib.Path("$(BRIDGE_ARCHIVE)"); print(hashlib.sha256(p.read_bytes()).hexdigest(), p.name)' > "$(BRIDGE_ARCHIVE).sha256"
+	@echo "Bridge archive → $(BRIDGE_ARCHIVE)"
+
 bridge-size:
 	@du -sh "$(UPSTREAM_CLI)" 2>/dev/null || true
 	@du -sh "$(BRIDGE_OUT)" 2>/dev/null || true
 	@du -sh target/release/shopify target/release/create-app 2>/dev/null || true
 	@du -sh "$(RELEASE_ARCHIVE)" 2>/dev/null || true
 
-release-package: bridge-stage
+release-package: bridge-archive
 	cargo build -p cli-kit --bins --release
 	rm -rf "$(RELEASE_ROOT)" "$(RELEASE_ARCHIVE)"
 	mkdir -p "$(RELEASE_ROOT)/bin" "$(DIST_DIR)"

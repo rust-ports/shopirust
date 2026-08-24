@@ -1,12 +1,38 @@
 use clap::Args;
 use cli_core::error::{CliError, CliErrorKind};
+use flate2::read::GzDecoder;
+use sha2::{Digest, Sha256};
+use std::io::Cursor;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use tar::Archive;
 
 pub const BRIDGE_RUNNER_ENV: &str = "SHOPIFY_CLI_BRIDGE_RUNNER";
+pub const BRIDGE_URL_ENV: &str = "SHOPIFY_CLI_BRIDGE_URL";
 const BUNDLED_BRIDGE_DIR: &str = "bridge";
 const BUNDLED_BRIDGE_RUNNER: &str = "bridge-runner";
 const BUNDLED_BRIDGE_NODE_CLI: &str = "node-cli";
+
+pub fn bridge_platform() -> String {
+    crate::util::system::host_npm_platform_arch()
+}
+
+pub fn bridge_cache_dir() -> PathBuf {
+    PathBuf::from(crate::constants::cache_path())
+        .join("bridge")
+        .join(format!("v{}", env!("CARGO_PKG_VERSION")))
+        .join(bridge_platform())
+}
+
+pub fn bridge_archive_url() -> String {
+    std::env::var(BRIDGE_URL_ENV).unwrap_or_else(|_| {
+        format!(
+            "https://github.com/rust-ports/shopirust/releases/download/v{}/shopify-rust-bridge-{}.tar.gz",
+            env!("CARGO_PKG_VERSION"),
+            bridge_platform()
+        )
+    })
+}
 
 #[derive(Debug, Clone, Default, Args)]
 pub struct BridgeArgs {
@@ -33,11 +59,11 @@ impl BridgeCommand {
 pub async fn run_bridge(command_id: &str, args: &[String]) -> Result<(), CliError> {
     let runner = resolve_bridge_runner().map_err(|_| {
         CliError::abort(format!(
-            "`shopify {}` is registered through the Node compatibility bridge, but no bridge runner was found.",
+            "`shopify {}` needs the optional Node compatibility bridge, but it is not installed.",
             command_id.replace(':', " ")
         ))
         .with_next_steps(
-            "Install a release artifact that includes `bridge/bridge-runner`, or set SHOPIFY_CLI_BRIDGE_RUNNER to an executable that accepts `<command-id> [...args]`.",
+            "Run `shopify bridge install` to download the verified bridge, install a packaged release, or set SHOPIFY_CLI_BRIDGE_RUNNER for development.",
         )
     })?;
 
@@ -85,8 +111,115 @@ fn resolve_bridge_runner() -> Result<String, ()> {
     let exe = std::env::current_exe().map_err(|_| ())?;
     bundled_bridge_runner_for_exe(&exe)
         .filter(|path| path.is_file())
+        .or_else(cached_bridge_runner)
         .map(|path| path.to_string_lossy().into_owned())
         .ok_or(())
+}
+
+pub fn cached_bridge_runner() -> Option<PathBuf> {
+    let runner_name = if cfg!(windows) {
+        format!("{BUNDLED_BRIDGE_RUNNER}.cmd")
+    } else {
+        BUNDLED_BRIDGE_RUNNER.to_string()
+    };
+    let path = bridge_cache_dir()
+        .join(BUNDLED_BRIDGE_DIR)
+        .join(runner_name);
+    path.is_file().then_some(path)
+}
+
+pub async fn install_bridge(url: Option<&str>) -> Result<PathBuf, CliError> {
+    let url = url.map(str::to_owned).unwrap_or_else(bridge_archive_url);
+    let checksum_url = format!("{url}.sha256");
+    let archive = reqwest::get(&url)
+        .await
+        .map_err(|error| CliError::abort(format!("Unable to download bridge archive: {error}")))?
+        .error_for_status()
+        .map_err(|error| CliError::abort(format!("Unable to download bridge archive: {error}")))?
+        .bytes()
+        .await
+        .map_err(|error| CliError::abort(format!("Unable to read bridge archive: {error}")))?;
+    let checksum = reqwest::get(&checksum_url)
+        .await
+        .map_err(|error| CliError::abort(format!("Unable to download bridge checksum: {error}")))?
+        .error_for_status()
+        .map_err(|error| CliError::abort(format!("Unable to download bridge checksum: {error}")))?
+        .text()
+        .await
+        .map_err(|error| CliError::abort(format!("Unable to read bridge checksum: {error}")))?;
+    let expected = checksum
+        .split_whitespace()
+        .next()
+        .filter(|value| value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit()))
+        .ok_or_else(|| {
+            CliError::abort("Bridge checksum file does not contain a SHA-256 digest.")
+        })?;
+    let actual = hex::encode(Sha256::digest(&archive));
+    if !actual.eq_ignore_ascii_case(expected) {
+        return Err(CliError::abort(
+            "Bridge checksum verification failed; the archive was not installed.",
+        ));
+    }
+
+    let destination = bridge_cache_dir();
+    let parent = destination
+        .parent()
+        .ok_or_else(|| CliError::abort("Invalid bridge cache path."))?;
+    std::fs::create_dir_all(parent)
+        .map_err(|error| CliError::abort(format!("Unable to create bridge cache: {error}")))?;
+    let temporary = parent.join(format!(
+        ".{}-{}.partial",
+        bridge_platform(),
+        uuid::Uuid::new_v4()
+    ));
+    std::fs::create_dir_all(&temporary)
+        .map_err(|error| CliError::abort(format!("Unable to prepare bridge install: {error}")))?;
+    let extract = (|| -> Result<(), CliError> {
+        let decoder = GzDecoder::new(Cursor::new(archive));
+        let mut tar = Archive::new(decoder);
+        for entry in tar
+            .entries()
+            .map_err(|error| CliError::abort(format!("Invalid bridge archive: {error}")))?
+        {
+            let mut entry = entry.map_err(|error| {
+                CliError::abort(format!("Invalid bridge archive entry: {error}"))
+            })?;
+            if !entry.unpack_in(&temporary).map_err(|error| {
+                CliError::abort(format!("Unable to extract bridge archive: {error}"))
+            })? {
+                return Err(CliError::abort("Bridge archive contains an unsafe path."));
+            }
+        }
+        if !temporary.join(BUNDLED_BRIDGE_DIR).is_dir() {
+            return Err(CliError::abort(
+                "Bridge archive has an invalid layout (missing bridge directory).",
+            ));
+        }
+        Ok(())
+    })();
+    if let Err(error) = extract {
+        let _ = std::fs::remove_dir_all(&temporary);
+        return Err(error);
+    }
+    if destination.exists() {
+        std::fs::remove_dir_all(&destination)
+            .map_err(|error| CliError::abort(format!("Unable to replace bridge: {error}")))?;
+    }
+    std::fs::rename(&temporary, &destination)
+        .map_err(|error| CliError::abort(format!("Unable to install bridge: {error}")))?;
+    cached_bridge_runner().ok_or_else(|| {
+        CliError::abort("Bridge archive installed but does not contain a runnable bridge runner.")
+    })
+}
+
+pub fn uninstall_cached_bridge() -> Result<bool, CliError> {
+    let destination = bridge_cache_dir();
+    if !destination.exists() {
+        return Ok(false);
+    }
+    std::fs::remove_dir_all(&destination)
+        .map_err(|error| CliError::abort(format!("Unable to remove bridge: {error}")))?;
+    Ok(true)
 }
 
 fn bundled_bridge_runner_for_exe(exe: &Path) -> Option<PathBuf> {
@@ -129,9 +262,9 @@ mod tests {
         let _guard = ENV_LOCK.lock().await;
         std::env::remove_var(BRIDGE_RUNNER_ENV);
         let err = run_bridge("hydrogen:dev", &[]).await.unwrap_err();
-        assert!(err.message.contains("no bridge runner was found"));
+        assert!(err.message.contains("bridge, but it is not installed"));
         let next_steps = err.next_steps.unwrap();
-        assert!(next_steps.contains("bridge/bridge-runner"));
+        assert!(next_steps.contains("shopify bridge install"));
         assert!(next_steps.contains(BRIDGE_RUNNER_ENV));
     }
 
@@ -145,6 +278,32 @@ mod tests {
             PathBuf::from("bridge").join("bridge-runner")
         };
         assert!(runner.ends_with(suffix));
+    }
+
+    #[tokio::test]
+    async fn cached_runner_is_discovered() {
+        let _guard = ENV_LOCK.lock().await;
+        let cache = tempfile::tempdir().unwrap();
+        let previous = std::env::var_os("XDG_CACHE_HOME");
+        std::env::set_var("XDG_CACHE_HOME", cache.path());
+
+        let runner = cached_bridge_runner().unwrap_or_else(|| {
+            let name = if cfg!(windows) {
+                "bridge-runner.cmd"
+            } else {
+                "bridge-runner"
+            };
+            bridge_cache_dir().join(BUNDLED_BRIDGE_DIR).join(name)
+        });
+        std::fs::create_dir_all(runner.parent().unwrap()).unwrap();
+        std::fs::write(&runner, "bridge").unwrap();
+        assert_eq!(cached_bridge_runner().as_deref(), Some(runner.as_path()));
+
+        if let Some(previous) = previous {
+            std::env::set_var("XDG_CACHE_HOME", previous);
+        } else {
+            std::env::remove_var("XDG_CACHE_HOME");
+        }
     }
 
     #[test]

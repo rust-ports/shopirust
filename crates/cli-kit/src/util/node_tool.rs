@@ -63,10 +63,7 @@ impl PackagedNodeTool {
             package: package.to_string(),
             package_json,
             executable,
-            node: std::env::var(NODE_EXECUTABLE_ENV)
-                .ok()
-                .filter(|value| !value.trim().is_empty())
-                .unwrap_or_else(|| "node".into()),
+            node: bundled_node_executable().unwrap_or_else(|| "node".into()),
         })
     }
 
@@ -133,6 +130,7 @@ fn package_json_candidates(package: &str, working_directory: &Path) -> Vec<PathB
             roots.push(bin.join("bridge/node-cli/packages/theme"));
         }
     }
+    roots.push(crate::commands::compat::bridge_cache_dir().join("bridge/theme-tools"));
     roots.push(working_directory.to_path_buf());
 
     roots
@@ -143,6 +141,38 @@ fn package_json_candidates(package: &str, working_directory: &Path) -> Vec<PathB
                 .join("package.json")
         })
         .collect()
+}
+
+fn bundled_node_executable() -> Option<String> {
+    if let Some(node) = std::env::var(NODE_EXECUTABLE_ENV)
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+    {
+        return Some(node);
+    }
+    let node_name = if cfg!(windows) {
+        "node.exe"
+    } else {
+        "bin/node"
+    };
+    let candidates = [
+        std::env::current_exe().ok().and_then(|executable| {
+            executable
+                .parent()
+                .map(|bin| bin.join("bridge").join("node").join(node_name))
+        }),
+        Some(
+            crate::commands::compat::bridge_cache_dir()
+                .join("bridge")
+                .join("node")
+                .join(node_name),
+        ),
+    ];
+    candidates
+        .into_iter()
+        .flatten()
+        .find(|path| path.is_file())
+        .map(|path| path.to_string_lossy().into_owned())
 }
 
 #[cfg(test)]

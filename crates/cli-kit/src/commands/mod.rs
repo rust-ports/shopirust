@@ -1,8 +1,9 @@
 pub mod app;
 mod auth;
+mod bridge;
 mod cache;
 mod commands_cmd;
-mod compat;
+pub(crate) mod compat;
 mod config_cmd;
 mod demo;
 mod did_you_mean;
@@ -21,6 +22,7 @@ mod upgrade;
 
 use app::{AppSubcommand, AppTopic, AppTopicArgs};
 use auth::{AuthSubcommand, AuthTopic, AuthTopicArgs};
+use bridge::{BridgeSubcommand, BridgeTopic, BridgeTopicArgs};
 use cache::{CacheSubcommand, CacheTopic, CacheTopicArgs};
 use commands_cmd::Commands;
 use config_cmd::{ConfigSubcommand, ConfigTopic, ConfigTopicArgs};
@@ -66,6 +68,8 @@ pub enum CliSubcommand {
     Notifications(NotificationsSubcommand),
     #[command(subcommand)]
     Config(ConfigSubcommand),
+    #[command(subcommand)]
+    Bridge(BridgeSubcommand),
     Commands(Commands),
     #[command(hide = true, subcommand)]
     Docs(DocsSubcommand),
@@ -107,6 +111,7 @@ pub enum CliTopic {
     Cache(CacheTopic),
     Notifications(NotificationsTopic),
     Config(ConfigTopic),
+    Bridge(BridgeTopic),
     Commands(Commands),
     Docs(DocsTopic),
     Search(Search),
@@ -157,6 +162,9 @@ impl TopicCommand for CliTopic {
             CliSubcommand::Config(cmd) => {
                 Self::Config(ConfigTopic::from_args(ConfigTopicArgs { command: cmd }))
             }
+            CliSubcommand::Bridge(cmd) => {
+                Self::Bridge(BridgeTopic::from_args(BridgeTopicArgs { command: cmd }))
+            }
             CliSubcommand::Commands(cmd) => Self::Commands(cmd),
             CliSubcommand::Docs(cmd) => {
                 Self::Docs(DocsTopic::from_args(DocsTopicArgs { command: cmd }))
@@ -190,6 +198,7 @@ impl TopicCommand for CliTopic {
             Self::Cache(topic) => topic.execute().await,
             Self::Notifications(topic) => topic.execute().await,
             Self::Config(topic) => topic.execute().await,
+            Self::Bridge(topic) => topic.execute().await,
             Self::Commands(cmd) => cmd.run().await,
             Self::Docs(topic) => topic.execute().await,
             Self::Search(cmd) => cmd.run().await,
