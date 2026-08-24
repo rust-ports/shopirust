@@ -375,11 +375,14 @@ mod tests {
         std::env::set_current_dir(previous_cwd).unwrap();
 
         let raw = std::fs::read_to_string(log).unwrap();
+        // macOS canonicalizes `/var` to `/private/var` when a shell resolves
+        // its working directory, while `TempDir::path()` retains `/var`.
+        let canonical_cwd = cwd.canonicalize().unwrap();
         assert_eq!(
             raw,
             format!(
                 "{}\npreserved\nhydrogen:build\n--path\nweb\n",
-                cwd.display()
+                canonical_cwd.display()
             )
         );
         std::env::remove_var(BRIDGE_RUNNER_ENV);
