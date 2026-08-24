@@ -422,19 +422,35 @@ pub fn resolve_output_dir(output_path: &Path) -> PathBuf {
 
 /// True when `candidate` is equal to or nested under `root`.
 pub fn is_subpath(root: &Path, candidate: &Path) -> bool {
-    let Ok(root) = root
-        .canonicalize()
-        .or_else(|_| Ok::<_, std::io::Error>(root.to_path_buf()))
-    else {
+    let Ok(root) = root.canonicalize() else {
         return false;
     };
-    let Ok(cand) = candidate
-        .canonicalize()
-        .or_else(|_| Ok::<_, std::io::Error>(candidate.to_path_buf()))
-    else {
+    let Some(cand) = canonicalize_with_missing_tail(candidate) else {
         return false;
     };
     cand.starts_with(&root)
+}
+
+/// Canonicalize the existing portion of a path while retaining a non-existent
+/// tail. This avoids comparing `/var/...` to `/private/var/...` on macOS when
+/// the candidate output file has not been created yet.
+fn canonicalize_with_missing_tail(path: &Path) -> Option<PathBuf> {
+    let mut current = path;
+    let mut missing = Vec::new();
+    loop {
+        match current.canonicalize() {
+            Ok(mut canonical) => {
+                for component in missing.iter().rev() {
+                    canonical.push(component);
+                }
+                return Some(canonical);
+            }
+            Err(_) => {
+                missing.push(current.file_name()?.to_os_string());
+                current = current.parent()?;
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -567,5 +583,13 @@ mod tests {
         fs::create_dir_all(&root).unwrap();
         assert!(is_subpath(&root, &root.join("a.js")));
         assert!(!is_subpath(&root, dir.path()));
+    }
+
+    #[test]
+    fn is_subpath_accepts_a_nonexistent_child_of_a_canonical_root() {
+        let dir = tempdir().unwrap();
+        let root = dir.path().join("out");
+        fs::create_dir_all(&root).unwrap();
+        assert!(is_subpath(&root, &root.join("nested").join("a.js")));
     }
 }

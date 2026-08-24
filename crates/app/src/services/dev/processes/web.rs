@@ -344,11 +344,15 @@ mod tests {
             .unwrap();
 
         assert_eq!(
-            std::fs::read_to_string(directory.path().join("first.txt")).unwrap(),
+            std::fs::read_to_string(directory.path().join("first.txt"))
+                .unwrap()
+                .trim(),
             "first"
         );
         assert_eq!(
-            std::fs::read_to_string(directory.path().join("second.txt")).unwrap(),
+            std::fs::read_to_string(directory.path().join("second.txt"))
+                .unwrap()
+                .trim(),
             "second"
         );
     }

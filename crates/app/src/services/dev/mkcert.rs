@@ -155,7 +155,7 @@ pub async fn generate_certificate(
         return Ok(LocalhostCert {
             key: fs::read_to_string(&key_path)?,
             cert: fs::read_to_string(&cert_path)?,
-            cert_path: relative_cert.to_string_lossy().to_string(),
+            cert_path: relative_cert.to_string_lossy().replace('\\', "/"),
         });
     }
 
@@ -190,7 +190,7 @@ pub async fn generate_certificate(
     Ok(LocalhostCert {
         key: fs::read_to_string(&key_path)?,
         cert: fs::read_to_string(&cert_path)?,
-        cert_path: relative_cert.to_string_lossy().to_string(),
+        cert_path: relative_cert.to_string_lossy().replace('\\', "/"),
     })
 }
 

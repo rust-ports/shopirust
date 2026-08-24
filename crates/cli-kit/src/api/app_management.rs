@@ -1325,7 +1325,7 @@ fn map_generated_specification(value: FetchSpecificationsSpecifications) -> Spec
         validation_schema: value.validation_schema.map(|schema| ValidationSchema {
             json_schema: serde_json::from_str(&schema.json_schema)
                 .ok()
-                .or_else(|| Some(serde_json::Value::String(schema.json_schema))),
+                .or(Some(serde_json::Value::String(schema.json_schema))),
         }),
     }
 }

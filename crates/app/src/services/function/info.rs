@@ -162,7 +162,8 @@ mod tests {
         assert_eq!(parsed["name"], "My Function");
         assert_eq!(parsed["apiVersion"], "2024-01");
         assert!(parsed["targeting"].is_object());
-        assert_eq!(parsed["wasmPath"], "/path/to/function/dist/index.wasm");
+        let expected = PathBuf::from("/path/to/function").join("dist/index.wasm");
+        assert_eq!(parsed["wasmPath"], expected.to_string_lossy().as_ref());
     }
 
     #[test]
@@ -177,7 +178,8 @@ mod tests {
             },
         );
         let parsed: Value = serde_json::from_str(&out).unwrap();
-        assert_eq!(parsed["wasmPath"], "/path/to/function/custom/output.wasm");
+        let expected = PathBuf::from("/path/to/function").join("custom/output.wasm");
+        assert_eq!(parsed["wasmPath"], expected.to_string_lossy().as_ref());
     }
 
     #[test]
