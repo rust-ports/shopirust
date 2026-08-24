@@ -28,11 +28,19 @@ pub fn store_detail_items(result: &StoreInfoResult) -> Vec<String> {
     push(&mut items, "ID", result.id.as_deref());
     push(&mut items, "Display Name", result.display_name.as_deref());
     push(&mut items, "Subdomain", Some(result.subdomain.as_str()));
-    push(&mut items, "Organization", result.organization_name.as_deref());
+    push(
+        &mut items,
+        "Organization",
+        result.organization_name.as_deref(),
+    );
     push(&mut items, "Store owner", owner.as_deref());
     push(&mut items, "Type", type_label.as_deref());
     push(&mut items, "Plan", plan_label.as_deref());
-    push(&mut items, "Feature Preview", result.feature_preview.as_deref());
+    push(
+        &mut items,
+        "Feature Preview",
+        result.feature_preview.as_deref(),
+    );
     push(&mut items, "Admin URL", result.admin_url.as_deref());
     push(&mut items, "Access URL", result.access_url.as_deref());
     push(&mut items, "Save URL", result.save_url.as_deref());
@@ -138,7 +146,9 @@ mod tests {
                 email: Some("jane@acme.com".into()),
             });
         });
-        assert!(store_detail_items(&result).contains(&"Store owner: Jane Doe (jane@acme.com)".into()));
+        assert!(
+            store_detail_items(&result).contains(&"Store owner: Jane Doe (jane@acme.com)".into())
+        );
     }
 
     #[test]

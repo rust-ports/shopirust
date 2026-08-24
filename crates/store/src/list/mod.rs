@@ -16,10 +16,7 @@ pub use types::{
 
 pub fn limit_entries<T: Clone>(entries: Vec<T>, has_more: bool) -> (Vec<T>, bool) {
     if entries.len() > STORE_LIST_LIMIT {
-        return (
-            entries.into_iter().take(STORE_LIST_LIMIT).collect(),
-            true,
-        );
+        return (entries.into_iter().take(STORE_LIST_LIMIT).collect(), true);
     }
     (entries, has_more)
 }
@@ -48,17 +45,20 @@ pub fn select_store_list_organization<'a>(
         return Err(StoreError::message("No organizations available."));
     }
     if let Some(wanted) = organization_id {
-        let selected = organizations.iter().find(|o| o.id == wanted).ok_or_else(|| {
-            let available = organizations
-                .iter()
-                .map(|o| format!("{} ({})", o.business_name, o.id))
-                .collect::<Vec<_>>()
-                .join(", ");
-            StoreError::with_try(
-                format!("Organization with ID {wanted} not found."),
-                format!("Available organizations: {available}"),
-            )
-        })?;
+        let selected = organizations
+            .iter()
+            .find(|o| o.id == wanted)
+            .ok_or_else(|| {
+                let available = organizations
+                    .iter()
+                    .map(|o| format!("{} ({})", o.business_name, o.id))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                StoreError::with_try(
+                    format!("Organization with ID {wanted} not found."),
+                    format!("Available organizations: {available}"),
+                )
+            })?;
         return Ok(Selection::Resolved(selected));
     }
     if organizations.len() == 1 {
@@ -70,8 +70,10 @@ pub fn select_store_list_organization<'a>(
             "Provide `--organization-id`, for example `--organization-id 1234567`. Run `shopify organization list` to find IDs.",
         ));
     }
-    let unique_names: std::collections::HashSet<_> =
-        organizations.iter().map(|o| o.business_name.as_str()).collect();
+    let unique_names: std::collections::HashSet<_> = organizations
+        .iter()
+        .map(|o| o.business_name.as_str())
+        .collect();
     let has_duplicate_names = unique_names.len() < organizations.len();
     let choices = organizations
         .iter()
@@ -149,9 +151,7 @@ pub async fn list_stores_service(
             stores: vec![],
             source: "organization".into(),
             organization: None,
-            notice: Some(
-                "Couldn't resolve a Shopify account for the current CLI session.".into(),
-            ),
+            notice: Some("Couldn't resolve a Shopify account for the current CLI session.".into()),
             truncated: false,
         });
     }
@@ -207,7 +207,9 @@ pub async fn list_business_platform_stores_for_org(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::list::bp_source::{AccessibleShopNode, AccessibleShopsPage, BusinessPlatformStoreListResult};
+    use crate::list::bp_source::{
+        AccessibleShopNode, AccessibleShopsPage, BusinessPlatformStoreListResult,
+    };
     use std::sync::Mutex;
 
     #[derive(Default)]

@@ -22,7 +22,7 @@ use pkce::create_pkce_bootstrap;
 use result::{StoreAuthPresenter, StoreAuthResult};
 use scopes::{merge_requested_and_stored_scopes, parse_store_auth_scopes, resolve_granted_scopes};
 use session_store::{
-    set_stored_store_app_session, StoredAssociatedUser, StoredStoreAppSession, StoreSessionStorage,
+    set_stored_store_app_session, StoreSessionStorage, StoredAssociatedUser, StoredStoreAppSession,
 };
 use token_client::{exchange_store_auth_code_for_token, ExchangeCodeOptions, StoreTokenResponse};
 
@@ -196,13 +196,16 @@ pub async fn authenticate_store_with_app(
             .to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
     });
     let granted = resolve_granted_scopes(&token_response, &validation_scopes)?;
-    let associated_user = token_response.associated_user.as_ref().map(|u| StoredAssociatedUser {
-        id: u.id,
-        email: u.email.clone(),
-        first_name: u.first_name.clone(),
-        last_name: u.last_name.clone(),
-        account_owner: u.account_owner,
-    });
+    let associated_user = token_response
+        .associated_user
+        .as_ref()
+        .map(|u| StoredAssociatedUser {
+            id: u.id,
+            email: u.email.clone(),
+            first_name: u.first_name.clone(),
+            last_name: u.last_name.clone(),
+            account_owner: u.account_owner,
+        });
 
     let result = StoreAuthResult {
         store: store.clone(),

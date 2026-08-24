@@ -1,7 +1,5 @@
-use crate::auth::session_store::{
-    get_current_stored_store_app_session, StoreSessionStorage,
-};
 use crate::auth::session_lifecycle::load_stored_store_session;
+use crate::auth::session_store::{get_current_stored_store_app_session, StoreSessionStorage};
 use crate::auth::token_client::fetch_current_store_auth_scopes;
 use crate::error::StoreError;
 use chrono::Utc;
@@ -25,18 +23,18 @@ pub async fn resolve_existing_store_auth_scopes(
     }
     let stored = get_current_stored_store_app_session(store, storage).unwrap();
     match load_stored_store_session(store, storage, http, Utc::now()).await {
-        Ok(usable) => match fetch_current_store_auth_scopes(http, &usable.store, &usable.access_token)
-            .await
-        {
-            Ok(remote) => Ok(ResolvedStoreAuthScopes {
-                scopes: remote,
-                authoritative: true,
-            }),
-            Err(_) => Ok(ResolvedStoreAuthScopes {
-                scopes: stored.scopes,
-                authoritative: false,
-            }),
-        },
+        Ok(usable) => {
+            match fetch_current_store_auth_scopes(http, &usable.store, &usable.access_token).await {
+                Ok(remote) => Ok(ResolvedStoreAuthScopes {
+                    scopes: remote,
+                    authoritative: true,
+                }),
+                Err(_) => Ok(ResolvedStoreAuthScopes {
+                    scopes: stored.scopes,
+                    authoritative: false,
+                }),
+            }
+        }
         Err(_) => Ok(ResolvedStoreAuthScopes {
             scopes: stored.scopes,
             authoritative: false,
@@ -56,10 +54,9 @@ mod tests {
     async fn no_scopes_when_no_stored_auth() {
         let storage = MemoryStoreSessionStorage::new();
         let http = reqwest::Client::new();
-        let resolved =
-            resolve_existing_store_auth_scopes("shop.myshopify.com", &storage, &http)
-                .await
-                .unwrap();
+        let resolved = resolve_existing_store_auth_scopes("shop.myshopify.com", &storage, &http)
+            .await
+            .unwrap();
         assert_eq!(resolved.scopes, Vec::<String>::new());
         assert!(resolved.authoritative);
     }
@@ -85,10 +82,9 @@ mod tests {
             &storage,
         );
         let http = reqwest::Client::new();
-        let resolved =
-            resolve_existing_store_auth_scopes("shop.myshopify.com", &storage, &http)
-                .await
-                .unwrap();
+        let resolved = resolve_existing_store_auth_scopes("shop.myshopify.com", &storage, &http)
+            .await
+            .unwrap();
         assert_eq!(resolved.scopes, vec!["read_orders"]);
         assert!(!resolved.authoritative);
     }

@@ -57,10 +57,17 @@ pub fn build_store_auth_url(
     serializer.append_pair("response_type", "code");
     serializer.append_pair("code_challenge", code_challenge);
     serializer.append_pair("code_challenge_method", "S256");
-    format!("https://{store}/admin/oauth/authorize?{}", serializer.finish())
+    format!(
+        "https://{store}/admin/oauth/authorize?{}",
+        serializer.finish()
+    )
 }
 
-pub fn create_pkce_bootstrap(store: &str, scopes: Vec<String>, state: Option<String>) -> StoreAuthBootstrap {
+pub fn create_pkce_bootstrap(
+    store: &str,
+    scopes: Vec<String>,
+    state: Option<String>,
+) -> StoreAuthBootstrap {
     let port = DEFAULT_STORE_AUTH_PORT;
     let state = state.unwrap_or_else(|| Uuid::new_v4().to_string());
     let redirect_uri = store_auth_redirect_uri(port);

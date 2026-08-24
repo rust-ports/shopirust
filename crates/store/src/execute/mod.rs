@@ -3,7 +3,7 @@ pub mod admin_transport;
 pub mod request;
 pub mod result;
 
-use crate::auth::session_store::{StoredStoreAppSession, StoreSessionStorage};
+use crate::auth::session_store::{StoreSessionStorage, StoredStoreAppSession};
 use crate::error::StoreError;
 use chrono::{DateTime, Utc};
 

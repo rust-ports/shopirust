@@ -162,9 +162,7 @@ mod tests {
             stores: vec![],
             source: "organization".into(),
             organization: None,
-            notice: Some(
-                "Couldn't resolve a Shopify account for the current CLI session.".into(),
-            ),
+            notice: Some("Couldn't resolve a Shopify account for the current CLI session.".into()),
             truncated: false,
         };
         let rendered = render_store_list_result(&result, false);

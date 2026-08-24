@@ -56,7 +56,10 @@ pub fn to_store_list_entry(
     })
 }
 
-pub fn by_created_at_descending(left: &StoreListEntry, right: &StoreListEntry) -> std::cmp::Ordering {
+pub fn by_created_at_descending(
+    left: &StoreListEntry,
+    right: &StoreListEntry,
+) -> std::cmp::Ordering {
     match right.created_at.cmp(&left.created_at) {
         std::cmp::Ordering::Equal => left.store.cmp(&right.store),
         other => other,
@@ -140,12 +143,10 @@ pub fn parse_accessible_shops_response(value: &serde_json::Value) -> AccessibleS
                     .and_then(|v| v.as_str())
                     .map(str::to_string),
                 url: n.get("url").and_then(|v| v.as_str()).map(str::to_string),
-                created_at: n
-                    .get("createdAt")
-                    .map(|v| match v {
-                        serde_json::Value::String(s) => s.clone(),
-                        other => other.to_string(),
-                    }),
+                created_at: n.get("createdAt").map(|v| match v {
+                    serde_json::Value::String(s) => s.clone(),
+                    other => other.to_string(),
+                }),
             })
         })
         .collect();

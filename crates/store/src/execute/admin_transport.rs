@@ -189,7 +189,8 @@ mod tests {
     use super::*;
     use crate::auth::config::STORE_AUTH_APP_CLIENT_ID;
     use crate::auth::session_store::{
-        get_current_stored_store_app_session, set_stored_store_app_session, MemoryStoreSessionStorage,
+        get_current_stored_store_app_session, set_stored_store_app_session,
+        MemoryStoreSessionStorage,
     };
     use std::sync::Mutex;
 

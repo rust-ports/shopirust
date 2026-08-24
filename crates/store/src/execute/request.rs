@@ -85,14 +85,20 @@ pub fn parse_variables(
 
 /// Lightweight GraphQL operation detector (no full parser dependency).
 /// Strips comments/strings roughly and finds top-level operation keywords.
-pub fn parse_graphql_operation(graphql_operation: &str) -> Result<ParsedGraphQLOperation, StoreError> {
+pub fn parse_graphql_operation(
+    graphql_operation: &str,
+) -> Result<ParsedGraphQLOperation, StoreError> {
     let stripped = strip_graphql_noise(graphql_operation);
     if stripped.trim().is_empty() {
-        return Err(StoreError::message("Invalid GraphQL syntax: empty document"));
+        return Err(StoreError::message(
+            "Invalid GraphQL syntax: empty document",
+        ));
     }
     // Reject obviously broken brace balance as "Invalid GraphQL syntax".
     if !braces_balanced(&stripped) {
-        return Err(StoreError::message("Invalid GraphQL syntax: unbalanced braces"));
+        return Err(StoreError::message(
+            "Invalid GraphQL syntax: unbalanced braces",
+        ));
     }
 
     let ops = find_top_level_operations(&stripped);
@@ -103,7 +109,9 @@ pub fn parse_graphql_operation(graphql_operation: &str) -> Result<ParsedGraphQLO
                 kind: OperationKind::Query,
             });
         }
-        return Err(StoreError::message("Invalid GraphQL syntax: no operation found"));
+        return Err(StoreError::message(
+            "Invalid GraphQL syntax: no operation found",
+        ));
     }
     if ops.len() != 1 {
         return Err(StoreError::message(
@@ -201,7 +209,10 @@ fn find_top_level_operations(input: &str) -> Vec<OperationKind> {
     ops
 }
 
-fn validate_mutations_allowed(operation: &ParsedGraphQLOperation, allow_mutations: bool) -> Result<(), StoreError> {
+fn validate_mutations_allowed(
+    operation: &ParsedGraphQLOperation,
+    allow_mutations: bool,
+) -> Result<(), StoreError> {
     if operation.kind == OperationKind::Subscription {
         return Err(StoreError::message(
             "Subscriptions are not supported by shopify store execute.",
@@ -368,7 +379,9 @@ mod tests {
     #[test]
     fn rejects_mutation_by_default() {
         assert!(prepare_store_execute_request(PrepareStoreExecuteInput {
-            query: Some(r#"mutation { productCreate(product: {title: "Hat"}) { product { id } } }"#),
+            query: Some(
+                r#"mutation { productCreate(product: {title: "Hat"}) { product { id } } }"#
+            ),
             query_file: None,
             variables: None,
             variable_file: None,
@@ -383,7 +396,9 @@ mod tests {
     #[test]
     fn allows_mutations_when_enabled() {
         let request = prepare_store_execute_request(PrepareStoreExecuteInput {
-            query: Some(r#"mutation { productCreate(product: {title: "Hat"}) { product { id } } }"#),
+            query: Some(
+                r#"mutation { productCreate(product: {title: "Hat"}) { product { id } } }"#,
+            ),
             query_file: None,
             variables: None,
             variable_file: None,

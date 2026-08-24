@@ -7,8 +7,8 @@ pub mod types;
 use crate::admin_errors::{classify_admin_api_error, throw_if_stored_store_auth_is_invalid};
 use crate::auth::session_lifecycle::load_stored_store_session;
 use crate::auth::session_store::{
-    get_current_stored_store_app_session, StoredStoreAppSession, StoredStoreSessionKind,
-    StoreSessionStorage,
+    get_current_stored_store_app_session, StoreSessionStorage, StoredStoreAppSession,
+    StoredStoreSessionKind,
 };
 use crate::error::StoreError;
 use crate::store_type::store_type_handle;
@@ -243,10 +243,7 @@ pub fn build_business_platform_result(
             .owning_org
             .as_ref()
             .and_then(|o| o.id.clone()),
-        organization_name: destinations_ctx
-            .owning_org
-            .as_ref()
-            .map(|o| o.name.clone()),
+        organization_name: destinations_ctx.owning_org.as_ref().map(|o| o.name.clone()),
         store_owner: build_business_platform_store_owner(org_shop),
         store_type: store_type_handle(org_shop.and_then(|s| s.store_type.as_deref())),
         plan: map_plan_to_public_handle(org_shop.and_then(|s| s.plan_name.as_deref())),
@@ -299,8 +296,7 @@ mod tests {
     use super::*;
     use crate::auth::config::STORE_AUTH_APP_CLIENT_ID;
     use crate::auth::session_store::{
-        set_stored_store_app_session, MemoryStoreSessionStorage,
-        StoredPreviewStoreMetadata,
+        set_stored_store_app_session, MemoryStoreSessionStorage, StoredPreviewStoreMetadata,
     };
     use crate::info::types::OwningOrgInternal;
     use std::sync::Mutex;
@@ -461,12 +457,7 @@ mod tests {
             *self.preview_calls.lock().unwrap() += 1;
             self.take_preview_urls()
         }
-        fn record_store_fqdn_metadata(
-            &self,
-            store: &str,
-            validated: bool,
-            shop_id: Option<&str>,
-        ) {
+        fn record_store_fqdn_metadata(&self, store: &str, validated: bool, shop_id: Option<&str>) {
             self.recorded.lock().unwrap().push((
                 store.to_string(),
                 validated,
@@ -762,7 +753,10 @@ mod tests {
         )
         .await
         .unwrap();
-        assert_eq!(*io.admin_calls.lock().unwrap(), vec!["fresh-token".to_string()]);
+        assert_eq!(
+            *io.admin_calls.lock().unwrap(),
+            vec!["fresh-token".to_string()]
+        );
         assert_eq!(result.subdomain, "permanent-shop.myshopify.com");
         assert_eq!(
             result.admin_url.as_deref(),

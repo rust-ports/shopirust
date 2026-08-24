@@ -27,7 +27,9 @@ pub fn write_or_output_store_execute_result(
         }
         fs::write(path, &serialized)?;
         return Ok((
-            Some(store_execute_success_message(Some(&path.display().to_string()))),
+            Some(store_execute_success_message(Some(
+                &path.display().to_string(),
+            ))),
             serialized,
         ));
     }

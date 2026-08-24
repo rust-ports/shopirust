@@ -35,10 +35,17 @@ struct RawShop {
     domain: Option<String>,
 }
 
-fn preview_headers(cli_instance_id: &str, cli_version: &str, admin_api_token: &str) -> reqwest::header::HeaderMap {
+fn preview_headers(
+    cli_instance_id: &str,
+    cli_version: &str,
+    admin_api_token: &str,
+) -> reqwest::header::HeaderMap {
     let mut headers = reqwest::header::HeaderMap::new();
     headers.insert(reqwest::header::ACCEPT, "application/json".parse().unwrap());
-    headers.insert(reqwest::header::CONTENT_TYPE, "application/json".parse().unwrap());
+    headers.insert(
+        reqwest::header::CONTENT_TYPE,
+        "application/json".parse().unwrap(),
+    );
     headers.insert(
         reqwest::header::USER_AGENT,
         format!("Shopify CLI; v={cli_version}").parse().unwrap(),
@@ -67,7 +74,11 @@ pub async fn claim_preview_store(
     );
     let response = http
         .post(&url)
-        .headers(preview_headers(cli_instance_id, cli_version, admin_api_token))
+        .headers(preview_headers(
+            cli_instance_id,
+            cli_version,
+            admin_api_token,
+        ))
         .json(&serde_json::json!({}))
         .send()
         .await
@@ -103,7 +114,11 @@ pub async fn get_preview_store(
     let url = format!("https://{app_management_fqdn}/services/preview-stores/{shop_id}");
     let response = http
         .get(&url)
-        .headers(preview_headers(cli_instance_id, cli_version, admin_api_token))
+        .headers(preview_headers(
+            cli_instance_id,
+            cli_version,
+            admin_api_token,
+        ))
         .send()
         .await
         .map_err(|e| StoreError::message(e.to_string()))?;

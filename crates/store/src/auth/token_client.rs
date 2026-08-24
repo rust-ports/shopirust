@@ -216,7 +216,7 @@ mod tests {
             .await;
 
         let store = server.uri().trim_start_matches("http://").to_string();
-        // wiremock is http://127.0.0.1:port — exchange always uses https://. Use a custom http client redirect... 
+        // wiremock is http://127.0.0.1:port — exchange always uses https://. Use a custom http client redirect...
         // Instead, patch by calling against the mock via a rewritten endpoint test helper.
         let http = reqwest::Client::new();
         let endpoint = format!("{}/admin/oauth/access_token", server.uri());

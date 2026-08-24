@@ -41,7 +41,9 @@ mod tests {
     #[test]
     fn stored_auth_error_mentions_command() {
         let err = stored_store_auth_error("shop.myshopify.com");
-        assert!(err.to_string().contains("No stored app authentication found"));
+        assert!(err
+            .to_string()
+            .contains("No stored app authentication found"));
         assert!(err
             .to_string()
             .contains("shopify store auth --store shop.myshopify.com"));

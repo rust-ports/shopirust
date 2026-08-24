@@ -112,7 +112,11 @@ pub async fn wait_for_store_auth_code(
                     400,
                     render_auth_callback_page(
                         "Authentication failed",
-                        message.to_string().lines().next().unwrap_or("Authentication failed"),
+                        message
+                            .to_string()
+                            .lines()
+                            .next()
+                            .unwrap_or("Authentication failed"),
                     ),
                     message,
                 )
@@ -124,7 +128,10 @@ pub async fn wait_for_store_auth_code(
                     Some(fail(retry_store_auth_with_permanent_domain_error(
                         &normalized_returned,
                     )))
-                } else if pairs.get("state").map(|s| constant_time_eq(s, &options.state)) != Some(true)
+                } else if pairs
+                    .get("state")
+                    .map(|s| constant_time_eq(s, &options.state))
+                    != Some(true)
                 {
                     Some(fail(StoreError::message(
                         "OAuth callback state does not match the original request.",
@@ -138,9 +145,7 @@ pub async fn wait_for_store_auth_code(
                         "Authentication succeeded",
                         "Close this window and return to the terminal",
                     );
-                    socket
-                        .write_all(&http_response(200, "OK", &body))
-                        .await?;
+                    socket.write_all(&http_response(200, "OK", &body)).await?;
                     return Ok(code);
                 } else {
                     Some(fail(StoreError::message(
@@ -183,7 +188,9 @@ mod tests {
     }
 
     fn callback_url(port: u16, extra: &str) -> String {
-        format!("http://127.0.0.1:{port}/auth/callback?shop=shop.myshopify.com&state=state-123{extra}")
+        format!(
+            "http://127.0.0.1:{port}/auth/callback?shop=shop.myshopify.com&state=state-123{extra}"
+        )
     }
 
     #[tokio::test]
@@ -328,7 +335,9 @@ mod tests {
         )
         .await
         .unwrap_err();
-        assert!(err.to_string().contains(&format!("Port {port} is already in use.")));
+        assert!(err
+            .to_string()
+            .contains(&format!("Port {port} is already in use.")));
         drop(listener);
     }
 

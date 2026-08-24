@@ -1,6 +1,6 @@
 use crate::auth::recovery::reauthenticate_store_auth_error;
 use crate::auth::session_store::{
-    clear_stored_store_app_session, StoredStoreAppSession, StoreSessionStorage,
+    clear_stored_store_app_session, StoreSessionStorage, StoredStoreAppSession,
 };
 use crate::error::StoreError;
 
@@ -56,7 +56,8 @@ mod tests {
     use super::*;
     use crate::auth::config::STORE_AUTH_APP_CLIENT_ID;
     use crate::auth::session_store::{
-        get_current_stored_store_app_session, set_stored_store_app_session, MemoryStoreSessionStorage,
+        get_current_stored_store_app_session, set_stored_store_app_session,
+        MemoryStoreSessionStorage,
     };
 
     fn session() -> StoredStoreAppSession {
@@ -78,8 +79,11 @@ mod tests {
 
     #[test]
     fn classifies_402() {
-        let err = classify_admin_api_error(&StoreError::http(402, "Unavailable Shop"), "shop.myshopify.com")
-            .unwrap();
+        let err = classify_admin_api_error(
+            &StoreError::http(402, "Unavailable Shop"),
+            "shop.myshopify.com",
+        )
+        .unwrap();
         assert!(err.to_string().contains("currently unavailable"));
     }
 

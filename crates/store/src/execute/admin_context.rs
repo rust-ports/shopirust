@@ -1,5 +1,5 @@
 use crate::auth::session_lifecycle::load_stored_store_session;
-use crate::auth::session_store::{StoredStoreAppSession, StoreSessionStorage};
+use crate::auth::session_store::{StoreSessionStorage, StoredStoreAppSession};
 use crate::error::StoreError;
 use crate::execute::admin_transport::{
     fetch_public_api_versions_classified, AdminGraphqlTransport, ApiVersion,
@@ -34,7 +34,10 @@ pub fn resolve_api_version(
         });
     }
     let requested = user_specified_version.unwrap();
-    let version_list: Vec<_> = available_versions.iter().map(|v| v.handle.as_str()).collect();
+    let version_list: Vec<_> = available_versions
+        .iter()
+        .map(|v| v.handle.as_str())
+        .collect();
     if version_list.contains(&requested) {
         return Ok(requested.to_string());
     }
@@ -55,8 +58,7 @@ pub async fn prepare_admin_store_graphql_context(
 ) -> Result<AdminStoreGraphQLContext, StoreError> {
     let session = load_stored_store_session(store, storage, http, now).await?;
     on_loaded(&session);
-    let available =
-        fetch_public_api_versions_classified(transport, &session, storage).await?;
+    let available = fetch_public_api_versions_classified(transport, &session, storage).await?;
     let version = resolve_api_version(&available, user_specified_version)?;
     Ok(AdminStoreGraphQLContext {
         token: session.access_token.clone(),

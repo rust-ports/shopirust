@@ -112,9 +112,9 @@ mod tests {
     fn text_success_includes_email_and_execute_hint() {
         let (completed, info) = build_store_auth_success_text(&sample());
         assert!(completed.iter().any(|l| l.contains("Logged in.")));
-        assert!(completed
-            .iter()
-            .any(|l| l.contains("Authenticated as merchant@example.com against shop.myshopify.com.")));
+        assert!(completed.iter().any(
+            |l| l.contains("Authenticated as merchant@example.com against shop.myshopify.com.")
+        ));
         assert!(info.iter().any(|l| l.contains(
             "shopify store execute --store shop.myshopify.com --query 'query { shop { name id } }'"
         )));

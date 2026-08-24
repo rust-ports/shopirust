@@ -68,7 +68,10 @@ mod tests {
 
     #[async_trait::async_trait]
     impl DestinationsSource for FakeSource {
-        async fn search_destinations(&self, search: &str) -> Result<Vec<DestinationNode>, StoreError> {
+        async fn search_destinations(
+            &self,
+            search: &str,
+        ) -> Result<Vec<DestinationNode>, StoreError> {
             self.searches.lock().unwrap().push(search.to_string());
             Ok(self.nodes.clone())
         }
@@ -76,7 +79,10 @@ mod tests {
             &self,
             destination_public_id: &str,
         ) -> Result<Option<OwningOrgRaw>, StoreError> {
-            self.org_ids.lock().unwrap().push(destination_public_id.to_string());
+            self.org_ids
+                .lock()
+                .unwrap()
+                .push(destination_public_id.to_string());
             match &self.org {
                 Ok(v) => Ok(v.clone()),
                 Err(e) => Err(e.clone()),
@@ -167,8 +173,8 @@ mod tests {
 
     #[tokio::test]
     async fn resolves_owning_org_via_public_id() {
-        let encoded = base64::engine::general_purpose::STANDARD
-            .encode("gid://organization/Organization/123");
+        let encoded =
+            base64::engine::general_purpose::STANDARD.encode("gid://organization/Organization/123");
         let source = FakeSource {
             nodes: vec![node(|_| {})],
             org: Ok(Some(OwningOrgRaw {

@@ -91,7 +91,10 @@ mod tests {
 
     #[test]
     fn search_subdomain_local_dev() {
-        assert_eq!(extract_search_subdomain("my-dev-store.shop.dev"), "my-dev-store");
+        assert_eq!(
+            extract_search_subdomain("my-dev-store.shop.dev"),
+            "my-dev-store"
+        );
         assert_eq!(extract_search_subdomain("shop.myshopify.com"), "shop");
     }
 }

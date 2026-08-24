@@ -32,8 +32,8 @@ mod tests {
 
     #[test]
     fn encoded_gid() {
-        let encoded = base64::engine::general_purpose::STANDARD
-            .encode("gid://organization/Organization/123");
+        let encoded =
+            base64::engine::general_purpose::STANDARD.encode("gid://organization/Organization/123");
         assert_eq!(numeric_id_from_encoded_gid(&encoded), Some("123".into()));
     }
 }

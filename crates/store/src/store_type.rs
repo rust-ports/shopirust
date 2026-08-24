@@ -40,7 +40,10 @@ mod tests {
 
     #[test]
     fn maps_known_types() {
-        assert_eq!(store_type_handle(Some("APP_DEVELOPMENT")), Some("dev".into()));
+        assert_eq!(
+            store_type_handle(Some("APP_DEVELOPMENT")),
+            Some("dev".into())
+        );
         assert_eq!(store_type_handle(Some("DEVELOPMENT")), Some("dev".into()));
         assert_eq!(
             store_type_handle(Some("DEVELOPMENT_SUPERSET")),

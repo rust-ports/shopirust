@@ -87,10 +87,7 @@ impl StoreCreationStatus {
     }
 
     pub fn is_terminal_failure(&self) -> bool {
-        matches!(
-            self,
-            Self::Failed | Self::TimedOut | Self::UserError
-        )
+        matches!(self, Self::Failed | Self::TimedOut | Self::UserError)
     }
 
     pub fn friendly_status(&self) -> String {
@@ -110,7 +107,11 @@ impl StoreCreationStatus {
 pub fn parse_create_dev_response(value: &serde_json::Value) -> CreateDevStoreResult {
     let node = value
         .get("createAppDevelopmentStore")
-        .or_else(|| value.get("data").and_then(|d| d.get("createAppDevelopmentStore")))
+        .or_else(|| {
+            value
+                .get("data")
+                .and_then(|d| d.get("createAppDevelopmentStore"))
+        })
         .cloned()
         .unwrap_or_else(|| value.clone());
     let errors = node
@@ -119,7 +120,11 @@ pub fn parse_create_dev_response(value: &serde_json::Value) -> CreateDevStoreRes
         .cloned()
         .unwrap_or_default()
         .into_iter()
-        .filter_map(|e| e.get("message").and_then(|m| m.as_str()).map(str::to_string))
+        .filter_map(|e| {
+            e.get("message")
+                .and_then(|m| m.as_str())
+                .map(str::to_string)
+        })
         .collect();
     CreateDevStoreResult {
         shop_domain: node
@@ -169,10 +174,7 @@ pub fn format_create_success_text(name: &str, result: &CreateDevStoreResult) -> 
     format!(
         "Development store \"{name}\" created successfully.\nDomain: {}\nAdmin: {}",
         result.shop_domain,
-        result
-            .shop_admin_url
-            .as_deref()
-            .unwrap_or("N/A")
+        result.shop_admin_url.as_deref().unwrap_or("N/A")
     )
 }
 
@@ -233,9 +235,7 @@ pub async fn create_dev_store(
     input: CreateDevStoreInput,
     io: &dyn CreateDevStoreIo,
 ) -> Result<String, StoreError> {
-    let mutation = io
-        .create_store(&input.organization_id, &input.name)
-        .await?;
+    let mutation = io.create_store(&input.organization_id, &input.name).await?;
     if mutation
         .get("createAppDevelopmentStore")
         .map(|v| v.is_null())
@@ -388,7 +388,7 @@ mod tests {
         let io = FakeIo {
             create: Mutex::new(Ok(ok_mutation())),
             polls: Mutex::new(vec![Ok(
-                json!({"organization":{"storeCreation":{"status":"COMPLETE"}}})
+                json!({"organization":{"storeCreation":{"status":"COMPLETE"}}}),
             )]),
             now: Mutex::new(0),
             sleeps: Mutex::new(0),
@@ -467,7 +467,7 @@ mod tests {
         let io = FakeIo {
             create: Mutex::new(Ok(ok_mutation())),
             polls: Mutex::new(vec![Ok(
-                json!({"organization":{"storeCreation":{"status":"FINALIZING"}}})
+                json!({"organization":{"storeCreation":{"status":"FINALIZING"}}}),
             )]),
             now: Mutex::new(0),
             sleeps: Mutex::new(0),
@@ -522,7 +522,7 @@ mod tests {
         let io = FakeIo {
             create: Mutex::new(Ok(ok_mutation())),
             polls: Mutex::new(vec![Ok(
-                json!({"organization":{"storeCreation":{"status":"FAILED"}}})
+                json!({"organization":{"storeCreation":{"status":"FAILED"}}}),
             )]),
             now: Mutex::new(0),
             sleeps: Mutex::new(0),

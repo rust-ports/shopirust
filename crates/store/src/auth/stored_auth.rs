@@ -1,5 +1,5 @@
 use crate::auth::session_store::{
-    list_current_stored_store_app_sessions, StoredAssociatedUser, StoreSessionStorage,
+    list_current_stored_store_app_sessions, StoreSessionStorage, StoredAssociatedUser,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -42,11 +42,16 @@ mod tests {
     use super::*;
     use crate::auth::config::{store_auth_session_key, STORE_AUTH_APP_CLIENT_ID};
     use crate::auth::session_store::{
-        set_stored_store_app_session, MemoryStoreSessionStorage, StoredStoreAppSession,
-        StoreSessionStorage,
+        set_stored_store_app_session, MemoryStoreSessionStorage, StoreSessionStorage,
+        StoredStoreAppSession,
     };
 
-    fn build_session(store: &str, user_id: &str, token: &str, acquired_at: &str) -> StoredStoreAppSession {
+    fn build_session(
+        store: &str,
+        user_id: &str,
+        token: &str,
+        acquired_at: &str,
+    ) -> StoredStoreAppSession {
         StoredStoreAppSession {
             store: store.into(),
             client_id: STORE_AUTH_APP_CLIENT_ID.into(),
@@ -143,10 +148,7 @@ mod tests {
             .into_iter()
             .map(|s| s.store)
             .collect();
-        assert_eq!(
-            stores,
-            vec!["a-shop.myshopify.com", "b-shop.myshopify.com"]
-        );
+        assert_eq!(stores, vec!["a-shop.myshopify.com", "b-shop.myshopify.com"]);
     }
 
     #[test]

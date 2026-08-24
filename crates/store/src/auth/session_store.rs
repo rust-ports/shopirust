@@ -1,11 +1,22 @@
 use crate::auth::config::{
     is_escaped_store_key_segment, store_auth_session_key, STORE_AUTH_APP_CLIENT_ID,
 };
+use fs2::FileExt;
+use keyring::Entry;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use std::collections::HashMap;
+use std::fs::{File, OpenOptions};
 use std::path::PathBuf;
 use std::sync::Mutex;
+
+const CREDENTIAL_SERVICE: &str = "shopify-cli-rust.store-session";
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct StoredTokenSecret {
+    access_token: String,
+    refresh_token: Option<String>,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
@@ -140,12 +151,188 @@ impl JsonFileStoreSessionStorage {
         serde_json::from_str(&data).unwrap_or_default()
     }
 
-    fn save(&self, map: &Map<String, Value>) {
+    fn save(&self, map: &Map<String, Value>) -> Result<(), String> {
         if let Some(parent) = self.path.parent() {
-            let _ = std::fs::create_dir_all(parent);
+            std::fs::create_dir_all(parent)
+                .map_err(|error| format!("create session directory: {error}"))?;
         }
-        if let Ok(data) = serde_json::to_string_pretty(map) {
-            let _ = std::fs::write(&self.path, data);
+        let data = serde_json::to_vec_pretty(map)
+            .map_err(|error| format!("serialize session metadata: {error}"))?;
+        let parent = self
+            .path
+            .parent()
+            .unwrap_or_else(|| std::path::Path::new("."));
+        let temp_path = parent.join(format!(
+            ".{}.{}.tmp",
+            self.path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("config.json"),
+            std::process::id()
+        ));
+        let mut temp = OpenOptions::new()
+            .create(true)
+            .truncate(true)
+            .write(true)
+            .open(&temp_path)
+            .map_err(|error| format!("create temporary session metadata: {error}"))?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            temp.set_permissions(std::fs::Permissions::from_mode(0o600))
+                .map_err(|error| format!("protect session metadata: {error}"))?;
+        }
+        use std::io::Write;
+        temp.write_all(&data)
+            .map_err(|error| format!("write session metadata: {error}"))?;
+        temp.sync_all()
+            .map_err(|error| format!("sync session metadata: {error}"))?;
+        std::fs::rename(&temp_path, &self.path)
+            .map_err(|error| format!("replace session metadata: {error}"))?;
+        Ok(())
+    }
+
+    fn lock_file(&self) -> Result<File, String> {
+        let parent = self
+            .path
+            .parent()
+            .unwrap_or_else(|| std::path::Path::new("."));
+        std::fs::create_dir_all(parent)
+            .map_err(|error| format!("create session directory: {error}"))?;
+        let lock_path = parent.join("config.json.lock");
+        let file = OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .read(true)
+            .write(true)
+            .open(lock_path)
+            .map_err(|error| format!("open session lock: {error}"))?;
+        file.lock_exclusive()
+            .map_err(|error| format!("lock session metadata: {error}"))?;
+        Ok(file)
+    }
+
+    fn credential_entry(secret_key: &str) -> Result<Entry, String> {
+        Entry::new(CREDENTIAL_SERVICE, secret_key)
+            .map_err(|error| format!("open operating-system credential store: {error}"))
+    }
+
+    fn write_secret(secret_key: &str, secret: &StoredTokenSecret) -> Result<(), String> {
+        let encoded = serde_json::to_string(secret)
+            .map_err(|error| format!("serialize token credential: {error}"))?;
+        Self::credential_entry(secret_key)?
+            .set_password(&encoded)
+            .map_err(|error| format!("save token in operating-system credential store: {error}"))
+    }
+
+    fn read_secret(secret_key: &str) -> Result<Option<StoredTokenSecret>, String> {
+        let entry = Self::credential_entry(secret_key)?;
+        match entry.get_password() {
+            Ok(encoded) => serde_json::from_str(&encoded)
+                .map(Some)
+                .map_err(|error| format!("decode token credential: {error}")),
+            Err(keyring::Error::NoEntry) => Ok(None),
+            Err(error) => Err(format!(
+                "read token from operating-system credential store: {error}"
+            )),
+        }
+    }
+
+    fn delete_secret(secret_key: &str) {
+        if let Ok(entry) = Self::credential_entry(secret_key) {
+            let _ = entry.delete_credential();
+        }
+    }
+
+    fn secret_key(session_key: &str, user_id: &str) -> String {
+        format!("{session_key}::{user_id}")
+    }
+
+    fn strip_secrets(&self, session_key: &str, value: &Value) -> Result<Value, String> {
+        let mut metadata = value.clone();
+        let Some(sessions) = metadata
+            .get_mut("sessionsByUserId")
+            .and_then(Value::as_object_mut)
+        else {
+            return Ok(metadata);
+        };
+        for (user_id, session) in sessions {
+            let Some(session) = session.as_object_mut() else {
+                continue;
+            };
+            let access_token = session.get("accessToken").and_then(Value::as_str);
+            let refresh_token = session
+                .get("refreshToken")
+                .and_then(Value::as_str)
+                .map(str::to_owned);
+            if let Some(access_token) = access_token {
+                Self::write_secret(
+                    &Self::secret_key(session_key, user_id),
+                    &StoredTokenSecret {
+                        access_token: access_token.to_owned(),
+                        refresh_token,
+                    },
+                )?;
+                session.remove("accessToken");
+                session.remove("refreshToken");
+            }
+        }
+        Ok(metadata)
+    }
+
+    fn hydrate_secrets(&self, session_key: &str, value: &Value) -> Value {
+        let mut hydrated = value.clone();
+        let Some(sessions) = hydrated
+            .get_mut("sessionsByUserId")
+            .and_then(Value::as_object_mut)
+        else {
+            return hydrated;
+        };
+        for (user_id, session) in sessions {
+            let Some(session) = session.as_object_mut() else {
+                continue;
+            };
+            if session.contains_key("accessToken") {
+                continue;
+            }
+            match Self::read_secret(&Self::secret_key(session_key, user_id)) {
+                Ok(Some(secret)) => {
+                    session.insert("accessToken".into(), Value::String(secret.access_token));
+                    if let Some(refresh_token) = secret.refresh_token {
+                        session.insert("refreshToken".into(), Value::String(refresh_token));
+                    }
+                }
+                Ok(None) => eprintln!(
+                    "Store session credential is missing for `{user_id}`. Run `shopify store auth` again."
+                ),
+                Err(error) => eprintln!("Unable to load store session credential: {error}"),
+            }
+        }
+        hydrated
+    }
+
+    fn has_plaintext_secrets(value: &Value) -> bool {
+        value
+            .get("sessionsByUserId")
+            .and_then(Value::as_object)
+            .is_some_and(|sessions| {
+                sessions.values().any(|session| {
+                    session
+                        .as_object()
+                        .is_some_and(|session| session.contains_key("accessToken"))
+                })
+            })
+    }
+
+    fn remove_value_secrets(&self, session_key: &str, value: Option<&Value>) {
+        let Some(sessions) = value
+            .and_then(|value| value.get("sessionsByUserId"))
+            .and_then(Value::as_object)
+        else {
+            return;
+        };
+        for user_id in sessions.keys() {
+            Self::delete_secret(&Self::secret_key(session_key, user_id));
         }
     }
 }
@@ -159,23 +346,92 @@ impl Default for JsonFileStoreSessionStorage {
 impl StoreSessionStorage for JsonFileStoreSessionStorage {
     fn get(&self, key: &str) -> Option<Value> {
         let _g = self.lock.lock().unwrap();
-        self.load().get(key).cloned()
+        let _file_lock = match self.lock_file() {
+            Ok(file) => file,
+            Err(error) => {
+                eprintln!("Unable to lock store session metadata: {error}");
+                return None;
+            }
+        };
+        let mut map = self.load();
+        let value = map.get(key)?.clone();
+        if Self::has_plaintext_secrets(&value) {
+            match self.strip_secrets(key, &value) {
+                Ok(metadata) => {
+                    map.insert(key.to_string(), metadata.clone());
+                    if let Err(error) = self.save(&map) {
+                        eprintln!("Unable to migrate store session metadata: {error}");
+                    }
+                    return Some(self.hydrate_secrets(key, &metadata));
+                }
+                Err(error) => eprintln!("Unable to migrate store session credential: {error}"),
+            }
+        }
+        Some(self.hydrate_secrets(key, &value))
     }
     fn set(&self, key: &str, value: Value) {
         let _g = self.lock.lock().unwrap();
+        let Ok(_file_lock) = self.lock_file() else {
+            eprintln!("Unable to lock store session metadata.");
+            return;
+        };
         let mut map = self.load();
-        map.insert(key.to_string(), value);
-        self.save(&map);
+        let metadata = match self.strip_secrets(key, &value) {
+            Ok(metadata) => metadata,
+            Err(error) => {
+                eprintln!("Unable to save store session credential: {error}");
+                return;
+            }
+        };
+        map.insert(key.to_string(), metadata);
+        if let Err(error) = self.save(&map) {
+            eprintln!("Unable to save store session metadata: {error}");
+        }
     }
     fn delete(&self, key: &str) {
         let _g = self.lock.lock().unwrap();
+        let Ok(_file_lock) = self.lock_file() else {
+            eprintln!("Unable to lock store session metadata.");
+            return;
+        };
         let mut map = self.load();
+        self.remove_value_secrets(key, map.get(key));
         map.remove(key);
-        self.save(&map);
+        if let Err(error) = self.save(&map) {
+            eprintln!("Unable to save store session metadata: {error}");
+        }
     }
     fn entries(&self) -> Vec<(String, Value)> {
         let _g = self.lock.lock().unwrap();
-        self.load().into_iter().collect()
+        let Ok(_file_lock) = self.lock_file() else {
+            eprintln!("Unable to lock store session metadata.");
+            return Vec::new();
+        };
+        let mut map = self.load();
+        let keys: Vec<String> = map.keys().cloned().collect();
+        for key in keys {
+            if let Some(value) = map.get(&key).cloned() {
+                if Self::has_plaintext_secrets(&value) {
+                    match self.strip_secrets(&key, &value) {
+                        Ok(metadata) => {
+                            map.insert(key, metadata);
+                        }
+                        Err(error) => {
+                            eprintln!("Unable to migrate store session credential: {error}")
+                        }
+                    }
+                }
+            }
+        }
+        if let Err(error) = self.save(&map) {
+            eprintln!("Unable to migrate store session metadata: {error}");
+        }
+        map.into_iter()
+            .map(|(key, value)| {
+                let hydrated = self.hydrate_secrets(&key, &value);
+                (key, hydrated)
+            })
+            .collect()
     }
 }
 
@@ -248,7 +504,10 @@ fn sanitize_stored_store_app_session(value: &Value) -> Option<StoredStoreAppSess
         access_token,
         scopes,
         acquired_at,
-        refresh_token: obj.get("refreshToken").and_then(is_string).map(str::to_string),
+        refresh_token: obj
+            .get("refreshToken")
+            .and_then(is_string)
+            .map(str::to_string),
         expires_at: obj.get("expiresAt").and_then(is_string).map(str::to_string),
         refresh_token_expires_at: obj
             .get("refreshTokenExpiresAt")
@@ -575,7 +834,10 @@ mod tests {
         );
         let got = get_current_stored_store_app_session("shop.myshopify.com", &storage).unwrap();
         assert_eq!(got.store, good.store);
-        assert_eq!(got.associated_user.unwrap().first_name.as_deref(), Some("Merchant"));
+        assert_eq!(
+            got.associated_user.unwrap().first_name.as_deref(),
+            Some("Merchant")
+        );
         assert!(got.refresh_token.is_none());
     }
 

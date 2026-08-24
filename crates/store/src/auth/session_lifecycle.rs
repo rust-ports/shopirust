@@ -1,7 +1,7 @@
 use crate::auth::recovery::{reauthenticate_store_auth_error, stored_store_auth_error};
 use crate::auth::session_store::{
     clear_stored_store_app_session, get_current_stored_store_app_session,
-    set_stored_store_app_session, StoredStoreAppSession, StoreSessionStorage,
+    set_stored_store_app_session, StoreSessionStorage, StoredStoreAppSession,
 };
 use crate::auth::token_client::{refresh_store_access_token, StoreTokenRefreshPayload};
 use crate::error::StoreError;
@@ -32,11 +32,18 @@ pub fn build_refreshed_stored_session(
     }
     next.expires_at = refresh
         .expires_in
-        .map(|secs| (now + chrono::Duration::seconds(secs as i64)).to_rfc3339_opts(chrono::SecondsFormat::Millis, true))
+        .map(|secs| {
+            (now + chrono::Duration::seconds(secs as i64))
+                .to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
+        })
         .or_else(|| session.expires_at.clone());
-    next.refresh_token_expires_at = refresh.refresh_token_expires_in.map(|secs| {
-        (now + chrono::Duration::seconds(secs as i64)).to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
-    }).or_else(|| session.refresh_token_expires_at.clone());
+    next.refresh_token_expires_at = refresh
+        .refresh_token_expires_in
+        .map(|secs| {
+            (now + chrono::Duration::seconds(secs as i64))
+                .to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
+        })
+        .or_else(|| session.refresh_token_expires_at.clone());
     next.acquired_at = now.to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
     next
 }
@@ -66,9 +73,14 @@ pub async fn load_stored_store_session(
         Err(err) => {
             clear_stored_store_app_session(&session.store, Some(&session.user_id), storage);
             let message = err.to_string();
-            if message.starts_with(&format!("Token refresh failed for {} (HTTP ", session.store))
-                || message
-                    == format!("Token refresh returned an invalid response for {}.", session.store)
+            if message.starts_with(&format!(
+                "Token refresh failed for {} (HTTP ",
+                session.store
+            )) || message
+                == format!(
+                    "Token refresh returned an invalid response for {}.",
+                    session.store
+                )
             {
                 return Err(reauthenticate_store_auth_error(
                     &message,

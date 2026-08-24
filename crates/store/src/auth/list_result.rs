@@ -27,8 +27,7 @@ pub fn empty_state_message() -> String {
 
 fn to_display_session(session: &crate::auth::list::StoreAuthListEntry) -> DisplaySession {
     DisplaySession {
-        subdomain: extract_subdomain(&session.store)
-            .unwrap_or_else(|| session.store.clone()),
+        subdomain: extract_subdomain(&session.store).unwrap_or_else(|| session.store.clone()),
         connected: format_short_date(&session.connected_at),
     }
 }
@@ -132,6 +131,9 @@ mod tests {
         let out = format_store_auth_list(&StoreAuthListResult { sessions: vec![] }, true);
         let value: serde_json::Value = serde_json::from_str(&out).unwrap();
         assert_eq!(value["sessions"], serde_json::json!([]));
-        assert!(value["message"].as_str().unwrap().contains("shopify store list"));
+        assert!(value["message"]
+            .as_str()
+            .unwrap()
+            .contains("shopify store list"));
     }
 }

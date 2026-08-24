@@ -54,8 +54,14 @@ mod tests {
 
     #[test]
     fn hashes_deterministically() {
-        assert_eq!(hash_store_fqdn("shop.myshopify.com"), hash_store_fqdn("shop.myshopify.com"));
-        assert_ne!(hash_store_fqdn("a.myshopify.com"), hash_store_fqdn("b.myshopify.com"));
+        assert_eq!(
+            hash_store_fqdn("shop.myshopify.com"),
+            hash_store_fqdn("shop.myshopify.com")
+        );
+        assert_ne!(
+            hash_store_fqdn("a.myshopify.com"),
+            hash_store_fqdn("b.myshopify.com")
+        );
     }
 
     #[test]

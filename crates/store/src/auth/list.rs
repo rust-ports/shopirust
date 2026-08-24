@@ -1,4 +1,4 @@
-use crate::auth::session_store::{StoredAssociatedUser, StoreSessionStorage};
+use crate::auth::session_store::{StoreSessionStorage, StoredAssociatedUser};
 use crate::auth::stored_auth::list_stored_store_auth_summaries;
 use serde::{Deserialize, Serialize};
 

@@ -19,7 +19,10 @@ mod tests {
 
     #[test]
     fn maps_internal_plan_names_to_public_handles() {
-        assert_eq!(map_plan_to_public_handle(Some("basic")), Some("basic".into()));
+        assert_eq!(
+            map_plan_to_public_handle(Some("basic")),
+            Some("basic".into())
+        );
         assert_eq!(
             map_plan_to_public_handle(Some("professional")),
             Some("grow".into())
