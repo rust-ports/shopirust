@@ -19,8 +19,35 @@ struct CliArgs {
     command: CliSubcommand,
 }
 
+#[cfg(not(windows))]
 #[tokio::main]
 async fn main() -> ! {
+    run().await
+}
+
+#[cfg(windows)]
+fn main() -> ! {
+    let handle = std::thread::Builder::new()
+        .name("shopify-main".to_owned())
+        // Windows gives the initial thread a smaller stack than Unix platforms.
+        // The generated Clap parser for this command tree needs more room.
+        .stack_size(8 * 1024 * 1024)
+        .spawn(|| {
+            tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()
+                .expect("failed to create Tokio runtime")
+                .block_on(run())
+        })
+        .expect("failed to create CLI thread");
+
+    match handle.join() {
+        Ok(never) => never,
+        Err(payload) => std::panic::resume_unwind(payload),
+    }
+}
+
+async fn run() -> ! {
     cli_core::runner::init_tracing();
     cli_core::environment::load_environment(None);
     let argv: Vec<String> = std::env::args().collect();
