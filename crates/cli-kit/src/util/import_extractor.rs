@@ -307,7 +307,10 @@ mod tests {
 
         clear_import_paths_cache();
         let result = extract_import_paths(main_path.to_str().unwrap());
-        assert!(result.iter().any(|p| p.ends_with("components/index.ts")));
+        let expected_suffix = Path::new("components").join("index.ts");
+        assert!(result
+            .iter()
+            .any(|p| Path::new(p).ends_with(&expected_suffix)));
     }
 
     #[test]
