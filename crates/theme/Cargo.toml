@@ -1,0 +1,40 @@
+[package]
+name = "theme"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+axum.workspace = true
+async-trait = "0.1"
+base64.workspace = true
+chrono.workspace = true
+colored.workspace = true
+crossterm.workspace = true
+dirs.workspace = true
+futures = "0.3"
+fs2 = "0.4"
+inquire.workspace = true
+is-terminal.workspace = true
+mime_guess.workspace = true
+notify.workspace = true
+open.workspace = true
+percent-encoding.workspace = true
+rand.workspace = true
+regex-lite = "0.1"
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tokio-stream.workspace = true
+toml.workspace = true
+tower-http.workspace = true
+url.workspace = true
+
+[dev-dependencies]
+tempfile = "3"
+tokio.workspace = true
+tower = { version = "0.5", features = ["util"] }
+wiremock = "0.6"

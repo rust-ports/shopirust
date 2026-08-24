@@ -1,0 +1,119 @@
+# Reviewable production-parity baseline. Update only together with parity tests.
+[upstream]
+repository = "https://github.com/Shopify/cli.git"
+commit = "5ddd8e4391753a9364e9314fe56961e2a966262c"
+theme = "4.2.0"
+theme_check = "3.26.1"
+language_server = "2.21.3"
+node_minimum = "22.12.0"
+
+[inventory]
+commands = [
+  "check", "console", "delete", "dev", "duplicate", "info", "init",
+  "language-server", "list", "metafields/pull", "open", "package",
+  "preview", "profile", "publish", "pull", "push", "rename", "share",
+]
+test_files = [
+  "src/cli/commands/theme/check.test.ts",
+  "src/cli/commands/theme/info.test.ts",
+  "src/cli/commands/theme/preview.test.ts",
+  "src/cli/flags.test.ts",
+  "src/cli/services/check.test.ts",
+  "src/cli/services/console.test.ts",
+  "src/cli/services/delete.test.ts",
+  "src/cli/services/dev-override.test.ts",
+  "src/cli/services/dev.test.ts",
+  "src/cli/services/duplicate.test.ts",
+  "src/cli/services/info.test.ts",
+  "src/cli/services/init.test.ts",
+  "src/cli/services/list.test.ts",
+  "src/cli/services/local-storage.test.ts",
+  "src/cli/services/metafields-pull.test.ts",
+  "src/cli/services/open.test.ts",
+  "src/cli/services/package.test.ts",
+  "src/cli/services/profile.test.ts",
+  "src/cli/services/publish.test.ts",
+  "src/cli/services/pull.test.ts",
+  "src/cli/services/push.test.ts",
+  "src/cli/services/rename.test.ts",
+  "src/cli/utilities/asset-checksum.test.ts",
+  "src/cli/utilities/asset-ignore.test.ts",
+  "src/cli/utilities/cli-config.test.ts",
+  "src/cli/utilities/development-theme-manager.test.ts",
+  "src/cli/utilities/errors.test.ts",
+  "src/cli/utilities/log-request-line.test.ts",
+  "src/cli/utilities/notifier.test.ts",
+  "src/cli/utilities/repl/evaluator.test.ts",
+  "src/cli/utilities/repl/presenter.test.ts",
+  "src/cli/utilities/repl/repl-theme-manager.test.ts",
+  "src/cli/utilities/repl/repl.test.ts",
+  "src/cli/utilities/theme-command.test.ts",
+  "src/cli/utilities/theme-downloader.test.ts",
+  "src/cli/utilities/theme-environment/cookies.test.ts",
+  "src/cli/utilities/theme-environment/dev-server-session.test.ts",
+  "src/cli/utilities/theme-environment/host-validation.test.ts",
+  "src/cli/utilities/theme-environment/hot-reload/server.test.ts",
+  "src/cli/utilities/theme-environment/html.test.ts",
+  "src/cli/utilities/theme-environment/liquid-tag-content.test.ts",
+  "src/cli/utilities/theme-environment/local-assets.test.ts",
+  "src/cli/utilities/theme-environment/proxy.test.ts",
+  "src/cli/utilities/theme-environment/remote-theme-watcher.test.ts",
+  "src/cli/utilities/theme-environment/standard-events.test.ts",
+  "src/cli/utilities/theme-environment/storefront-password-prompt.test.ts",
+  "src/cli/utilities/theme-environment/storefront-renderer.test.ts",
+  "src/cli/utilities/theme-environment/storefront-session.test.ts",
+  "src/cli/utilities/theme-environment/storefront-utils.test.ts",
+  "src/cli/utilities/theme-environment/theme-environment.test.ts",
+  "src/cli/utilities/theme-environment/theme-polling.test.ts",
+  "src/cli/utilities/theme-environment/theme-reconciliation.test.ts",
+  "src/cli/utilities/theme-ext-environment/theme-ext-fs.test.ts",
+  "src/cli/utilities/theme-ext-environment/theme-ext-server.test.ts",
+  "src/cli/utilities/theme-fs.test.ts",
+  "src/cli/utilities/theme-listing.test.ts",
+  "src/cli/utilities/theme-previews/preview.test.ts",
+  "src/cli/utilities/theme-selector.test.ts",
+  "src/cli/utilities/theme-selector/fetch.test.ts",
+  "src/cli/utilities/theme-selector/filter.test.ts",
+  "src/cli/utilities/theme-ui.test.ts",
+  "src/cli/utilities/theme-uploader.test.ts",
+]
+
+# Hashing the complete upstream command sources locks flags, aliases, defaults,
+# environment variables, conflicts, required values, and JSON-mode declarations.
+[command_sources]
+"src/cli/flags.ts" = "f505ed2b75d96bb99bd506b0e141bbf7283a560a2de67e1e78640c02d666f83e"
+"src/cli/commands/theme/check.ts" = "eb6526bb78d705879d6d6caf3d06412381211d040b5966a2289fb0ff67532daa"
+"src/cli/commands/theme/console.ts" = "b6de5734a2e7066bcba88beccd143d0faaff23eb3ff89f1ce9ea04fbcfc94d73"
+"src/cli/commands/theme/delete.ts" = "755ad6a4954aee56be0497d8c72d8429da0722ec62554c1c05f5b62cb282eac8"
+"src/cli/commands/theme/dev.ts" = "872e9484666f0eb692ec02fa1380dad623d7c096be0629d36325d96ef9fc2db9"
+"src/cli/commands/theme/duplicate.ts" = "eea45e048a26911ffaf8e7b69db1ecb947744cbd1fc10dbabb968c974ae55ed4"
+"src/cli/commands/theme/info.ts" = "fc121c7920da7445fa3aab5d6600f37dc9ecb5c851f4a522d57cbd78a1380981"
+"src/cli/commands/theme/init.ts" = "85656443c0c96ebe881e733685ba4f9073e55ef1e1749db8fc5929dce37fbb89"
+"src/cli/commands/theme/language-server.ts" = "7ba91f20ba7bee7cd648204deb5f3c9132f6f4ac7f433befbb2d13e5b2fa9b80"
+"src/cli/commands/theme/list.ts" = "ef18b7f41a5f8054682af8e3260ef3e86d58cd4ba6c2fcdaa058a1cbeeed0382"
+"src/cli/commands/theme/metafields/pull.ts" = "94948477e7240c421a5e0e8c1f2bc8cd8cff48859aa9bc311234e96dc56c9f51"
+"src/cli/commands/theme/open.ts" = "207267fc50aed1412c9dc0d6fa4a9db8c01514c5a5630b9cf3644e62be24dbcb"
+"src/cli/commands/theme/package.ts" = "b35211409dae8a962007780d9eadab49c784107778c25344433e7ba55e54f8a7"
+"src/cli/commands/theme/preview.ts" = "cbbb5b8ec972d5f902efc87e665b71c6b95c928637bb557cbce4b8768f9b07f0"
+"src/cli/commands/theme/profile.ts" = "56594f7e4023c9276f118eb1491dbfad478891b2e41fcfce9e869202e352fbe5"
+"src/cli/commands/theme/publish.ts" = "ae8318458c63180429ceed83e59ccd2e2ae2e541db85e42167b2171131786850"
+"src/cli/commands/theme/pull.ts" = "b3237a97d8338f44bee1dab348cd1138a4be2fe6b4553af55cfc14aa2841ca1e"
+"src/cli/commands/theme/push.ts" = "a5d08c8de4e6add96a468f69bf5a075b6ff477c0cce5773a4e6d366b8dfbb025"
+"src/cli/commands/theme/rename.ts" = "933aa8dccfc21604f667c5107bf3d63e71ccf28686525f47e6bbda2bf10cd4a0"
+"src/cli/commands/theme/share.ts" = "ea6c4afea0ce97094a87b29dc19a5cf6eccc0fee1006b245d98d7d67b84e6bbb"
+
+[graphql]
+"packages/cli-kit/src/cli/api/graphql/admin/mutations/theme_create.graphql" = "875f9e679a35c2c18080798ba07f17c31d71f655f16e1859caec7c01be882a2a"
+"packages/cli-kit/src/cli/api/graphql/admin/mutations/theme_delete.graphql" = "9664819c865d01dfe08dd0fc7ae92f575277b8991ebcf7a689863f3b8c06e2c0"
+"packages/cli-kit/src/cli/api/graphql/admin/mutations/theme_duplicate.graphql" = "e2a65775b7abe99b5f63f1b87d5cdffaff5ebccb07581787a1d2f59512351f95"
+"packages/cli-kit/src/cli/api/graphql/admin/mutations/theme_files_delete.graphql" = "57b5128ad529a5ce27ab7eb317b9c3b8f692dea44ee38afcefbf80ecb15526b2"
+"packages/cli-kit/src/cli/api/graphql/admin/mutations/theme_files_upsert.graphql" = "6ed0e7fa84df03ce3606f702cbc9080c850290303ca5841b0b4868283fb6430f"
+"packages/cli-kit/src/cli/api/graphql/admin/mutations/theme_publish.graphql" = "8792e5d1571d158f8e58cd7e493fba53408676d324f7752bbce4b8bf74e28580"
+"packages/cli-kit/src/cli/api/graphql/admin/mutations/theme_update.graphql" = "e6ae4cba6022632061ea2d70b4313321537f895caaee4b49928aec90caac5a57"
+"packages/cli-kit/src/cli/api/graphql/admin/queries/find_development_theme_by_name.graphql" = "cf6947095f24acaa846dee89822a197fd209381d94c933837e0d03dc3408269c"
+"packages/cli-kit/src/cli/api/graphql/admin/queries/get_theme.graphql" = "c0ff798d2c1f83b4221397295fc950abf2b0e25eba09d69c6d6cbbd9309df6f6"
+"packages/cli-kit/src/cli/api/graphql/admin/queries/get_theme_file_bodies.graphql" = "0fddf6ca8954fd1efc2aee3de99078e639dc5bde5e88b3f845d8cf2614eccc3e"
+"packages/cli-kit/src/cli/api/graphql/admin/queries/get_theme_file_checksums.graphql" = "2f5f8ce1ae3c23c0b04c4c3cb53d85dbab9e7c61823baf7d207a20d4221ed53d"
+"packages/cli-kit/src/cli/api/graphql/admin/queries/get_themes.graphql" = "9a297b740d16b15417a3e82c83b7894c2b30adee68aeda2a4321825d1365b02b"
+"packages/cli-kit/src/cli/api/graphql/admin/queries/metafield_definitions_by_owner_type.graphql" = "90284b12a137dddb4cc520d870829f7572dd8a25697f36dcacbe9ed6898cac6a"
+"packages/cli-kit/src/cli/api/graphql/admin/queries/online_store_password_protection.graphql" = "857a3e72bf9999943147ec3630112d709d35fd9ef5acb0fb55e793f36210b403"

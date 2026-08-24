@@ -1,2 +1,8 @@
 /target
+__pycache__/
 /.idea
+crates/cli-kit/examples/
+docs/*.md
+docs/UPSTREAM_MAP.md
+docs/SESSION_TRAIT_TESTABILITY_PLAN.md
+my-theme/

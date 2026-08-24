@@ -14,6 +14,7 @@ pub struct RetryConfig {
     pub initial_delay: Duration,
     pub max_delay: Duration,
     pub jitter: bool,
+    pub skip_env_var: Option<&'static str>,
 }
 
 impl Default for RetryConfig {
@@ -23,6 +24,7 @@ impl Default for RetryConfig {
             initial_delay: Duration::from_millis(DEFAULT_INITIAL_DELAY_MS),
             max_delay: Duration::from_millis(DEFAULT_MAX_DELAY_MS),
             jitter: true,
+            skip_env_var: Some(SKIP_RETRY_ENV_VAR),
         }
     }
 }
@@ -45,8 +47,10 @@ impl RetryConfig {
 
     /// Check whether retries are disabled via the environment variable
     /// `SHOPIFY_CLI_SKIP_NETWORK_LEVEL_RETRY`.
-    pub fn is_skipped() -> bool {
-        std::env::var(SKIP_RETRY_ENV_VAR).is_ok_and(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+    pub fn is_skipped(&self) -> bool {
+        self.skip_env_var
+            .and_then(|var| std::env::var(var).ok())
+            .is_some_and(|v| v == "1" || v.eq_ignore_ascii_case("true"))
     }
 
     /// Compute the backoff delay for a given attempt number.
@@ -80,7 +84,7 @@ impl RetryConfig {
         F: Fn() -> Fut,
         Fut: Future<Output = RetryAction<T, E>>,
     {
-        if Self::is_skipped() {
+        if self.is_skipped() {
             return match operation().await {
                 RetryAction::Ok(val) => Ok(val),
                 RetryAction::Retry(e) | RetryAction::Err(e) => Err(e),
@@ -113,11 +117,7 @@ impl RetryConfig {
                 return Err(last_error.expect("last_error must be set after a Retry"));
             }
 
-            debug!(
-                attempt,
-                delay_ms = delay.as_millis(),
-                "retrying operation"
-            );
+            debug!(attempt, delay_ms = delay.as_millis(), "retrying operation");
 
             tokio::time::sleep(delay).await;
             attempt += 1;
@@ -189,7 +189,9 @@ mod tests {
             jitter: true,
             ..Default::default()
         };
-        let delays: Vec<u128> = (0..20).map(|i| config.backoff_delay(i).as_millis()).collect();
+        let delays: Vec<u128> = (0..20)
+            .map(|i| config.backoff_delay(i).as_millis())
+            .collect();
         let are_all_same = delays.windows(2).all(|w| w[0] == w[1]);
         assert!(!are_all_same, "jitter should produce varying delays");
     }
@@ -198,6 +200,7 @@ mod tests {
     async fn execute_retries_on_retry_then_succeeds() {
         let config = RetryConfig {
             jitter: false,
+            skip_env_var: None,
             ..Default::default()
         };
         let counter = Arc::new(AtomicUsize::new(0));
@@ -225,6 +228,7 @@ mod tests {
     async fn execute_stops_on_action_err() {
         let config = RetryConfig {
             jitter: false,
+            skip_env_var: None,
             ..Default::default()
         };
         let counter = Arc::new(AtomicUsize::new(0));
@@ -251,6 +255,7 @@ mod tests {
             initial_delay: Duration::from_millis(100),
             max_delay: Duration::from_millis(100),
             jitter: false,
+            skip_env_var: None,
         };
         let counter = Arc::new(AtomicUsize::new(0));
         let c = counter.clone();
@@ -270,8 +275,11 @@ mod tests {
 
     #[tokio::test]
     async fn execute_skipped_when_env_var_set() {
-        std::env::set_var("SHOPIFY_CLI_SKIP_NETWORK_LEVEL_RETRY", "1");
-        let config = RetryConfig::default();
+        std::env::set_var("TEST_SKIP_RETRY", "1");
+        let config = RetryConfig {
+            skip_env_var: Some("TEST_SKIP_RETRY"),
+            ..Default::default()
+        };
         let counter = Arc::new(AtomicUsize::new(0));
         let c = counter.clone();
 
@@ -287,13 +295,14 @@ mod tests {
 
         assert!(result.is_err());
         assert_eq!(counter.load(Ordering::SeqCst), 1);
-        std::env::remove_var("SHOPIFY_CLI_SKIP_NETWORK_LEVEL_RETRY");
+        std::env::remove_var("TEST_SKIP_RETRY");
     }
 
     #[tokio::test]
     async fn execute_logs_each_attempt() {
         let config = RetryConfig {
             jitter: false,
+            skip_env_var: None,
             ..Default::default()
         };
         let counter = Arc::new(AtomicUsize::new(0));
@@ -344,6 +353,8 @@ mod tests {
 
     #[test]
     fn is_transient_network_error_matches_missing_reason() {
-        assert!(is_transient_network_error("request to https://example.com failed, reason:"));
+        assert!(is_transient_network_error(
+            "request to https://example.com failed, reason:"
+        ));
     }
 }

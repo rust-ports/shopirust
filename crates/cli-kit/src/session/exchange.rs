@@ -1,15 +1,19 @@
 use crate::http::build_client;
-use crate::session::identity::{application_id, client_id, IDENTITY_FQDN};
+use crate::session::identity::{application_id, client_id};
 use crate::session::schema::{ApplicationToken, IdentityToken};
+use crate::util::crypto::non_random_uuid;
+use crate::util::fqdn::identity_fqdn;
 use chrono::Utc;
 use serde::Deserialize;
 use std::collections::HashMap;
+use tracing;
 
 #[derive(Debug, Deserialize)]
 #[allow(dead_code)]
 struct TokenResponse {
     access_token: String,
     expires_in: u64,
+    #[serde(default)]
     refresh_token: String,
     scope: String,
     id_token: Option<String>,
@@ -28,12 +32,36 @@ pub enum ExchangeError {
     Other(String),
 }
 
+#[derive(Debug, Clone)]
+pub struct AutomationToken {
+    pub access_token: String,
+    pub user_id: String,
+}
+
+fn extract_user_id_from_id_token(id_token: &str) -> Option<String> {
+    let payload = id_token.split('.').nth(1)?;
+    use base64::Engine;
+    let decoded = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(payload)
+        .ok()?;
+    let claims: serde_json::Value = serde_json::from_slice(&decoded).ok()?;
+    claims.get("sub").and_then(|v| v.as_str()).map(String::from)
+}
+
 fn build_identity_token(
     result: &TokenResponse,
     existing_user_id: Option<&str>,
     existing_alias: Option<&str>,
 ) -> IdentityToken {
-    let user_id = existing_user_id.unwrap_or("unknown").to_string();
+    let user_id = existing_user_id
+        .map(String::from)
+        .or_else(|| {
+            result
+                .id_token
+                .as_ref()
+                .and_then(|id| extract_user_id_from_id_token(id))
+        })
+        .unwrap_or_else(|| "unknown".to_string());
     IdentityToken {
         access_token: result.access_token.clone(),
         refresh_token: result.refresh_token.clone(),
@@ -44,19 +72,18 @@ fn build_identity_token(
     }
 }
 
-fn build_application_token(result: &TokenResponse) -> ApplicationToken {
+fn build_application_token(result: &TokenResponse, store_fqdn: Option<&str>) -> ApplicationToken {
     ApplicationToken {
         access_token: result.access_token.clone(),
         expires_at: Utc::now() + chrono::Duration::seconds(result.expires_in as i64),
         scopes: result.scope.split(' ').map(|s| s.to_string()).collect(),
+        store_fqdn: store_fqdn.map(String::from),
     }
 }
 
-async fn token_request(
-    params: HashMap<&str, String>,
-) -> Result<TokenResponse, ExchangeError> {
+async fn token_request(params: HashMap<&str, String>) -> Result<TokenResponse, ExchangeError> {
     let client = build_client(None).expect("failed to build HTTP client");
-    let url = format!("https://{IDENTITY_FQDN}/oauth/token");
+    let url = format!("https://{}/oauth/token", identity_fqdn(None));
 
     let store_param = params.get("store").cloned();
 
@@ -82,14 +109,15 @@ async fn token_request(
     if status.is_success() {
         serde_json::from_str(&text).map_err(|e| ExchangeError::Other(e.to_string()))
     } else {
-        let err: TokenError =
-            serde_json::from_str(&text).unwrap_or(TokenError { error: "unknown".into() });
+        let err: TokenError = serde_json::from_str(&text).unwrap_or(TokenError {
+            error: "unknown".into(),
+        });
         match err.error.as_str() {
             "invalid_grant" => Err(ExchangeError::InvalidGrant),
             "invalid_request" => Err(ExchangeError::InvalidRequest),
-            "invalid_target" => {
-                Err(ExchangeError::InvalidTarget(store_param.unwrap_or_default()))
-            }
+            "invalid_target" => Err(ExchangeError::InvalidTarget(
+                store_param.unwrap_or_default(),
+            )),
             other => Err(ExchangeError::Other(other.to_string())),
         }
     }
@@ -99,7 +127,10 @@ pub async fn exchange_device_code_for_access_token(
     device_code: &str,
 ) -> Result<IdentityToken, String> {
     let mut params = HashMap::new();
-    params.insert("grant_type", "urn:ietf:params:oauth:grant-type:device_code".into());
+    params.insert(
+        "grant_type",
+        "urn:ietf:params:oauth:grant-type:device_code".into(),
+    );
     params.insert("device_code", device_code.into());
     params.insert("client_id", client_id().into());
 
@@ -119,7 +150,10 @@ pub async fn request_app_token(
 ) -> Result<HashMap<String, ApplicationToken>, ExchangeError> {
     let app_id = application_id(api);
     let mut params = HashMap::new();
-    params.insert("grant_type", "urn:ietf:params:oauth:grant-type:token-exchange".into());
+    params.insert(
+        "grant_type",
+        "urn:ietf:params:oauth:grant-type:token-exchange".into(),
+    );
     params.insert(
         "requested_token_type",
         "urn:ietf:params:oauth:token-type:access_token".into(),
@@ -141,10 +175,10 @@ pub async fn request_app_token(
     }
 
     let result = token_request(params).await?;
-    let app_token = build_application_token(&result);
+    let app_token = build_application_token(&result, if api == "admin" { store } else { None });
 
-    let identifier = if api == "admin" && store.is_some() {
-        format!("{}-{}", store.unwrap(), app_id)
+    let identifier = if api == "admin" {
+        store.map_or_else(|| app_id.to_string(), |s| format!("{}-{}", s, app_id))
     } else {
         app_id.to_string()
     };
@@ -180,20 +214,30 @@ pub async fn exchange_access_for_application_tokens(
     );
 
     let mut all = HashMap::new();
-    if let Ok(t) = partners {
-        all.extend(t);
+
+    let log_err = |api: &str, e: &ExchangeError| {
+        tracing::warn!("Token exchange failed for {api}: {e:?}");
+    };
+
+    match partners {
+        Ok(t) => all.extend(t),
+        Err(e) => log_err("partners", &e),
     }
-    if let Ok(t) = storefront {
-        all.extend(t);
+    match storefront {
+        Ok(t) => all.extend(t),
+        Err(e) => log_err("storefront-renderer", &e),
     }
-    if let Ok(t) = business_platform {
-        all.extend(t);
+    match business_platform {
+        Ok(t) => all.extend(t),
+        Err(e) => log_err("business-platform", &e),
     }
-    if let Ok(t) = admin {
-        all.extend(t);
+    match admin {
+        Ok(t) => all.extend(t),
+        Err(e) => log_err("admin", &e),
     }
-    if let Ok(t) = app_management {
-        all.extend(t);
+    match app_management {
+        Ok(t) => all.extend(t),
+        Err(e) => log_err("app-management", &e),
     }
     Ok(all)
 }
@@ -215,17 +259,55 @@ pub async fn refresh_access_token(
     ))
 }
 
-pub async fn exchange_custom_partner_token(
+async fn exchange_app_automation_token_for_access_token(
+    api: &'static str,
     token: &str,
-) -> Result<String, ExchangeError> {
-    let scopes = vec![crate::session::scopes::scope_transform("cli").to_string()];
-    let result = request_app_token("partners", token, &scopes, None).await?;
-    let _app_id = application_id("partners");
-    Ok(result
-        .into_values()
-        .next()
-        .map(|t| t.access_token)
-        .unwrap_or_default())
+    scopes: Vec<String>,
+) -> Result<AutomationToken, ExchangeError> {
+    let result = request_app_token(api, token, &scopes, None).await?;
+    Ok(AutomationToken {
+        access_token: result
+            .into_values()
+            .next()
+            .map(|t| t.access_token)
+            .unwrap_or_default(),
+        user_id: non_random_uuid(token),
+    })
+}
+
+pub async fn exchange_custom_partner_token(token: &str) -> Result<AutomationToken, ExchangeError> {
+    exchange_app_automation_token_for_access_token(
+        "partners",
+        token,
+        crate::session::scopes::token_exchange_scopes("partners"),
+    )
+    .await
+}
+
+pub async fn exchange_app_automation_token_for_app_management_access_token(
+    token: &str,
+) -> Result<AutomationToken, ExchangeError> {
+    exchange_app_automation_token_for_access_token(
+        "app-management",
+        token,
+        crate::session::scopes::token_exchange_scopes("app-management"),
+    )
+    .await
+}
+
+pub async fn exchange_app_automation_token_for_business_platform_access_token(
+    token: &str,
+) -> Result<AutomationToken, ExchangeError> {
+    exchange_app_automation_token_for_access_token(
+        "business-platform",
+        token,
+        crate::session::scopes::token_exchange_scopes("business-platform"),
+    )
+    .await
+}
+
+pub async fn exchange_custom_partner_token_value(token: &str) -> Result<String, ExchangeError> {
+    Ok(exchange_custom_partner_token(token).await?.access_token)
 }
 
 #[cfg(test)]
@@ -255,7 +337,7 @@ mod tests {
             scope: "admin".into(),
             id_token: None,
         };
-        let token = build_application_token(&result);
+        let token = build_application_token(&result, None);
         assert_eq!(token.access_token, "at");
     }
 }

@@ -1,10 +1,15 @@
 pub mod admin;
 pub mod app_dev;
 pub mod app_management;
+pub mod bulk_operations;
 pub mod business_platform;
+pub mod developer_platform;
 pub mod functions;
+pub mod generated;
 pub mod graphql;
 pub mod partners;
+pub mod rate_limiter;
 pub mod rest_api_throttler;
+pub mod themes;
 pub mod utilities;
 pub mod webhooks;

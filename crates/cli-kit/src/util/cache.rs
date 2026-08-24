@@ -255,15 +255,11 @@ mod tests {
         let (store, _dir) = temp_store();
 
         let _: String = store
-            .retrieve_or_repopulate("key", Duration::from_millis(0), || {
-                Ok("old".to_string())
-            })
+            .retrieve_or_repopulate("key", Duration::from_millis(0), || Ok("old".to_string()))
             .unwrap();
 
         let val: String = store
-            .retrieve_or_repopulate("key", Duration::from_millis(0), || {
-                Ok("new".to_string())
-            })
+            .retrieve_or_repopulate("key", Duration::from_millis(0), || Ok("new".to_string()))
             .unwrap();
         assert_eq!(val, "new");
     }

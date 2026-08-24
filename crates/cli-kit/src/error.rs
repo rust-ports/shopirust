@@ -1,3 +1,4 @@
+use crate::output::components::alert::CustomSection;
 use std::fmt;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -24,6 +25,7 @@ pub struct FatalError {
     pub r#type: FatalErrorType,
     pub try_message: Option<String>,
     pub next_steps: Vec<String>,
+    pub custom_sections: Vec<CustomSection>,
     pub formatted_message: Option<String>,
     pub skip_oclif_error_handling: bool,
 }
@@ -46,6 +48,24 @@ pub fn abort_error(
         r#type: FatalErrorType::Abort,
         try_message: try_message.map(Into::into),
         next_steps,
+        custom_sections: vec![],
+        formatted_message: None,
+        skip_oclif_error_handling: true,
+    }
+}
+
+pub fn abort_error_with_custom_sections(
+    message: impl Into<String>,
+    try_message: Option<impl Into<String>>,
+    next_steps: Vec<String>,
+    custom_sections: Vec<CustomSection>,
+) -> FatalError {
+    FatalError {
+        message: message.into(),
+        r#type: FatalErrorType::Abort,
+        try_message: try_message.map(Into::into),
+        next_steps,
+        custom_sections,
         formatted_message: None,
         skip_oclif_error_handling: true,
     }
@@ -57,20 +77,19 @@ pub fn abort_silent_error() -> FatalError {
         r#type: FatalErrorType::AbortSilent,
         try_message: None,
         next_steps: vec![],
+        custom_sections: vec![],
         formatted_message: None,
         skip_oclif_error_handling: true,
     }
 }
 
-pub fn bug_error(
-    message: impl Into<String>,
-    try_message: Option<impl Into<String>>,
-) -> FatalError {
+pub fn bug_error(message: impl Into<String>, try_message: Option<impl Into<String>>) -> FatalError {
     FatalError {
         message: message.into(),
         r#type: FatalErrorType::Bug,
         try_message: try_message.map(Into::into),
         next_steps: vec![],
+        custom_sections: vec![],
         formatted_message: None,
         skip_oclif_error_handling: true,
     }
@@ -96,6 +115,7 @@ impl ExternalError {
                 r#type: FatalErrorType::Abort,
                 try_message: try_message.map(Into::into),
                 next_steps: vec![],
+                custom_sections: vec![],
                 formatted_message: None,
                 skip_oclif_error_handling: true,
             },
@@ -159,13 +179,35 @@ mod tests {
 
     #[test]
     fn abort_error_creates_abort_type() {
-        let err = abort_error("something went wrong", Some("try again"), vec!["step 1".into()]);
+        let err = abort_error(
+            "something went wrong",
+            Some("try again"),
+            vec!["step 1".into()],
+        );
         assert_eq!(err.message, "something went wrong");
         assert_eq!(err.r#type, FatalErrorType::Abort);
         assert_eq!(err.try_message, Some("try again".into()));
         assert_eq!(err.next_steps, vec!["step 1"]);
+        assert!(err.custom_sections.is_empty());
         assert!(err.skip_oclif_error_handling);
         assert!(err.formatted_message.is_none());
+    }
+
+    #[test]
+    fn abort_error_with_custom_sections_sets_sections() {
+        let err = abort_error_with_custom_sections(
+            "something went wrong",
+            None::<String>,
+            vec![],
+            vec![CustomSection {
+                title: Some("Context".into()),
+                body: "extra details".into(),
+            }],
+        );
+        assert_eq!(err.r#type, FatalErrorType::Abort);
+        assert_eq!(err.custom_sections.len(), 1);
+        assert_eq!(err.custom_sections[0].title, Some("Context".into()));
+        assert_eq!(err.custom_sections[0].body, "extra details");
     }
 
     #[test]
@@ -220,7 +262,7 @@ mod tests {
 
     #[test]
     fn is_fatal_returns_false_for_other_error() {
-        let err = std::io::Error::new(std::io::ErrorKind::Other, "io error");
+        let err = std::io::Error::other("io error");
         assert!(!is_fatal(&err));
     }
 
@@ -244,21 +286,27 @@ mod tests {
 
     #[test]
     fn io_error_reported_based_on_message() {
-        let err = std::io::Error::new(std::io::ErrorKind::Other, "EPERM: operation not permitted, scandir");
+        let err = std::io::Error::other("EPERM: operation not permitted, scandir");
         assert!(!should_report_error_as_unexpected(&err));
     }
 
     #[test]
     fn io_error_without_env_keywords_reported() {
-        let err = std::io::Error::new(std::io::ErrorKind::Other, "some random error");
+        let err = std::io::Error::other("some random error");
         assert!(should_report_error_as_unexpected(&err));
     }
 
     #[test]
     fn environment_issue_detection() {
-        assert!(error_message_implies_environment_issue("EPERM: operation not permitted, scandir /tmp"));
-        assert!(error_message_implies_environment_issue("EACCES: permission denied"));
-        assert!(error_message_implies_environment_issue("getaddrinfo ENOTFOUND example.com"));
+        assert!(error_message_implies_environment_issue(
+            "EPERM: operation not permitted, scandir /tmp"
+        ));
+        assert!(error_message_implies_environment_issue(
+            "EACCES: permission denied"
+        ));
+        assert!(error_message_implies_environment_issue(
+            "getaddrinfo ENOTFOUND example.com"
+        ));
         assert!(error_message_implies_environment_issue("socket hang up"));
         assert!(error_message_implies_environment_issue("write EPIPE"));
         assert!(!error_message_implies_environment_issue("normal error"));

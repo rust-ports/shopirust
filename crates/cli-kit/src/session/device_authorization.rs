@@ -1,7 +1,8 @@
 use crate::http::build_client;
 use crate::session::exchange::exchange_device_code_for_access_token;
-use crate::session::identity::{client_id, IDENTITY_FQDN};
+use crate::session::identity::client_id;
 use crate::session::schema::IdentityToken;
+use crate::util::fqdn::identity_fqdn;
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
@@ -18,12 +19,9 @@ pub async fn request_device_authorization(
     scopes: &[String],
 ) -> Result<DeviceAuthorizationResponse, String> {
     let client = build_client(None).map_err(|e| e.to_string())?;
-    let url = format!("https://{IDENTITY_FQDN}/oauth/device_authorization");
+    let url = format!("https://{}/oauth/device_authorization", identity_fqdn(None));
 
-    let params = [
-        ("client_id", client_id()),
-        ("scope", &scopes.join(" ")),
-    ];
+    let params = [("client_id", client_id()), ("scope", &scopes.join(" "))];
 
     let body: Vec<(String, String)> = params
         .iter()
@@ -45,7 +43,14 @@ pub async fn request_device_authorization(
         .map_err(|e| format!("Failed to read response: {e}"))?;
 
     if !status.is_success() {
-        return Err(format!("Authorization service returned HTTP {status}: {text}"));
+        let body_preview = if text.len() > 500 {
+            format!("{}... ({} bytes)", &text[..500], text.len())
+        } else {
+            text.clone()
+        };
+        return Err(format!(
+            "Authorization service returned HTTP {status}: {body_preview}"
+        ));
     }
 
     let resp: DeviceAuthorizationResponse =

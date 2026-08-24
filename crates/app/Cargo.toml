@@ -1,0 +1,57 @@
+[package]
+name = "app"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Shopify app development domain: models, config, and services"
+
+[dependencies]
+cli-api = { path = "../cli-api" }
+cli-core = { path = "../cli-core" }
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+toml.workspace = true
+dirs.workspace = true
+regex-lite = "0.1"
+async-trait = "0.1"
+tokio.workspace = true
+tokio-util = { version = "0.7", features = ["rt"] }
+reqwest = { workspace = true, features = ["multipart"] }
+zip = "2"
+brotli = "7"
+flate2 = "1"
+tempfile = "3"
+is-terminal = "0.4"
+axum.workspace = true
+tower-http.workspace = true
+mime_guess.workspace = true
+notify.workspace = true
+url.workspace = true
+uuid.workspace = true
+chrono.workspace = true
+futures = "0.3"
+base64.workspace = true
+sha2.workspace = true
+hmac.workspace = true
+tracing.workspace = true
+theme = { path = "../theme" }
+hyper = { version = "1", features = ["http1", "server", "client"] }
+hyper-util = { version = "0.1", features = ["tokio", "http1", "client-legacy", "server"] }
+http-body-util = "0.1"
+http = "1"
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
+rustls-pemfile = "2"
+tokio-rustls = "0.26"
+glob = "0.3"
+walkdir = "2"
+jsonschema = "0.26"
+rust-embed = { version = "8", features = ["mime-guess"] }
+crossterm.workspace = true
+open.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt"] }
+tower = { version = "0.5", features = ["util"] }
+wiremock = "0.6"

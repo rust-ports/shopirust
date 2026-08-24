@@ -1,3 +1,4 @@
+use crate::api::rate_limiter::ApiRateLimiter;
 use crate::http::{build_client, build_headers};
 use reqwest::header::HeaderMap;
 use reqwest::Method;
@@ -36,11 +37,13 @@ pub struct RestResponse<T> {
 ///
 /// Constructs URLs as `{base_url}/{path}.json` and sends the appropriate
 /// authorization header based on token prefix.
+#[derive(Clone)]
 pub struct RestClient {
     client: reqwest::Client,
     base_url: String,
     token: String,
     extra_headers: Option<HeaderMap>,
+    rate_limiter: Option<ApiRateLimiter>,
 }
 
 impl RestClient {
@@ -51,6 +54,7 @@ impl RestClient {
             base_url: base_url.into(),
             token: token.into(),
             extra_headers: None,
+            rate_limiter: None,
         }
     }
 
@@ -64,11 +68,17 @@ impl RestClient {
             base_url: base_url.into(),
             token: token.into(),
             extra_headers: None,
+            rate_limiter: None,
         }
     }
 
     pub fn with_extra_headers(mut self, headers: HeaderMap) -> Self {
         self.extra_headers = Some(headers);
+        self
+    }
+
+    pub fn with_rate_limiter(mut self, limiter: ApiRateLimiter) -> Self {
+        self.rate_limiter = Some(limiter);
         self
     }
 
@@ -113,10 +123,7 @@ impl RestClient {
         self.request(Method::PUT, path, None, Some(body)).await
     }
 
-    pub async fn delete(
-        &self,
-        path: &str,
-    ) -> Result<RestResponse<serde_json::Value>, RestError> {
+    pub async fn delete(&self, path: &str) -> Result<RestResponse<serde_json::Value>, RestError> {
         self.request(Method::DELETE, path, None, None).await
     }
 
@@ -127,11 +134,12 @@ impl RestClient {
         query: Option<HashMap<String, String>>,
         body: Option<serde_json::Value>,
     ) -> Result<RestResponse<T>, RestError> {
+        if let Some(ref limiter) = self.rate_limiter {
+            limiter.acquire().await;
+        }
+
         let url = self.url_for(path);
-        let mut req = self
-            .client
-            .request(method, &url)
-            .headers(self.headers());
+        let mut req = self.client.request(method, &url).headers(self.headers());
 
         if let Some(ref params) = query {
             req = req.query(params);
@@ -141,7 +149,10 @@ impl RestClient {
             req = req.json(b);
         }
 
-        let response = req.send().await.map_err(|e| RestError::Network(e.to_string()))?;
+        let response = req
+            .send()
+            .await
+            .map_err(|e| RestError::Network(e.to_string()))?;
         let status = response.status().as_u16();
         let headers = response.headers().clone();
         let text = response
@@ -172,7 +183,10 @@ mod tests {
 
     #[tokio::test]
     async fn constructs_correct_url() {
-        let client = RestClient::new("https://example.myshopify.com/admin/api/2024-01", "shpat_test");
+        let client = RestClient::new(
+            "https://example.myshopify.com/admin/api/2024-01",
+            "shpat_test",
+        );
         assert_eq!(
             client.url_for("/themes.json"),
             "https://example.myshopify.com/admin/api/2024-01/themes.json"
@@ -181,7 +195,10 @@ mod tests {
 
     #[tokio::test]
     async fn constructs_url_without_duplicate_json() {
-        let client = RestClient::new("https://example.myshopify.com/admin/api/2024-01", "shpat_test");
+        let client = RestClient::new(
+            "https://example.myshopify.com/admin/api/2024-01",
+            "shpat_test",
+        );
         assert_eq!(
             client.url_for("themes"),
             "https://example.myshopify.com/admin/api/2024-01/themes.json"
@@ -203,10 +220,7 @@ mod tests {
         let client = RestClient::new(mock_server.uri(), "shpat_test");
         let result: RestResponse<serde_json::Value> = client.get("/themes", None).await.unwrap();
         assert_eq!(result.status, 200);
-        assert_eq!(
-            result.body["themes"][0]["name"],
-            json!("Default")
-        );
+        assert_eq!(result.body["themes"][0]["name"], json!("Default"));
     }
 
     #[tokio::test]

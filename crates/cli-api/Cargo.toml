@@ -1,0 +1,16 @@
+[package]
+name = "cli-api"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "DeveloperPlatformClient trait and shared types (adapters live in cli-kit)"
+
+[dependencies]
+async-trait = "0.1"
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt"] }

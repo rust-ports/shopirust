@@ -9,15 +9,15 @@ pub fn add_cursor_and_filters_to_app_logs_url(
     let mut params: Vec<String> = Vec::new();
 
     if let Some(c) = cursor {
-        params.push(format!("cursor={}", &c));
+        params.push(format!("cursor={}", c));
     }
 
     if let Some(f) = filters {
         if let Some(status) = f.get("status") {
-            params.push(format!("status={}", &status));
+            params.push(format!("status={}", status));
         }
         if let Some(source) = f.get("source") {
-            params.push(format!("source={}", &source));
+            params.push(format!("source={}", source));
         }
     }
 
@@ -72,11 +72,8 @@ mod tests {
 
     #[test]
     fn no_params_returns_base_url() {
-        let url = add_cursor_and_filters_to_app_logs_url(
-            "https://app.shopify.com/base",
-            None,
-            None,
-        );
+        let url =
+            add_cursor_and_filters_to_app_logs_url("https://app.shopify.com/base", None, None);
         assert_eq!(url, "https://app.shopify.com/base");
     }
 }
