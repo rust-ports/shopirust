@@ -6,9 +6,7 @@ use super::dev_session::{
     setup_dev_session_process, DevSessionClient, DevSessionProcessOptions, DevSessionStatusManager,
 };
 use super::draftable_extension::{setup_draftable_extensions_process, DraftableExtensionOptions};
-use super::graphiql::{
-    resolve_graphiql_key, setup_graphiql_server_process, GraphiqlOptions,
-};
+use super::graphiql::{resolve_graphiql_key, setup_graphiql_server_process, GraphiqlOptions};
 use super::previewable_extension::{
     setup_previewable_extensions_process, PreviewableExtensionOptions,
 };
@@ -20,13 +18,13 @@ use super::types::{DevProcess, DevProcessKind};
 use super::uninstall_webhook::{setup_send_uninstall_webhook_process, UninstallWebhookOptions};
 use super::utils::DevNetworkOptions;
 use super::web::setup_web_processes;
-use std::collections::BTreeMap;
 use crate::models::loader::LoadedApp;
 use crate::services::dev::app_events::AppEventWatcher;
 use crate::services::dev::extension::get_websocket_url;
 use crate::services::dev::tunnel_mode::get_available_tcp_port;
 use crate::services::webhook::WebhookSampleClient;
 use cli_api::OrganizationApp;
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 #[derive(Clone)]
@@ -87,11 +85,7 @@ pub async fn setup_dev_processes(
         app_preview_url.clone()
     };
 
-    let graphiql_key = resolve_graphiql_key(
-        flags.graphiql_key.as_deref(),
-        &api_secret,
-        store_fqdn,
-    );
+    let graphiql_key = resolve_graphiql_key(flags.graphiql_key.as_deref(), &api_secret, store_fqdn);
     let graphiql_url = if flags.enable_graphiql {
         Some(format!(
             "http://localhost:{}/graphiql?key={}",
@@ -179,7 +173,9 @@ pub async fn setup_dev_processes(
             proxy_url: network.proxy_url.clone(),
             extensions: local_app.extensions.clone(),
             remote_extension_ids: local_app.identifiers.extensions.clone(),
-            app_configuration: Some(serde_json::to_value(&local_app.configuration).unwrap_or_default()),
+            app_configuration: Some(
+                serde_json::to_value(&local_app.configuration).unwrap_or_default(),
+            ),
             client: flags.platform_client.clone(),
         },
         app_watcher.clone(),
@@ -238,10 +234,7 @@ pub async fn setup_dev_processes(
         );
     }
     if any_previewable {
-        proxy_rules.insert(
-            "/extensions".into(),
-            format!("http://localhost:{ext_port}"),
-        );
+        proxy_rules.insert("/extensions".into(), format!("http://localhost:{ext_port}"));
     }
     if !proxy_rules.is_empty() {
         processes.push(setup_proxy_server_process(ProxyServerOptions {
@@ -373,13 +366,14 @@ mod tests {
     async fn selects_draftable_when_no_dev_sessions() {
         let mut app = empty_app();
         let spec = crate::models::extensions::create_extension_specification("function").unwrap();
-        app.extensions.push(crate::models::extensions::ExtensionInstance::new(
-            "discount",
-            PathBuf::from("/tmp/app/extensions/discount"),
-            PathBuf::from("/tmp/app/extensions/discount/shopify.extension.toml"),
-            Default::default(),
-            spec,
-        ));
+        app.extensions
+            .push(crate::models::extensions::ExtensionInstance::new(
+                "discount",
+                PathBuf::from("/tmp/app/extensions/discount"),
+                PathBuf::from("/tmp/app/extensions/discount/shopify.extension.toml"),
+                Default::default(),
+                spec,
+            ));
         app.webs.push(crate::models::loader::WebInstance {
             directory: PathBuf::from("/tmp/app/web"),
             configuration_path: PathBuf::from("/tmp/app/web/shopify.web.toml"),

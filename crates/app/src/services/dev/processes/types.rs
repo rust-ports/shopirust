@@ -17,7 +17,9 @@ pub struct DevProcessContext {
 impl DevProcessContext {
     /// Emit a process log line to the concurrent TUI (prefix, text).
     pub fn emit(&self, line: impl AsRef<str>) {
-        let _ = self.log.send((self.prefix.clone(), line.as_ref().to_string()));
+        let _ = self
+            .log
+            .send((self.prefix.clone(), line.as_ref().to_string()));
     }
 }
 

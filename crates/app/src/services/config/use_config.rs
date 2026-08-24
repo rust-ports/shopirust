@@ -204,10 +204,7 @@ mod tests {
             reset: false,
         })
         .unwrap();
-        assert_eq!(
-            result.config_file.as_deref(),
-            Some("shopify.app.prod.toml")
-        );
+        assert_eq!(result.config_file.as_deref(), Some("shopify.app.prod.toml"));
     }
 
     #[test]

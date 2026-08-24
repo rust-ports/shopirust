@@ -81,7 +81,11 @@ pub async fn store_context(
     let cached_url = cached_from_toml.or(cached_from_hidden);
     if cached_url.as_deref() != Some(selected.shop_domain.as_str()) {
         if let Some(ref client_id) = ctx.app.configuration.client_id {
-            let path = ctx.app.directory.join(HIDDEN_CONFIG_DIR).join(HIDDEN_PROJECT_FILE);
+            let path = ctx
+                .app
+                .directory
+                .join(HIDDEN_CONFIG_DIR)
+                .join(HIDDEN_PROJECT_FILE);
             patch_app_hidden_config_file(
                 &path,
                 client_id,
@@ -202,14 +206,9 @@ mod tests {
         let mut client = MockClient::with_app(sample_org_app("key-1"));
         client.stores = vec![sample_store("1", "cached-store.myshopify.com")];
         let ctx = ctx_in(dir.path(), &client).await;
-        let store = store_context(
-            &ctx,
-            &client,
-            StoreContextOptions::default(),
-            None,
-        )
-        .await
-        .unwrap();
+        let store = store_context(&ctx, &client, StoreContextOptions::default(), None)
+            .await
+            .unwrap();
         assert_eq!(store.shop_domain, "cached-store.myshopify.com");
     }
 

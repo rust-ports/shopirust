@@ -95,9 +95,7 @@ pub fn visible_templates() -> Vec<&'static AppTemplate> {
 
 pub fn lookup_template(key_or_url: &str) -> Option<&'static AppTemplate> {
     TEMPLATES.iter().find(|t| {
-        t.key.eq_ignore_ascii_case(key_or_url)
-            || t.url == key_or_url
-            || key_or_url.contains(t.key)
+        t.key.eq_ignore_ascii_case(key_or_url) || t.url == key_or_url || key_or_url.contains(t.key)
     })
 }
 
@@ -105,11 +103,9 @@ pub fn lookup_template(key_or_url: &str) -> Option<&'static AppTemplate> {
 pub fn resolve_template_url(template: &str, flavor: Option<&str>) -> String {
     if let Some(spec) = lookup_template(template) {
         if let Some(flavor) = flavor {
-            if let Some((_, branch)) = spec
-                .flavors
-                .iter()
-                .find(|(k, b)| *k == flavor || b.branch == flavor || b.label.eq_ignore_ascii_case(flavor))
-            {
+            if let Some((_, branch)) = spec.flavors.iter().find(|(k, b)| {
+                *k == flavor || b.branch == flavor || b.label.eq_ignore_ascii_case(flavor)
+            }) {
                 return format!("{}#{}", spec.url, branch.branch);
             }
         }
@@ -159,7 +155,10 @@ mod tests {
 
     #[test]
     fn lookup_by_url() {
-        assert!(lookup_template("https://github.com/Shopify/shopify-app-template-react-router").is_some());
+        assert!(
+            lookup_template("https://github.com/Shopify/shopify-app-template-react-router")
+                .is_some()
+        );
         assert!(lookup_template("none").is_some());
         assert!(lookup_template("missing").is_none());
     }

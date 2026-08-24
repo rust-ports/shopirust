@@ -39,10 +39,7 @@ pub fn select_config_name(
 }
 
 /// Prompt to pick among existing `shopify.app*.toml` files.
-pub fn select_config_file(
-    prompter: &dyn Prompter,
-    files: &[String],
-) -> Result<String, AppError> {
+pub fn select_config_file(prompter: &dyn Prompter, files: &[String]) -> Result<String, AppError> {
     if files.is_empty() {
         return Err(AppError::message(
             "Could not find any shopify.app.toml file in the directory.",

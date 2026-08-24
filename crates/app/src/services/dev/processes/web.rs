@@ -40,14 +40,11 @@ pub fn setup_web_processes(
         } else {
             backend_port.saturating_add(i as u16)
         });
-        let name = web
-            .name
-            .clone()
-            .unwrap_or_else(|| {
-                let mut parts = vec!["web".to_string()];
-                parts.extend(web.roles.iter().cloned());
-                parts.join("-")
-            });
+        let name = web.name.clone().unwrap_or_else(|| {
+            let mut parts = vec!["web".to_string()];
+            parts.extend(web.roles.iter().cloned());
+            parts.join("-")
+        });
         let opts = WebProcessOptions {
             web: web.clone(),
             proxy_url: proxy_url.to_string(),
@@ -66,12 +63,9 @@ pub fn setup_web_processes(
     out
 }
 
-async fn run_web_process(
-    ctx: DevProcessContext,
-    opts: WebProcessOptions,
-) -> Result<(), AppError> {
+async fn run_web_process(ctx: DevProcessContext, opts: WebProcessOptions) -> Result<(), AppError> {
     if let Some(ref predev) = opts.web.commands.predev {
-        run_command_chain(predev, &opts, false).await?;
+        run_predev_command(predev, &opts, &ctx).await?;
     }
 
     let dev_command = opts
@@ -90,21 +84,21 @@ async fn run_web_process(
         return Ok(());
     };
 
-    let mut child = spawn_command_chain(&dev_command, &opts)?;
+    let mut child = spawn_shell_command(&dev_command, &opts)?;
     pipe_child_output(&mut child, ctx.prefix.clone(), ctx.log.clone());
     tokio::select! {
         _ = ctx.abort.cancelled() => {
             let _ = child.kill().await;
         }
         status = child.wait() => {
-            if let Ok(s) = status {
-                if !s.success() {
-                    return Err(AppError::message(format!(
-                        "web process exited with {:?}",
-                        s.code()
-                    )));
-                }
-            }
+            let status = status.map_err(|error| {
+                AppError::message(format!("failed to wait for web process: {error}"))
+            })?;
+            return Err(AppError::message(if status.success() {
+                "web process exited unexpectedly".to_string()
+            } else {
+                format!("web process exited with {:?}", status.code())
+            }));
         }
     }
     Ok(())
@@ -136,48 +130,35 @@ fn spawn_line_pump(
     });
 }
 
-fn spawn_command_chain(
+async fn run_predev_command(
     script: &str,
     opts: &WebProcessOptions,
-) -> Result<tokio::process::Child, AppError> {
-    // Upstream splits on `&&` and runs sequentially; for the long-running `dev` command
-    // we execute the last segment after running the prefixes.
-    let parts: Vec<&str> = script.split("&&").map(str::trim).filter(|s| !s.is_empty()).collect();
-    if parts.is_empty() {
-        return Err(AppError::message("empty web dev command"));
-    }
-    let last = *parts.last().unwrap();
-    spawn_one(last, opts)
-}
-
-async fn run_command_chain(
-    script: &str,
-    opts: &WebProcessOptions,
-    inherit: bool,
+    ctx: &DevProcessContext,
 ) -> Result<(), AppError> {
-    for part in script.split("&&").map(str::trim).filter(|s| !s.is_empty()) {
-        let mut child = spawn_one(part, opts)?;
-        if !inherit {
-            // predev: capture, don't steal TTY
-        }
-        let status = child.wait().await.map_err(|e| AppError::message(e.to_string()))?;
-        if !status.success() {
-            return Err(AppError::message(format!(
-                "web command `{part}` exited with {:?}",
-                status.code()
-            )));
-        }
+    let mut child = spawn_shell_command(script, opts)?;
+    pipe_child_output(&mut child, ctx.prefix.clone(), ctx.log.clone());
+    let status = child
+        .wait()
+        .await
+        .map_err(|error| AppError::message(format!("failed to wait for `{script}`: {error}")))?;
+    if !status.success() {
+        return Err(AppError::message(format!(
+            "web command `{script}` exited with {:?}",
+            status.code()
+        )));
     }
     Ok(())
 }
 
-fn spawn_one(script: &str, opts: &WebProcessOptions) -> Result<tokio::process::Child, AppError> {
-    let mut parts = script.split_whitespace();
-    let cmd = parts.next().ok_or_else(|| AppError::message("empty command"))?;
-    let args: Vec<&str> = parts.collect();
-    let mut command = Command::new(cmd);
+fn spawn_shell_command(
+    script: &str,
+    opts: &WebProcessOptions,
+) -> Result<tokio::process::Child, AppError> {
+    if script.trim().is_empty() {
+        return Err(AppError::message("empty web command"));
+    }
+    let mut command = platform_shell_command(script);
     command
-        .args(&args)
         .current_dir(&opts.web.directory)
         .env("PORT", opts.port.to_string())
         .env("SERVER_PORT", opts.port.to_string())
@@ -200,6 +181,20 @@ fn spawn_one(script: &str, opts: &WebProcessOptions) -> Result<tokio::process::C
     command
         .spawn()
         .map_err(|e| AppError::message(format!("Failed to start `{script}`: {e}")))
+}
+
+#[cfg(windows)]
+fn platform_shell_command(script: &str) -> Command {
+    let mut command = Command::new("cmd.exe");
+    command.args(["/D", "/S", "/C", script]);
+    command
+}
+
+#[cfg(not(windows))]
+fn platform_shell_command(script: &str) -> Command {
+    let mut command = Command::new("sh");
+    command.args(["-c", script]);
+    command
 }
 
 fn detect_npm_script(package_json: &Path) -> Option<String> {
@@ -228,6 +223,8 @@ mod tests {
     use super::*;
     use crate::models::loader::{parse_web_commands, WebCommands, WebInstance};
     use std::path::PathBuf;
+    use tempfile::tempdir;
+    use tokio_util::sync::CancellationToken;
 
     fn web(role: &str, commands: WebCommands) -> WebInstance {
         WebInstance {
@@ -287,5 +284,120 @@ mod tests {
         let cmds = parse_web_commands(&value);
         assert_eq!(cmds.dev.as_deref(), Some("npm run dev"));
         assert_eq!(cmds.predev.as_deref(), Some("npm run setup"));
+    }
+
+    fn process_options(directory: PathBuf, commands: WebCommands) -> WebProcessOptions {
+        WebProcessOptions {
+            web: WebInstance {
+                directory,
+                configuration_path: PathBuf::from("shopify.web.toml"),
+                roles: vec!["backend".into()],
+                name: Some("backend".into()),
+                auth_callback_path: vec![],
+                webhooks_path: None,
+                port: None,
+                commands,
+                hmr_server: false,
+            },
+            proxy_url: "https://example.com".into(),
+            port: 3457,
+            api_key: "key".into(),
+            api_secret: "secret".into(),
+            scopes: "write_products".into(),
+            frontend_port: 3000,
+            backend_port: 3457,
+            hmr_port: None,
+        }
+    }
+
+    fn process_context() -> DevProcessContext {
+        let (log, _rx) = tokio::sync::mpsc::unbounded_channel();
+        DevProcessContext {
+            abort: CancellationToken::new(),
+            prefix: "backend".into(),
+            log,
+        }
+    }
+
+    #[cfg(not(windows))]
+    const CHAIN_COMMAND: &str = "printf first > first.txt && printf second > second.txt";
+    #[cfg(windows)]
+    const CHAIN_COMMAND: &str = "echo first>first.txt && echo second>second.txt";
+
+    #[cfg(not(windows))]
+    const FAIL_COMMAND: &str = "exit 7";
+    #[cfg(windows)]
+    const FAIL_COMMAND: &str = "exit /B 7";
+
+    #[cfg(not(windows))]
+    const SUCCESS_COMMAND: &str = "exit 0";
+    #[cfg(windows)]
+    const SUCCESS_COMMAND: &str = "exit /B 0";
+
+    #[tokio::test]
+    async fn predev_executes_complete_shell_chain() {
+        let directory = tempdir().unwrap();
+        let opts = process_options(directory.path().to_path_buf(), WebCommands::default());
+
+        run_predev_command(CHAIN_COMMAND, &opts, &process_context())
+            .await
+            .unwrap();
+
+        assert_eq!(
+            std::fs::read_to_string(directory.path().join("first.txt")).unwrap(),
+            "first"
+        );
+        assert_eq!(
+            std::fs::read_to_string(directory.path().join("second.txt")).unwrap(),
+            "second"
+        );
+    }
+
+    #[cfg(not(windows))]
+    #[tokio::test]
+    async fn shell_preserves_quoted_arguments() {
+        let directory = tempdir().unwrap();
+        let opts = process_options(directory.path().to_path_buf(), WebCommands::default());
+
+        run_predev_command(
+            "printf '%s' 'hello world' > quoted.txt",
+            &opts,
+            &process_context(),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            std::fs::read_to_string(directory.path().join("quoted.txt")).unwrap(),
+            "hello world"
+        );
+    }
+
+    #[tokio::test]
+    async fn predev_nonzero_exit_is_an_error() {
+        let directory = tempdir().unwrap();
+        let opts = process_options(directory.path().to_path_buf(), WebCommands::default());
+
+        let error = run_predev_command(FAIL_COMMAND, &opts, &process_context())
+            .await
+            .unwrap_err();
+
+        assert!(error.to_string().contains("exited with"));
+    }
+
+    #[tokio::test]
+    async fn successful_dev_exit_is_unexpected() {
+        let directory = tempdir().unwrap();
+        let opts = process_options(
+            directory.path().to_path_buf(),
+            WebCommands {
+                dev: Some(SUCCESS_COMMAND.into()),
+                ..Default::default()
+            },
+        );
+
+        let error = run_web_process(process_context(), opts).await.unwrap_err();
+
+        assert_eq!(error.to_string(), "web process exited unexpectedly");
     }
 }

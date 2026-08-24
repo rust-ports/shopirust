@@ -253,10 +253,7 @@ mod tests {
             normalize_bulk_operation_id("gid://shopify/BulkOperation/9"),
             "gid://shopify/BulkOperation/9"
         );
-        assert_eq!(
-            normalize_bulk_operation_id("not-a-number"),
-            "not-a-number"
-        );
+        assert_eq!(normalize_bulk_operation_id("not-a-number"), "not-a-number");
     }
 
     #[test]

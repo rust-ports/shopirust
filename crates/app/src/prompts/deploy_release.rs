@@ -110,7 +110,9 @@ pub fn deploy_or_release_confirmation_prompt(
     let has_deletes = !breakdown.only_remote.is_empty();
     if has_deletes {
         if let Some(title) = &options.app_title {
-            let message = format!("{table}\n{question}\nRemoving extensions can permanently delete app user data");
+            let message = format!(
+                "{table}\n{question}\nRemoving extensions can permanently delete app user data"
+            );
             return prompter.dangerous_confirm(&message, title);
         }
     }

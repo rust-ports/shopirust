@@ -23,7 +23,11 @@ mod tests {
     fn forward_keeps_api_version() {
         let local = json!({ "webhooks": { "api_version": "2024-10" } });
         let remote = transform_local(&local);
-        assert!(remote.to_string().contains("2024-10") || remote.get("api_version").is_some() || remote.get("webhooks").is_some());
+        assert!(
+            remote.to_string().contains("2024-10")
+                || remote.get("api_version").is_some()
+                || remote.get("webhooks").is_some()
+        );
     }
 
     #[test]

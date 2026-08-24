@@ -96,7 +96,8 @@ mod tests {
 
     #[test]
     fn rejects_missing_query_file() {
-        let err = resolve_graphql_query(None, Some(Path::new("/no/such/file.graphql"))).unwrap_err();
+        let err =
+            resolve_graphql_query(None, Some(Path::new("/no/such/file.graphql"))).unwrap_err();
         assert!(err.to_string().contains("not found"));
     }
 
@@ -124,10 +125,8 @@ mod tests {
 
     #[test]
     fn rejects_multiple_operations() {
-        let err = validate_single_operation(
-            "query A { shop { name } } mutation B { shop { id } }",
-        )
-        .unwrap_err();
+        let err = validate_single_operation("query A { shop { name } } mutation B { shop { id } }")
+            .unwrap_err();
         assert!(err.to_string().contains("exactly one"));
     }
 

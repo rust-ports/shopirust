@@ -190,7 +190,6 @@ pub mod config_selection {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Write;
     use tempfile::tempdir;
 
     #[test]
@@ -217,7 +216,9 @@ mod tests {
         // production slug file doesn't exist; flag path missing → fall through to cached
         assert!(active.is_none() || active.unwrap().source != ConfigSource::Flag);
 
-        let active = project.select_active_config(Some("shopify.app.staging.toml")).unwrap();
+        let active = project
+            .select_active_config(Some("shopify.app.staging.toml"))
+            .unwrap();
         assert_eq!(active.source, ConfigSource::Flag);
         assert!(active.file.ends_with("shopify.app.staging.toml"));
     }

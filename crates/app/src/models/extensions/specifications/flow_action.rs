@@ -45,8 +45,11 @@ mod tests {
     async fn deploy_serializes_settings_fields_and_schema() {
         let spec = create_extension_specification("flow_action").unwrap();
         let dir = tempdir().unwrap();
-        std::fs::write(dir.path().join("schema.graphql"), "extend type Query { x: String }")
-            .unwrap();
+        std::fs::write(
+            dir.path().join("schema.graphql"),
+            "extend type Query { x: String }",
+        )
+        .unwrap();
         let mut cfg = HashMap::new();
         cfg.insert("name".into(), json!("Action"));
         cfg.insert("handle".into(), json!("action"));

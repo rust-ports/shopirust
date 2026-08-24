@@ -212,8 +212,8 @@ mod tests {
             .await;
 
         let sample = MockWebhookClient::success_direct(body, "{}");
-        let client = MockWebhookClient::with_lists(vec!["2024-10".into()], vec![])
-            .with_sample(sample);
+        let client =
+            MockWebhookClient::with_lists(vec!["2024-10".into()], vec![]).with_sample(sample);
         let result = send_uninstall_webhook_to_app_server(
             zero_delay(format!("{}/test/path", server.uri())),
             &client,
@@ -236,11 +236,9 @@ mod tests {
             r#"{ "sampleField": "SampleValue" }"#,
             r#"{ "header": "Header Value" }"#,
         );
-        let client = MockWebhookClient::with_lists(
-            vec!["2024-07".into(), "2024-10".into()],
-            vec![],
-        )
-        .with_sample(sample);
+        let client =
+            MockWebhookClient::with_lists(vec!["2024-07".into(), "2024-10".into()], vec![])
+                .with_sample(sample);
 
         let result = send_uninstall_webhook_to_app_server(
             zero_delay(format!("{}/test/path", server.uri())),
@@ -269,7 +267,8 @@ mod tests {
             .await;
 
         let sample = MockWebhookClient::success_direct("{}", "{}");
-        let client = MockWebhookClient::with_lists(vec!["2024-10".into()], vec![]).with_sample(sample);
+        let client =
+            MockWebhookClient::with_lists(vec!["2024-10".into()], vec![]).with_sample(sample);
 
         // Direct retry helper: first address refused, we instead test is_connection_refused
         // via send to closed port then success via send_app_uninstalled_webhook.

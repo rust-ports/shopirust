@@ -67,10 +67,7 @@ pub fn get_localization(
             localization.default_locale = locale.clone();
         }
         let raw = fs::read_to_string(path).map_err(|e| {
-            AppError::message(format!(
-                "Error loading locale file {}: {e}",
-                path.display()
-            ))
+            AppError::message(format!("Error loading locale file {}: {e}", path.display()))
         })?;
         let parsed: Value = serde_json::from_str(&raw).map_err(|e| {
             AppError::message(format!(
@@ -102,10 +99,7 @@ fn parse_existing(value: Value) -> Option<Localization> {
             .and_then(|v| v.as_object())
             .cloned()
             .unwrap_or_default(),
-        last_updated: obj
-            .get("lastUpdated")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(0),
+        last_updated: obj.get("lastUpdated").and_then(|v| v.as_u64()).unwrap_or(0),
     })
 }
 

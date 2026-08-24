@@ -79,10 +79,7 @@ pub async fn execute_operation(
 }
 
 fn load_query(options: &ExecuteOperationOptions) -> Result<String, AppError> {
-    crate::utilities::resolve_graphql_query(
-        options.query.as_deref(),
-        options.query_file.as_deref(),
-    )
+    crate::utilities::resolve_graphql_query(options.query.as_deref(), options.query_file.as_deref())
 }
 
 fn load_variables(options: &ExecuteOperationOptions) -> Result<Value, AppError> {

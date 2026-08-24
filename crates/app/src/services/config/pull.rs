@@ -50,10 +50,7 @@ pub async fn pull_config(
         };
         let identifiers = MinimalAppIdentifiers {
             api_key: remote_app.api_key.clone(),
-            organization_id: remote_app
-                .organization_id
-                .clone()
-                .unwrap_or_default(),
+            organization_id: remote_app.organization_id.clone().unwrap_or_default(),
             id: remote_app.id.clone(),
         };
         let specs = local_configuration_specifications();

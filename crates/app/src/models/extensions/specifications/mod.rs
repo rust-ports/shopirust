@@ -6,8 +6,6 @@ use crate::models::extensions::specification::{
 use std::sync::OnceLock;
 
 mod admin_link;
-mod channel_config;
-mod checkout_post_purchase;
 mod app_config_app_access;
 mod app_config_app_home;
 mod app_config_app_proxy;
@@ -16,6 +14,8 @@ mod app_config_events;
 mod app_config_pos;
 mod app_config_privacy;
 mod app_config_webhook;
+mod channel_config;
+mod checkout_post_purchase;
 mod checkout_ui;
 mod editor_extension_collection;
 mod flow_action;

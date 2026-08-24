@@ -132,16 +132,9 @@ mod tests {
         ext.output_path = Some(js);
 
         let client = MockClient::default();
-        update_extension_draft(
-            &ext,
-            &client,
-            "api-key",
-            "reg-1",
-            None,
-            dir.path(),
-        )
-        .await
-        .unwrap();
+        update_extension_draft(&ext, &client, "api-key", "reg-1", None, dir.path())
+            .await
+            .unwrap();
 
         let calls = client.updated_extensions.lock().unwrap();
         assert_eq!(calls.len(), 1);

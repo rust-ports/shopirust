@@ -2,10 +2,7 @@ pub mod upload;
 
 use crate::error::AppError;
 use crate::models::extensions::ExtensionInstance;
-use crate::validations::{validate_message, validate_version};
-use crate::prompts::deploy_release::{
-    deploy_or_release_confirmation_prompt, DeployConfirmOptions,
-};
+use crate::prompts::deploy_release::{deploy_or_release_confirmation_prompt, DeployConfirmOptions};
 use crate::prompts::Prompter;
 use crate::services::bundle::{
     compress_bundle, default_bundle_path, write_manifest_to_bundle, AppManifest,
@@ -21,6 +18,7 @@ use crate::services::import_extensions::{
     filter_out_imported_extensions, import_extensions, ExtensionRegistration,
     ImportExtensionsOptions,
 };
+use crate::validations::{validate_message, validate_version};
 use cli_api::{DeveloperPlatformClient, MinimalAppIdentifiers};
 use std::fs;
 use std::path::Path;
@@ -170,10 +168,7 @@ pub async fn deploy(
     })
 }
 
-pub(crate) fn include_on_deploy(
-    ext: &ExtensionInstance,
-    include_config: bool,
-) -> bool {
+pub(crate) fn include_on_deploy(ext: &ExtensionInstance, include_config: bool) -> bool {
     include_config || !ext.specification.is_app_config()
 }
 
@@ -208,7 +203,10 @@ async fn import_extensions_if_needed(
     if dashboard.is_empty() {
         return Ok(());
     }
-    let pending: Vec<ExtensionRegistration> = dashboard.iter().filter_map(parse_dashboard_registration).collect();
+    let pending: Vec<ExtensionRegistration> = dashboard
+        .iter()
+        .filter_map(parse_dashboard_registration)
+        .collect();
     let env_uuids = std::collections::HashMap::new();
     let pending = filter_out_imported_extensions(&ctx.app, &pending, &env_uuids);
     let local: std::collections::HashSet<String> = ctx
@@ -333,12 +331,15 @@ fn copy_path(src: &Path, dest: &Path) -> Result<(), AppError> {
 #[cfg(test)]
 mod tests {
     use super::parse_dashboard_registration;
-    use crate::prompts::deploy_release::{
-        should_skip_confirmation_prompt, DeployConfirmOptions,
-    };
+    use crate::prompts::deploy_release::{should_skip_confirmation_prompt, DeployConfirmOptions};
     use crate::services::context::breakdown_extensions::ExtensionBreakdown;
 
-    fn opts(allow_updates: bool, allow_deletes: bool, force: bool, is_tty: bool) -> DeployConfirmOptions {
+    fn opts(
+        allow_updates: bool,
+        allow_deletes: bool,
+        force: bool,
+        is_tty: bool,
+    ) -> DeployConfirmOptions {
         DeployConfirmOptions {
             app_title: Some("Demo".into()),
             release: true,
@@ -358,14 +359,18 @@ mod tests {
 
     #[test]
     fn confirm_deploy_requires_flag_non_tty() {
-        let err = should_skip_confirmation_prompt(&opts(false, false, false, false), &with_updates())
-            .unwrap_err();
+        let err =
+            should_skip_confirmation_prompt(&opts(false, false, false, false), &with_updates())
+                .unwrap_err();
         assert!(err.to_string().contains("--allow-updates"));
     }
 
     #[test]
     fn confirm_deploy_allow_updates_skips() {
-        assert!(should_skip_confirmation_prompt(&opts(true, false, false, false), &with_updates()).unwrap());
+        assert!(
+            should_skip_confirmation_prompt(&opts(true, false, false, false), &with_updates())
+                .unwrap()
+        );
     }
 
     #[test]
@@ -409,61 +414,65 @@ mod tests {
 
     #[test]
     fn confirm_deploy_force_skips() {
-        assert!(should_skip_confirmation_prompt(&opts(false, false, true, false), &with_updates()).unwrap());
+        assert!(
+            should_skip_confirmation_prompt(&opts(false, false, true, false), &with_updates())
+                .unwrap()
+        );
     }
 
     #[test]
     fn rejects_invalid_version_name() {
-        use crate::test_support::{sample_org_app, MockClient};
-        use crate::services::context::LinkedAppContext;
         use crate::models::loader::LoadedApp;
+        use crate::services::context::LinkedAppContext;
+        use crate::test_support::{sample_org_app, MockClient};
         use std::path::PathBuf;
 
         let rt = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
             .unwrap();
-        let err = rt.block_on(async {
-            let client = MockClient::with_app(sample_org_app("k"));
-            let ctx = LinkedAppContext {
-                app: LoadedApp {
-                    directory: PathBuf::from("."),
-                    configuration_path: PathBuf::from("shopify.app.toml"),
-                    configuration: Default::default(),
-                    hidden_config: Default::default(),
-                    extensions: vec![],
-                    webs: vec![],
-                    identifiers: Default::default(),
-                    name: "Demo".into(),
-                    errors: vec![],
-                    dev_application_urls: None,
-                },
-                remote_app: sample_org_app("k"),
-                organization: cli_api::Organization {
-                    id: "org-1".into(),
-                    business_name: "Acme".into(),
-                    source: cli_api::OrganizationSource::BusinessPlatform,
-                },
-            };
-            super::deploy(
-                &ctx,
-                &client,
-                super::DeployOptions {
-                    message: None,
-                    version: Some("bad version!".into()),
-                    no_build: true,
-                    no_release: true,
-                    allow_updates: true,
-                    allow_deletes: true,
-                    force: true,
-                    is_tty: false,
-                    source_control_url: None,
-                },
-                None,
-            )
-            .await
-        })
-        .unwrap_err();
+        let err = rt
+            .block_on(async {
+                let client = MockClient::with_app(sample_org_app("k"));
+                let ctx = LinkedAppContext {
+                    app: LoadedApp {
+                        directory: PathBuf::from("."),
+                        configuration_path: PathBuf::from("shopify.app.toml"),
+                        configuration: Default::default(),
+                        hidden_config: Default::default(),
+                        extensions: vec![],
+                        webs: vec![],
+                        identifiers: Default::default(),
+                        name: "Demo".into(),
+                        errors: vec![],
+                        dev_application_urls: None,
+                    },
+                    remote_app: sample_org_app("k"),
+                    organization: cli_api::Organization {
+                        id: "org-1".into(),
+                        business_name: "Acme".into(),
+                        source: cli_api::OrganizationSource::BusinessPlatform,
+                    },
+                };
+                super::deploy(
+                    &ctx,
+                    &client,
+                    super::DeployOptions {
+                        message: None,
+                        version: Some("bad version!".into()),
+                        no_build: true,
+                        no_release: true,
+                        allow_updates: true,
+                        allow_deletes: true,
+                        force: true,
+                        is_tty: false,
+                        source_control_url: None,
+                    },
+                    None,
+                )
+                .await
+            })
+            .unwrap_err();
         assert!(err.to_string().contains("Invalid version"));
     }
 }

@@ -195,10 +195,8 @@ mod draft07_tests {
             &schema,
         );
         assert_eq!(ok.state, ParseState::Ok);
-        let missing = json_schema_validate(
-            &serde_json::json!({"name": "alpha", "kind": "z"}),
-            &schema,
-        );
+        let missing =
+            json_schema_validate(&serde_json::json!({"name": "alpha", "kind": "z"}), &schema);
         assert_eq!(missing.state, ParseState::Error);
     }
 }
@@ -356,7 +354,9 @@ mod tests {
     fn returns_errors_when_json_schema_fails() {
         let parser = unified_configuration_parser(
             mock_parse,
-            Some(r#"{"type":"object","properties":{"type":{"type":"string"}},"required":["price"]}"#),
+            Some(
+                r#"{"type":"object","properties":{"type":{"type":"string"}},"required":["price"]}"#,
+            ),
         );
         let result = parser(&serde_json::json!({"type": "product_subscription"}));
         assert_eq!(result.state, ParseState::Error);
@@ -370,7 +370,9 @@ mod tests {
     fn combines_errors_from_both_validations() {
         let parser = unified_configuration_parser(
             mock_parse,
-            Some(r#"{"type":"object","properties":{"type":{"type":"string"}},"required":["price"]}"#),
+            Some(
+                r#"{"type":"object","properties":{"type":{"type":"string"}},"required":["price"]}"#,
+            ),
         );
         let result = parser(&serde_json::json!({"type": "invalid"}));
         assert_eq!(result.state, ParseState::Error);

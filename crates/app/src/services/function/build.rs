@@ -977,9 +977,7 @@ mod tests {
     #[test]
     fn find_cargo_wasm_unknown_unknown_fallback() {
         let dir = tempdir().unwrap();
-        let release = dir
-            .path()
-            .join("target/wasm32-unknown-unknown/release");
+        let release = dir.path().join("target/wasm32-unknown-unknown/release");
         fs::create_dir_all(&release).unwrap();
         fs::write(release.join("my_fn.wasm"), b"\0asm").unwrap();
         let ext = make_ext(dir.path(), json!({}));

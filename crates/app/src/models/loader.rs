@@ -2,9 +2,7 @@ use crate::error::AppError;
 use crate::models::app::{AppConfiguration, AppHiddenConfig};
 use crate::models::config_file_naming::get_app_configuration_file_name;
 use crate::models::extensions::extension_instance::ExtensionInstance;
-use crate::models::extensions::specification::{
-    create_extension_specification, ExtensionFeature,
-};
+use crate::models::extensions::specification::{create_extension_specification, ExtensionFeature};
 use crate::models::extensions::specifications::{
     is_config_specification, APP_SCHEMA_KEYS, CONFIG_SPEC_ORDER,
 };
@@ -72,10 +70,7 @@ impl LoadedApp {
     }
 
     /// Patch config-module URLs for this `app dev` session (AM path; not written to TOML).
-    pub fn set_dev_application_urls(
-        &mut self,
-        urls: crate::services::dev::urls::ApplicationUrls,
-    ) {
+    pub fn set_dev_application_urls(&mut self, urls: crate::services::dev::urls::ApplicationUrls) {
         let app_dev = crate::models::extensions::deploy::AppDevUrls {
             application_url: Some(urls.application_url.clone()),
             redirect_url_whitelist: Some(urls.redirect_url_whitelist.clone()),
@@ -831,7 +826,10 @@ pub fn parse_web_commands(value: &toml::Value) -> WebCommands {
         return WebCommands::default();
     };
     WebCommands {
-        dev: table.get("dev").and_then(|v| v.as_str()).map(str::to_string),
+        dev: table
+            .get("dev")
+            .and_then(|v| v.as_str())
+            .map(str::to_string),
         build: table
             .get("build")
             .and_then(|v| v.as_str())
@@ -1300,7 +1298,10 @@ port = 3001
     #[test]
     fn loads_named_config_file() {
         let dir = tempdir().unwrap();
-        write_app(dir.path(), "name = \"Default\"\napplication_url = \"https://e.com\"\n");
+        write_app(
+            dir.path(),
+            "name = \"Default\"\napplication_url = \"https://e.com\"\n",
+        );
         fs::write(
             dir.path().join("shopify.app.production.toml"),
             "name = \"Prod\"\napplication_url = \"https://prod.example\"\nclient_id = \"gid://app/prod\"\n",
@@ -1379,7 +1380,7 @@ module = "./src/Checkout.jsx"
             .find(|e| e.specification.identifier == "ui_extension")
             .unwrap();
         assert_eq!(ui.handle, "checkout-ui");
-        assert!(ui.configuration.get("targeting").is_some());
+        assert!(ui.configuration.contains_key("targeting"));
     }
 
     #[test]
@@ -1472,7 +1473,11 @@ embedded = true
     #[test]
     fn invalid_toml_errors() {
         let dir = tempdir().unwrap();
-        fs::write(dir.path().join("shopify.app.toml"), "name = [unterminated\n").unwrap();
+        fs::write(
+            dir.path().join("shopify.app.toml"),
+            "name = [unterminated\n",
+        )
+        .unwrap();
         let err = load_app(LoadAppOptions {
             directory: dir.path().to_path_buf(),
             config_name: None,
@@ -1501,7 +1506,10 @@ embedded = true
     #[test]
     fn rejects_invalid_application_url() {
         let dir = tempdir().unwrap();
-        write_app(dir.path(), "name = \"Demo\"\napplication_url = \"not-a-url\"\n");
+        write_app(
+            dir.path(),
+            "name = \"Demo\"\napplication_url = \"not-a-url\"\n",
+        );
         let err = load_app(LoadAppOptions {
             directory: dir.path().to_path_buf(),
             config_name: None,
@@ -1661,7 +1669,10 @@ uri = "/hooks"
             ignore_unknown_extensions: false,
         })
         .unwrap();
-        assert!(app.errors.iter().any(|e| e.contains("not_a_real_spec") || e.contains("Unknown")));
+        assert!(app
+            .errors
+            .iter()
+            .any(|e| e.contains("not_a_real_spec") || e.contains("Unknown")));
     }
 
     #[test]
@@ -1716,7 +1727,10 @@ predev = "npm run build"
         .unwrap();
         assert_eq!(app.webs.len(), 1);
         assert_eq!(app.webs[0].commands.dev.as_deref(), Some("npm run dev"));
-        assert_eq!(app.webs[0].commands.predev.as_deref(), Some("npm run build"));
+        assert_eq!(
+            app.webs[0].commands.predev.as_deref(),
+            Some("npm run build")
+        );
         assert!(app.webs[0].hmr_server);
     }
 

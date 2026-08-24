@@ -106,10 +106,7 @@ mod tests {
     #[test]
     fn template_single_auto_selects() {
         let p = InjectedPrompter::new();
-        assert_eq!(
-            prompt_template(&p, &["only".into()], None).unwrap(),
-            "only"
-        );
+        assert_eq!(prompt_template(&p, &["only".into()], None).unwrap(), "only");
     }
 
     #[test]

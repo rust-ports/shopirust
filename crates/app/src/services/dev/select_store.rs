@@ -18,13 +18,7 @@ pub async fn convert_dev_to_transfer_disabled_store(
         )));
     }
     let converted = client
-        .convert_to_transfer_disabled_store(
-            store
-                .link
-                .as_deref()
-                .unwrap_or("0"),
-            &store.shop_id,
-        )
+        .convert_to_transfer_disabled_store(store.link.as_deref().unwrap_or("0"), &store.shop_id)
         .await
         .map_err(|e| AppError::message(e.to_string()))?;
     if !converted {

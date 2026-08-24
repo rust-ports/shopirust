@@ -19,9 +19,10 @@ pub use stage_file::{
 };
 pub use status::{
     extract_bulk_operation_id, format_bulk_operation_cancellation_result,
-    format_bulk_operation_list_row, format_bulk_operation_status, format_bulk_operation_user_errors,
-    get_bulk_operation_status, list_bulk_operations, normalize_bulk_operation_id,
-    parse_bulk_operation_status, BulkOperationCancellationResult, BulkOperationStatus,
+    format_bulk_operation_list_row, format_bulk_operation_status,
+    format_bulk_operation_user_errors, get_bulk_operation_status, list_bulk_operations,
+    normalize_bulk_operation_id, parse_bulk_operation_status, BulkOperationCancellationResult,
+    BulkOperationStatus,
 };
 pub use watch::{
     short_bulk_operation_poll, watch_bulk_operation, WatchOptions, QUICK_WATCH_POLL_INTERVAL,

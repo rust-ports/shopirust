@@ -3,7 +3,9 @@
 //! Upstream: `trigger.ts`.
 
 use super::delivery::{deliver_webhook_http, DeliverWebhookOptions};
-use super::sample::{get_webhook_sample, SampleWebhook, SendSampleWebhookVariables, UserError, WebhookSampleClient};
+use super::sample::{
+    get_webhook_sample, SampleWebhook, SendSampleWebhookVariables, UserError, WebhookSampleClient,
+};
 use super::trigger_flags::DELIVERY_METHOD_LOCALHOST;
 use super::trigger_options::{
     collect_address_and_method, collect_api_version, collect_credentials, collect_topic,
@@ -42,8 +44,7 @@ pub async fn webhook_trigger(
     client: &dyn WebhookSampleClient,
     prompter: &dyn Prompter,
 ) -> Result<WebhookTriggerResult, AppError> {
-    let api_version =
-        collect_api_version(client, options.api_version.as_deref(), prompter).await?;
+    let api_version = collect_api_version(client, options.api_version.as_deref(), prompter).await?;
     let topic = collect_topic(client, &api_version, options.topic.as_deref(), prompter).await?;
     let (address, delivery_method) = collect_address_and_method(
         options.delivery_method.as_deref(),
@@ -175,7 +176,8 @@ mod tests {
     }
 
     fn client_with_lists(sample: SampleWebhook) -> MockWebhookClient {
-        MockWebhookClient::with_lists(vec![A_VERSION.into()], vec![A_TOPIC.into()]).with_sample(sample)
+        MockWebhookClient::with_lists(vec![A_VERSION.into()], vec![A_TOPIC.into()])
+            .with_sample(sample)
     }
 
     fn localhost_url(mock_uri: &str, path: &str) -> String {
@@ -249,7 +251,9 @@ mod tests {
             .await
             .unwrap();
         assert!(result.success);
-        assert!(result.message.contains("Webhook has been enqueued for delivery"));
+        assert!(result
+            .message
+            .contains("Webhook has been enqueued for delivery"));
         let calls = client.send_calls.lock().unwrap();
         assert_eq!(calls.len(), 1);
         assert_eq!(calls[0].topic, A_TOPIC);
@@ -293,7 +297,9 @@ mod tests {
         flags.client_id = Some(AN_API_KEY.into());
         let result = webhook_trigger(flags, &client, &p).await.unwrap();
         assert!(result.success);
-        assert!(result.message.contains("Webhook has been enqueued for delivery"));
+        assert!(result
+            .message
+            .contains("Webhook has been enqueued for delivery"));
         let calls = client.send_calls.lock().unwrap();
         assert_eq!(calls[0].delivery_method, "event-bridge");
         assert_eq!(calls[0].address, AN_EVENTBRIDGE_ADDRESS);

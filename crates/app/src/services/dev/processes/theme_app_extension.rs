@@ -8,9 +8,7 @@ use theme::local_storage::ThemeLocalStorage;
 use theme::theme_ext::{
     build_theme_extension_context, initialize_dev_server_session, run_theme_extension_server,
 };
-use theme::utilities::host_theme_manager::{
-    find_or_create_host_theme, TokenThemeAdmin,
-};
+use theme::utilities::host_theme_manager::{find_or_create_host_theme, TokenThemeAdmin};
 use tokio_util::sync::CancellationToken;
 
 #[derive(Debug, Clone)]
@@ -50,17 +48,19 @@ async fn run_theme_ext(
     let port = opts
         .theme_extension_port
         .unwrap_or(theme::theme_ext::DEFAULT_THEME_EXT_PORT);
-    let token = resolve_admin_token(&opts).await;
-    let theme_id = resolve_live_host_theme_id(&opts, token.as_deref()).await;
-    let storefront_password =
-        theme::local_storage::storefront_password_for_store(&opts.store_fqdn);
+    let token = resolve_admin_token(&opts).await?;
+    let theme_id = resolve_live_host_theme_id(&opts, &token).await?;
+    let storefront_password = theme::local_storage::storefront_password_for_store(&opts.store_fqdn);
     let session = initialize_dev_server_session(
         theme_id,
         &opts.store_fqdn,
-        token.as_deref().unwrap_or(""),
+        &token,
         storefront_password.as_deref(),
     )
-    .await;
+    .await
+    .map_err(|error| {
+        AppError::message(format!("Unable to initialize storefront session: {error}"))
+    })?;
 
     print_theme_ext_next_steps(&opts, theme_id, port);
 
@@ -75,22 +75,28 @@ async fn run_theme_ext(
     Ok(())
 }
 
-async fn resolve_admin_token(opts: &ThemeAppExtensionOptions) -> Option<String> {
+async fn resolve_admin_token(opts: &ThemeAppExtensionOptions) -> Result<String, AppError> {
     if let Some(token) = opts
         .admin_access_token
         .as_deref()
         .map(str::trim)
         .filter(|value| !value.is_empty())
     {
-        return Some(token.to_string());
+        return Ok(token.to_string());
     }
     if opts.api_key.is_empty() || opts.api_secret.is_empty() {
-        return None;
+        return Err(AppError::message(
+            "Unable to authenticate theme app extension preview: app credentials are missing.",
+        ));
     }
     mint_admin_token(&opts.store_fqdn, &opts.api_key, &opts.api_secret).await
 }
 
-async fn mint_admin_token(store_fqdn: &str, api_key: &str, api_secret: &str) -> Option<String> {
+async fn mint_admin_token(
+    store_fqdn: &str,
+    api_key: &str,
+    api_secret: &str,
+) -> Result<String, AppError> {
     let url = format!("https://{store_fqdn}/admin/oauth/access_token");
     let client = reqwest::Client::new();
     let response = client
@@ -102,38 +108,50 @@ async fn mint_admin_token(store_fqdn: &str, api_key: &str, api_secret: &str) -> 
         }))
         .send()
         .await
-        .ok()?;
+        .map_err(|error| {
+            AppError::message(format!("Unable to authenticate with {store_fqdn}: {error}"))
+        })?;
     if !response.status().is_success() {
-        return None;
+        return Err(AppError::message(format!(
+            "Unable to authenticate with {store_fqdn}: token endpoint returned {}.",
+            response.status()
+        )));
     }
-    let json: serde_json::Value = response.json().await.ok()?;
+    let json: serde_json::Value = response.json().await.map_err(|error| {
+        AppError::message(format!("Invalid token response from {store_fqdn}: {error}"))
+    })?;
     json.get("access_token")
         .and_then(|value| value.as_str())
+        .filter(|value| !value.trim().is_empty())
         .map(ToOwned::to_owned)
+        .ok_or_else(|| {
+            AppError::message(format!(
+                "Token response from {store_fqdn} did not include an access token."
+            ))
+        })
 }
 
-async fn resolve_live_host_theme_id(opts: &ThemeAppExtensionOptions, token: Option<&str>) -> i64 {
-    if let Some(token) = token {
-        let mut admin = TokenThemeAdmin::new(&opts.store_fqdn, token);
-        if let Some(url) = &opts.admin_graphql_url {
-            admin = admin.with_graphql_url(url.clone());
-        }
-        match find_or_create_host_theme(
-            admin,
-            &opts.store_fqdn,
-            opts.theme.as_deref(),
-            ThemeLocalStorage::new(),
-        )
-        .await
-        {
-            Ok(theme) => return theme.id,
-            Err(error) => tracing::warn!(
-                target: "app_dev",
-                "host theme find-or-create failed: {error}"
-            ),
-        }
+async fn resolve_live_host_theme_id(
+    opts: &ThemeAppExtensionOptions,
+    token: &str,
+) -> Result<i64, AppError> {
+    let mut admin = TokenThemeAdmin::new(&opts.store_fqdn, token);
+    if let Some(url) = &opts.admin_graphql_url {
+        admin = admin.with_graphql_url(url.clone());
     }
-    resolve_host_theme_id(&opts.store_fqdn, opts.theme.as_deref())
+    find_or_create_host_theme(
+        admin,
+        &opts.store_fqdn,
+        opts.theme.as_deref(),
+        ThemeLocalStorage::new(),
+    )
+    .await
+    .map(|theme| theme.id)
+    .map_err(|error| {
+        AppError::message(format!(
+            "Could not find or create a host theme for theme app extensions: {error}"
+        ))
+    })
 }
 
 pub fn theme_ext_next_steps(
@@ -168,17 +186,6 @@ fn print_theme_ext_next_steps(opts: &ThemeAppExtensionOptions, theme_id: i64, po
         tracing::info!(target: "app_dev", "{}. {step}", index + 1);
         println!("{}. {step}", index + 1);
     }
-}
-
-/// Prefer `--theme`, then persisted host theme id. Never invent `1`.
-pub fn resolve_host_theme_id(store_fqdn: &str, theme_flag: Option<&str>) -> i64 {
-    if let Some(flag) = theme_flag {
-        if let Ok(id) = flag.parse::<i64>() {
-            theme::local_storage::store_host_theme_id(store_fqdn, id);
-            return id;
-        }
-    }
-    theme::local_storage::host_theme_id(store_fqdn).unwrap_or(0)
 }
 
 #[cfg(test)]
@@ -223,18 +230,6 @@ mod tests {
         opts.theme_extension_port = Some(9293);
         let proc = setup_preview_theme_app_extensions_process(opts);
         assert!(proc.is_some());
-    }
-
-    #[test]
-    fn resolve_theme_id_from_flag() {
-        let id = resolve_host_theme_id("unused.myshopify.com", Some("4242"));
-        assert_eq!(id, 4242);
-    }
-
-    #[test]
-    fn resolve_theme_id_does_not_default_to_one() {
-        let id = resolve_host_theme_id("definitely-missing-host-theme.myshopify.com", None);
-        assert_ne!(id, 1);
     }
 
     #[test]

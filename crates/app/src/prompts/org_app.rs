@@ -11,7 +11,9 @@ pub fn select_organization(
     orgs: &[Organization],
 ) -> Result<Organization, AppError> {
     if orgs.is_empty() {
-        return Err(AppError::message("No organizations found for this account."));
+        return Err(AppError::message(
+            "No organizations found for this account.",
+        ));
     }
     if orgs.len() == 1 {
         return Ok(orgs[0].clone());

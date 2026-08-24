@@ -35,7 +35,10 @@ pub fn generate_ui_extension_types(ext: &ExtensionInstance) -> String {
 }
 
 /// Write `shopify.d.ts` next to the extension source when the spec is a UI extension.
-pub fn write_ui_extension_types(ext: &ExtensionInstance, directory: &Path) -> Result<bool, AppError> {
+pub fn write_ui_extension_types(
+    ext: &ExtensionInstance,
+    directory: &Path,
+) -> Result<bool, AppError> {
     if !ext.is_ui_extension() {
         return Ok(false);
     }

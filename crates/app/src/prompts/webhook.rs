@@ -41,10 +41,7 @@ pub fn prompt_delivery_method(prompter: &dyn Prompter) -> Result<String, AppErro
     prompter.select("Delivery method", &items)
 }
 
-pub fn prompt_address(
-    prompter: &dyn Prompter,
-    delivery_method: &str,
-) -> Result<String, AppError> {
+pub fn prompt_address(prompter: &dyn Prompter, delivery_method: &str) -> Result<String, AppError> {
     let addr = prompter.text("Address for delivery", None)?;
     let trimmed = addr.trim();
     if trimmed.is_empty() {

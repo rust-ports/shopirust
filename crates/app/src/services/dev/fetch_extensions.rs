@@ -8,7 +8,9 @@ use serde_json::Value;
 /// Parse `app_extension_registrations` JSON into [`RemoteExtension`] rows.
 pub fn parse_extension_registrations(value: &Value) -> Vec<RemoteExtension> {
     let arrays = [
-        value.get("app").and_then(|a| a.get("extensionRegistrations")),
+        value
+            .get("app")
+            .and_then(|a| a.get("extensionRegistrations")),
         value.get("extensionRegistrations"),
         value.get("dashboardManagedExtensionRegistrations"),
         value

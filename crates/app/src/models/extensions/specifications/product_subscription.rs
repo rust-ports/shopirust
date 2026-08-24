@@ -28,7 +28,10 @@ mod tests {
     fn alias_and_graphql_type() {
         let spec = product_subscription_specification();
         assert_eq!(spec.identifier, "product_subscription");
-        assert_eq!(spec.graph_ql_type.as_deref(), Some("subscription_management"));
+        assert_eq!(
+            spec.graph_ql_type.as_deref(),
+            Some("subscription_management")
+        );
         assert!(spec
             .additional_identifiers
             .iter()

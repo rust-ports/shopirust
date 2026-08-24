@@ -21,7 +21,8 @@ mod tests {
 
     #[test]
     fn prepends_application_url() {
-        let local = json!({ "app_proxy": { "url": "/apps/proxy", "subpath": "apps", "prefix": "a" } });
+        let local =
+            json!({ "app_proxy": { "url": "/apps/proxy", "subpath": "apps", "prefix": "a" } });
         let remote = transform_local(&local, "https://example.com");
         let serialized = remote.to_string();
         assert!(

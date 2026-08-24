@@ -32,9 +32,7 @@ pub fn select_store_prompt(
 }
 
 pub fn reload_store_list_prompt(prompter: &dyn Prompter, org_name: &str) -> Result<bool, AppError> {
-    prompter.confirm(&format!(
-        "Have you created a new store in {org_name}?"
-    ))
+    prompter.confirm(&format!("Have you created a new store in {org_name}?"))
 }
 
 #[cfg(test)]

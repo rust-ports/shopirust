@@ -58,7 +58,11 @@ mod tests {
     fn copies_blocks_and_root_liquid() {
         let dir = tempdir().unwrap();
         std::fs::create_dir_all(dir.path().join("blocks")).unwrap();
-        std::fs::write(dir.path().join("blocks/app.liquid"), "{% comment %}x{% endcomment %}").unwrap();
+        std::fs::write(
+            dir.path().join("blocks/app.liquid"),
+            "{% comment %}x{% endcomment %}",
+        )
+        .unwrap();
         std::fs::write(dir.path().join("settings_data.json"), "{}").unwrap();
         let spec = create_extension_specification("theme").unwrap();
         let ext = ExtensionInstance::new(

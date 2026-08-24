@@ -35,7 +35,10 @@ pub struct MockClient {
 impl MockClient {
     pub fn with_app(app: OrganizationApp) -> Self {
         let org = Organization {
-            id: app.organization_id.clone().unwrap_or_else(|| "org-1".into()),
+            id: app
+                .organization_id
+                .clone()
+                .unwrap_or_else(|| "org-1".into()),
             business_name: "Acme".into(),
             source: OrganizationSource::BusinessPlatform,
         };
@@ -125,14 +128,11 @@ impl DeveloperPlatformClient for MockClient {
         &self,
         org_id: &str,
     ) -> Result<Paginateable<(Organization, Vec<MinimalOrganizationApp>)>, CliApiError> {
-        let org = self
-            .org_from_id(org_id)
-            .await?
-            .unwrap_or(Organization {
-                id: org_id.into(),
-                business_name: "Unknown".into(),
-                source: OrganizationSource::BusinessPlatform,
-            });
+        let org = self.org_from_id(org_id).await?.unwrap_or(Organization {
+            id: org_id.into(),
+            business_name: "Unknown".into(),
+            source: OrganizationSource::BusinessPlatform,
+        });
         Ok(Paginateable {
             data: (org, self.apps.clone()),
             has_more_pages: false,
@@ -152,11 +152,7 @@ impl DeveloperPlatformClient for MockClient {
         &self,
         api_key: &str,
     ) -> Result<Option<OrganizationApp>, CliApiError> {
-        Ok(self
-            .app
-            .as_ref()
-            .filter(|a| a.api_key == api_key)
-            .cloned())
+        Ok(self.app.as_ref().filter(|a| a.api_key == api_key).cloned())
     }
     async fn create_app(
         &self,
@@ -341,12 +337,7 @@ impl DeveloperPlatformClient for MockClient {
             errors: vec![],
         })
     }
-    async fn migrate_app_module(
-        &self,
-        _: &str,
-        _: &str,
-        _: &str,
-    ) -> Result<bool, CliApiError> {
+    async fn migrate_app_module(&self, _: &str, _: &str, _: &str) -> Result<bool, CliApiError> {
         Ok(true)
     }
     async fn migrate_flow_extension(&self, _: &str, _: &str) -> Result<bool, CliApiError> {

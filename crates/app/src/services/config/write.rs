@@ -299,7 +299,9 @@ mod tests {
         );
         assert_eq!(strip_empty_objects(Value::Null), Value::Null);
         assert_eq!(
-            strip_empty_objects(serde_json::json!({"items": [{"val": 1, "empty": {}}, {"val": 2}]})),
+            strip_empty_objects(
+                serde_json::json!({"items": [{"val": 1, "empty": {}}, {"val": 2}]})
+            ),
             serde_json::json!({"items": [{"val": 1}, {"val": 2}]})
         );
     }

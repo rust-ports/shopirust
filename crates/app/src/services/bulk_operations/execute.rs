@@ -52,10 +52,8 @@ pub async fn execute_bulk_operation(
         ));
     }
 
-    let query_text = resolve_graphql_query(
-        options.query.as_deref(),
-        options.query_file.as_deref(),
-    )?;
+    let query_text =
+        resolve_graphql_query(options.query.as_deref(), options.query_file.as_deref())?;
     validate_single_operation(&query_text)?;
     let mutation = is_graphql_mutation(&query_text);
     validate_bulk_operation_variables(mutation, &options)?;
@@ -89,10 +87,7 @@ pub async fn execute_bulk_operation(
         if let Some(timeout) = options.short_poll_timeout {
             opts.timeout = Some(timeout);
         }
-        (
-            watch_bulk_operation(client, &id, opts).await?,
-            false,
-        )
+        (watch_bulk_operation(client, &id, opts).await?, false)
     };
 
     let mut results = None;
@@ -319,7 +314,10 @@ mod tests {
         );
         let calls = mock.run_mutation_calls.lock().unwrap();
         assert_eq!(calls[0].1, "tmp/bulk/1");
-        assert_eq!(result.operation.as_ref().unwrap().id, "gid://shopify/BulkOperation/1");
+        assert_eq!(
+            result.operation.as_ref().unwrap().id,
+            "gid://shopify/BulkOperation/1"
+        );
     }
 
     #[tokio::test]
@@ -327,20 +325,22 @@ mod tests {
         let server = MockServer::start().await;
         Mock::given(method("GET"))
             .and(path("/jsonl"))
-            .respond_with(ResponseTemplate::new(200).set_body_string(
-                r#"{"data":{"productUpdate":{"userErrors":[{"message":"x"}]}}}"#,
-            ))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_string(
+                    r#"{"data":{"productUpdate":{"userErrors":[{"message":"x"}]}}}"#,
+                ),
+            )
             .mount(&server)
             .await;
 
         let mock = MockBulkAdminClient::with_query(created("gid://shopify/BulkOperation/1"));
-        *mock.get_by_id_queue.lock().unwrap() =
-            vec![op_payload("COMPLETED", Some(&format!("{}/jsonl", server.uri())))];
+        *mock.get_by_id_queue.lock().unwrap() = vec![op_payload(
+            "COMPLETED",
+            Some(&format!("{}/jsonl", server.uri())),
+        )];
 
-        let out = std::env::temp_dir().join(format!(
-            "cli_rust_bulk_watch_{}.jsonl",
-            std::process::id()
-        ));
+        let out =
+            std::env::temp_dir().join(format!("cli_rust_bulk_watch_{}.jsonl", std::process::id()));
         let _ = std::fs::remove_file(&out);
         let result = execute_bulk_operation(
             &mock,
@@ -359,7 +359,9 @@ mod tests {
         .await
         .unwrap();
         assert!(result.results_had_user_errors);
-        assert!(std::fs::read_to_string(&out).unwrap().contains("userErrors"));
+        assert!(std::fs::read_to_string(&out)
+            .unwrap()
+            .contains("userErrors"));
         let _ = std::fs::remove_file(&out);
     }
 

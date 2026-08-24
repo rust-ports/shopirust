@@ -44,11 +44,8 @@ mod tests {
     fn multiple_types_prompts() {
         let p = InjectedPrompter::new();
         p.push_select("flow_trigger");
-        let chosen = select_extension_types(
-            &p,
-            &["flow_action".into(), "flow_trigger".into()],
-        )
-        .unwrap();
+        let chosen =
+            select_extension_types(&p, &["flow_action".into(), "flow_trigger".into()]).unwrap();
         assert_eq!(chosen, vec!["flow_trigger"]);
     }
 }

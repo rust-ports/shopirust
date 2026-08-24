@@ -233,10 +233,7 @@ mod tests {
         c.insert("supports_deferred_payments".into(), json!(false));
         c.insert("supports_installments".into(), json!(false));
         c.insert("api_version".into(), json!("2022-07"));
-        c.insert(
-            "targeting".into(),
-            json!([{ "target": OFFSITE_TARGET }]),
-        );
+        c.insert("targeting".into(), json!([{ "target": OFFSITE_TARGET }]));
         c
     }
 
@@ -276,14 +273,8 @@ mod tests {
     #[test]
     fn redeemable_maps_gift_card() {
         let mut cfg = offsite_cfg();
-        cfg.insert(
-            "targeting".into(),
-            json!([{ "target": REDEEMABLE_TARGET }]),
-        );
-        cfg.insert(
-            "supported_payment_methods".into(),
-            json!(["gift-card"]),
-        );
+        cfg.insert("targeting".into(), json!([{ "target": REDEEMABLE_TARGET }]));
+        cfg.insert("supported_payment_methods".into(), json!(["gift-card"]));
         let value = Value::Object(cfg.into_iter().collect());
         let out = deploy_payments(&value).unwrap().unwrap();
         assert_eq!(out["redeemable_type"], "gift_card");
@@ -298,7 +289,9 @@ mod tests {
             json!([{ "target": CREDIT_CARD_TARGET }]),
         );
         let err = validate_configuration(&spec, &cfg, Path::new(".")).unwrap_err();
-        assert!(err.to_string().contains("encryption_certificate_fingerprint"));
+        assert!(err
+            .to_string()
+            .contains("encryption_certificate_fingerprint"));
     }
 
     #[test]
@@ -417,10 +410,7 @@ mod tests {
     fn redeemable_requires_methods() {
         let spec = create_extension_specification("payments_extension").unwrap();
         let mut cfg = offsite_cfg();
-        cfg.insert(
-            "targeting".into(),
-            json!([{ "target": REDEEMABLE_TARGET }]),
-        );
+        cfg.insert("targeting".into(), json!([{ "target": REDEEMABLE_TARGET }]));
         cfg.insert("supported_payment_methods".into(), json!([]));
         let err = validate_configuration(&spec, &cfg, Path::new(".")).unwrap_err();
         assert!(err.to_string().contains("supported_payment_methods"));

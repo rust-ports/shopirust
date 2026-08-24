@@ -26,7 +26,10 @@ pub fn prompt_template(prompter: &dyn Prompter, initial: Option<&str>) -> Result
         .iter()
         .map(|t| PromptItem::new(t.label, t.key))
         .collect();
-    items.push(PromptItem::new("Custom GitHub URL / local path", "__custom__"));
+    items.push(PromptItem::new(
+        "Custom GitHub URL / local path",
+        "__custom__",
+    ));
     let picked = prompter.select("Get started building your app:", &items)?;
     if picked == "__custom__" {
         let custom = prompter.text("Template (GitHub URL or local path)", None)?;
@@ -135,7 +138,9 @@ mod tests {
     fn flavor_from_flag() {
         let p = InjectedPrompter::new();
         assert_eq!(
-            prompt_flavor(&p, "none", Some("javascript")).unwrap().as_deref(),
+            prompt_flavor(&p, "none", Some("javascript"))
+                .unwrap()
+                .as_deref(),
             Some("javascript")
         );
     }

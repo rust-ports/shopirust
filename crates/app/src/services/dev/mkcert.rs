@@ -110,9 +110,7 @@ pub fn resolve_mkcert_path(
             return Some(PathBuf::from(v));
         }
     }
-    let default = app_directory
-        .join(".shopify")
-        .join(platform.binary_name());
+    let default = app_directory.join(".shopify").join(platform.binary_name());
     if default.is_file() {
         return Some(default);
     }
@@ -174,9 +172,7 @@ pub async fn generate_certificate(
     let binary = if let Some(path) = resolve_mkcert_path(app_directory, env, platform) {
         path
     } else {
-        let dest = app_directory
-            .join(".shopify")
-            .join(platform.binary_name());
+        let dest = app_directory.join(".shopify").join(platform.binary_name());
         download_mkcert_binary(&dest, platform).await?;
         dest
     };

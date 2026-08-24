@@ -14,9 +14,7 @@ use crate::services::config::select_app::{
 };
 use crate::services::config::use_config::set_current_config_preference;
 use crate::services::config::write_app_configuration_file;
-use cli_api::{
-    CreateAppOptions, DeveloperPlatformClient, MinimalAppIdentifiers, OrganizationApp,
-};
+use cli_api::{CreateAppOptions, DeveloperPlatformClient, MinimalAppIdentifiers, OrganizationApp};
 use serde_json::{Map, Value};
 use std::path::PathBuf;
 
@@ -89,7 +87,11 @@ pub async fn link_config(
         .unwrap_or_else(|_| configuration_from_value(&merged, &remote_app));
 
     write_app_configuration_file(&config_path, &configuration)?;
-    set_current_config_preference(&options.directory, &config_file, configuration.client_id.clone())?;
+    set_current_config_preference(
+        &options.directory,
+        &config_file,
+        configuration.client_id.clone(),
+    )?;
 
     set_cached_app_info(&CachedAppInfo {
         directory: options.directory.display().to_string(),
@@ -126,8 +128,8 @@ fn load_local_options(options: &LinkConfigOptions, remote_api_key: &str) -> Loca
         Ok(app) => {
             let matched = app.configuration.client_id.as_deref() == Some(remote_api_key)
                 || options.is_new_app;
-            let existing = serde_json::to_value(&app.configuration)
-                .unwrap_or(Value::Object(Map::new()));
+            let existing =
+                serde_json::to_value(&app.configuration).unwrap_or(Value::Object(Map::new()));
             LocalLinkOptions {
                 scopes: app.configuration.scopes().join(","),
                 local_app_id_matched_remote: matched,
@@ -536,10 +538,6 @@ mod tests {
             result.configuration.application_url.as_deref(),
             Some("https://fallback.example")
         );
-        assert!(result
-            .configuration
-            .extra
-            .get("auth")
-            .is_some());
+        assert!(result.configuration.extra.contains_key("auth"));
     }
 }

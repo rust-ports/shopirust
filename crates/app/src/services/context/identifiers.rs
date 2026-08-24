@@ -88,7 +88,9 @@ pub async fn ensure_deployment_ids_presence(
             // App Management assigns UUIDs on deploy; do not invent pending: handles.
             if let Some(ext) = ctx.app.extensions.iter().find(|e| &e.handle == handle) {
                 if let Some(ref uid) = ext.uid {
-                    extensions.entry(handle.clone()).or_insert_with(|| uid.clone());
+                    extensions
+                        .entry(handle.clone())
+                        .or_insert_with(|| uid.clone());
                 }
             }
         } else if let Some(ext) = ctx.app.extensions.iter().find(|e| &e.handle == handle) {
@@ -103,9 +105,7 @@ pub async fn ensure_deployment_ids_presence(
                 })
                 .await
                 .map_err(|e| AppError::message(e.to_string()))?;
-            extensions
-                .entry(handle.clone())
-                .or_insert(created.uuid);
+            extensions.entry(handle.clone()).or_insert(created.uuid);
         }
     }
     for ext in &ctx.app.extensions {
@@ -205,9 +205,8 @@ mod tests {
         )
         .unwrap();
         write_theme_ext(dir.path(), "brand-new");
-        let client = crate::test_support::MockClient::with_app(
-            crate::test_support::sample_org_app("key-1"),
-        );
+        let client =
+            crate::test_support::MockClient::with_app(crate::test_support::sample_org_app("key-1"));
         let ctx = crate::services::context::linked_app_context(
             crate::services::context::LinkedAppContextOptions {
                 directory: dir.path().to_path_buf(),
@@ -223,15 +222,15 @@ mod tests {
         let ids = ensure_deployment_ids_presence(
             &ctx,
             &client,
-            EnsureIdsOptions { allow_updates: true },
+            EnsureIdsOptions {
+                allow_updates: true,
+            },
             None,
         )
         .await
         .unwrap();
         assert!(
-            !ids.extensions
-                .values()
-                .any(|v| v.starts_with("pending:")),
+            !ids.extensions.values().any(|v| v.starts_with("pending:")),
             "AM atomic deploy must not invent pending: UUIDs, got {:?}",
             ids.extensions
         );
@@ -247,9 +246,8 @@ mod tests {
         )
         .unwrap();
         write_theme_ext(dir.path(), "brand-new");
-        let mut client = crate::test_support::MockClient::with_app(
-            crate::test_support::sample_org_app("key-1"),
-        );
+        let mut client =
+            crate::test_support::MockClient::with_app(crate::test_support::sample_org_app("key-1"));
         client.atomic = false;
         let ctx = crate::services::context::linked_app_context(
             crate::services::context::LinkedAppContextOptions {
@@ -266,7 +264,9 @@ mod tests {
         let ids = ensure_deployment_ids_presence(
             &ctx,
             &client,
-            EnsureIdsOptions { allow_updates: true },
+            EnsureIdsOptions {
+                allow_updates: true,
+            },
             None,
         )
         .await
@@ -280,7 +280,9 @@ mod tests {
 
     #[test]
     fn match_by_handle_and_uuid() {
-        use crate::services::context::id_matching::{automatic_matchmaking, LocalSource, RemoteSource};
+        use crate::services::context::id_matching::{
+            automatic_matchmaking, LocalSource, RemoteSource,
+        };
         let local = vec![LocalSource {
             local_identifier: "offsite".into(),
             handle: "offsite".into(),
@@ -296,7 +298,10 @@ mod tests {
             type_name: "payments_extension".into(),
         }];
         let matched = automatic_matchmaking(&local, &remote, &HashMap::new(), true);
-        assert_eq!(matched.identifiers.get("offsite").map(String::as_str), Some("uid-1"));
+        assert_eq!(
+            matched.identifiers.get("offsite").map(String::as_str),
+            Some("uid-1")
+        );
         assert!(matched.to_create.is_empty());
     }
 }

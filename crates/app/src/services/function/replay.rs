@@ -78,10 +78,7 @@ pub async fn replay(ext: &ExtensionInstance, options: ReplayOptions) -> Result<(
 
     let wasm = ext.function_output_path();
     let mut last_mtime = wasm_mtime(&wasm);
-    eprintln!(
-        "Watching {} for changes (Ctrl+C to stop).",
-        wasm.display()
-    );
+    eprintln!("Watching {} for changes (Ctrl+C to stop).", wasm.display());
     loop {
         tokio::select! {
             _ = tokio::signal::ctrl_c() => break,

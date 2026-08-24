@@ -2,9 +2,7 @@
 //!
 //! Implemented here rather than importing cli-kit widgets — `cli-kit` already depends on `app`.
 
-use crate::services::dev::processes::dev_session::{
-    DevSessionStatus, DevSessionStatusManager,
-};
+use crate::services::dev::processes::dev_session::{DevSessionStatus, DevSessionStatusManager};
 use std::io::{stdout, Write};
 use std::sync::Arc;
 use std::time::Duration;
@@ -211,12 +209,27 @@ mod tests {
 
     #[test]
     fn shortcut_dispatch_includes_dev_console() {
-        assert_eq!(dispatch_shortcut(KeyCode::Char('p'), false), TuiAction::OpenPreview);
-        assert_eq!(dispatch_shortcut(KeyCode::Char('g'), false), TuiAction::OpenGraphiql);
-        assert_eq!(dispatch_shortcut(KeyCode::Char('c'), false), TuiAction::OpenDevConsole);
-        assert_eq!(dispatch_shortcut(KeyCode::Char('q'), false), TuiAction::Quit);
+        assert_eq!(
+            dispatch_shortcut(KeyCode::Char('p'), false),
+            TuiAction::OpenPreview
+        );
+        assert_eq!(
+            dispatch_shortcut(KeyCode::Char('g'), false),
+            TuiAction::OpenGraphiql
+        );
+        assert_eq!(
+            dispatch_shortcut(KeyCode::Char('c'), false),
+            TuiAction::OpenDevConsole
+        );
+        assert_eq!(
+            dispatch_shortcut(KeyCode::Char('q'), false),
+            TuiAction::Quit
+        );
         assert_eq!(dispatch_shortcut(KeyCode::Char('c'), true), TuiAction::Quit);
-        assert_eq!(dispatch_shortcut(KeyCode::Char('x'), false), TuiAction::None);
+        assert_eq!(
+            dispatch_shortcut(KeyCode::Char('x'), false),
+            TuiAction::None
+        );
     }
 
     #[test]

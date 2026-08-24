@@ -118,7 +118,9 @@ pub fn execute_include_assets(
     legacy_assets_array(ext, output_dir, app_directory)
 }
 
-fn parse_step_config(configuration: &std::collections::HashMap<String, Value>) -> Option<IncludeAssetsConfig> {
+fn parse_step_config(
+    configuration: &std::collections::HashMap<String, Value>,
+) -> Option<IncludeAssetsConfig> {
     if let Some(inclusions) = configuration.get("inclusions") {
         return serde_json::from_value(serde_json::json!({
             "inclusions": inclusions,
@@ -187,7 +189,10 @@ fn run_inclusions(
             } => {
                 let _ = preserve_file_paths;
                 let paths = lookup_flattened_paths(&ext.configuration, key);
-                if paths.is_empty() && lookup_config_key(&ext.configuration, key).is_none() && !key.contains("[]") {
+                if paths.is_empty()
+                    && lookup_config_key(&ext.configuration, key).is_none()
+                    && !key.contains("[]")
+                {
                     continue;
                 }
                 for rel in paths {
@@ -338,10 +343,7 @@ fn lookup_flattened_paths(
 fn json_paths(value: &Value) -> Vec<String> {
     match value {
         Value::String(s) => vec![s.clone()],
-        Value::Array(arr) => arr
-            .iter()
-            .flat_map(json_paths)
-            .collect(),
+        Value::Array(arr) => arr.iter().flat_map(json_paths).collect(),
         Value::Object(map) => map.values().flat_map(json_paths).collect(),
         _ => vec![],
     }
@@ -399,13 +401,7 @@ fn glob_files(source_dir: &Path, include: &[String], ignore: &[String]) -> Vec<P
     files
 }
 
-fn walk(
-    root: &Path,
-    dir: &Path,
-    include: &[String],
-    ignore: &[String],
-    out: &mut Vec<PathBuf>,
-) {
+fn walk(root: &Path, dir: &Path, include: &[String], ignore: &[String], out: &mut Vec<PathBuf>) {
     let Ok(entries) = fs::read_dir(dir) else {
         return;
     };

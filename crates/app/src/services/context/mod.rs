@@ -1,6 +1,6 @@
 pub mod breakdown_extensions;
-pub mod id_matching;
 pub mod id_manual_matching;
+pub mod id_matching;
 pub mod identifiers;
 
 pub use id_matching::{

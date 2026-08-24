@@ -4,9 +4,7 @@ use crate::error::AppError;
 use crate::local_storage::{get_cached_app_info, set_cached_app_info, CachedAppInfo};
 use crate::prompts::Prompter;
 use crate::services::context::LinkedAppContext;
-use crate::services::webhook::WebhookSampleClient;
-use std::sync::Arc;
-use crate::services::dependencies::install_app_dependencies;
+use crate::services::dependencies::{install_app_dependencies, InstallRunner};
 use crate::services::dev::mkcert::{generate_certificate, MkcertPlatform};
 use crate::services::dev::notify::DevNotifier;
 use crate::services::dev::port_warnings::{render_port_warnings, PortDetail, PortKind};
@@ -22,9 +20,12 @@ use crate::services::dev::urls::{
     proxy_url_from_frontend, should_or_prompt_update_urls, update_urls, FrontendUrlOptions,
     ShouldUpdateUrlsOptions,
 };
+use crate::services::webhook::WebhookSampleClient;
 use cli_api::{DeveloperPlatformClient, OrganizationStore};
 use serde_json::json;
 use std::path::PathBuf;
+use std::sync::Arc;
+use tokio::task::{JoinError, JoinSet};
 use tokio_util::sync::CancellationToken;
 
 #[derive(Clone)]
@@ -68,9 +69,11 @@ pub async fn dev_with_prompter(
     options: DevOptions,
     prompter: Option<&dyn Prompter>,
 ) -> Result<(), AppError> {
-    if !options.skip_dependencies_installation {
-        let _ = install_app_dependencies(&options.directory, false, None);
-    }
+    prepare_dev_dependencies(
+        &options.directory,
+        options.skip_dependencies_installation,
+        None,
+    )?;
 
     let graphiql_requested = options.graphiql_port.unwrap_or(DEFAULT_GRAPHIQL_PORT);
     let graphiql_port = get_available_tcp_port(Some(graphiql_requested)).await?;
@@ -134,18 +137,18 @@ pub async fn dev_with_prompter(
 
     let mut local_app = ctx.app.clone();
     let auth_paths = auth_callback_paths_from_webs(&local_app.webs);
-    let proxy_fields = local_app.configuration.extra.get("app_proxy").and_then(|p| {
-        Some((
-            p.get("url")?.as_str()?.to_string(),
-            p.get("subpath")?.as_str()?.to_string(),
-            p.get("prefix")?.as_str()?.to_string(),
-        ))
-    });
-    let new_urls = generate_application_urls(
-        &proxy_url,
-        auth_paths.as_deref(),
-        proxy_fields,
-    );
+    let proxy_fields = local_app
+        .configuration
+        .extra
+        .get("app_proxy")
+        .and_then(|p| {
+            Some((
+                p.get("url")?.as_str()?.to_string(),
+                p.get("subpath")?.as_str()?.to_string(),
+                p.get("prefix")?.as_str()?.to_string(),
+            ))
+        });
+    let new_urls = generate_application_urls(&proxy_url, auth_paths.as_deref(), proxy_fields);
 
     let remote_config = json!({
         "application_url": ctx.remote_app.application_url,
@@ -182,13 +185,7 @@ pub async fn dev_with_prompter(
             if client.supports_dev_sessions() {
                 local_app.set_dev_application_urls(new_urls.clone());
             } else {
-                update_urls(
-                    &new_urls,
-                    &ctx.remote_app.api_key,
-                    client,
-                    Some(&local_app),
-                )
-                .await?;
+                update_urls(&new_urls, &ctx.remote_app.api_key, client, Some(&local_app)).await?;
             }
         }
         should
@@ -245,8 +242,8 @@ pub async fn dev_with_prompter(
     )
     .await;
 
-    let tty = is_terminal::is_terminal(std::io::stdin())
-        && is_terminal::is_terminal(std::io::stdout());
+    let tty =
+        is_terminal::is_terminal(std::io::stdin()) && is_terminal::is_terminal(std::io::stdout());
     let prefixes: Vec<String> = setup.processes.iter().map(|p| p.prefix.clone()).collect();
 
     if !tty {
@@ -269,7 +266,7 @@ pub async fn dev_with_prompter(
     let logs_fut = async {
         if process_polls_logs {
             cancel.cancelled().await;
-            return;
+            return Ok(());
         }
         if let Some(shop_id) = shop_id_parsed {
             let opts = AppLogsPollingOptions {
@@ -280,15 +277,16 @@ pub async fn dev_with_prompter(
                 logs_dir: Some(ctx.app.directory.join(".shopify").join("logs")),
                 client: None,
             };
-            let _ = run_app_logs_polling(cancel.clone(), client, opts).await;
+            run_app_logs_polling(cancel.clone(), client, opts).await
         } else {
             cancel.cancelled().await;
+            Ok(())
         }
     };
 
     let col = crate::services::dev::tui::prefix_column_size(&prefixes);
     let (log_tx, log_rx) = tokio::sync::mpsc::unbounded_channel();
-    let mut handles = Vec::new();
+    let mut processes = JoinSet::new();
     for proc in setup.processes {
         if proc.kind == crate::services::dev::processes::DevProcessKind::AppLogsPolling
             && !process_polls_logs
@@ -296,19 +294,16 @@ pub async fn dev_with_prompter(
             continue;
         }
         let prefix = proc.prefix.clone();
-        let log_err = log_tx.clone();
         let ctx_proc = DevProcessContext {
             abort: cancel.clone(),
             prefix: prefix.clone(),
             log: log_tx.clone(),
         };
         let run = proc.run;
-        handles.push(tokio::spawn(async move {
-            if let Err(e) = run(ctx_proc).await {
-                let _ = log_err.send((prefix.clone(), format!("error: {e}")));
-                eprintln!("[{prefix}] error: {e}");
-            }
-        }));
+        processes.spawn(async move {
+            let result = run(ctx_proc).await;
+            ProcessExit { prefix, result }
+        });
     }
     drop(log_tx);
 
@@ -320,27 +315,33 @@ pub async fn dev_with_prompter(
         )
     };
 
-    if tty {
-        let tui = crate::services::dev::tui::run_dev_tui(
+    let mut process_failure = Box::pin(wait_for_process_failure(&mut processes, cancel.clone()));
+    let mut logs_fut = Box::pin(logs_fut);
+    let fatal_error = if tty {
+        let mut tui = tokio::spawn(crate::services::dev::tui::run_dev_tui(
             crate::services::dev::tui::DevTuiOptions {
                 preview_url: setup.preview_url.clone(),
                 graphiql_url: setup.graphiql_url.clone(),
-                dev_console_url: Some(crate::services::dev::tui::build_dev_console_url(
-                    &shop_fqdn,
-                )),
+                dev_console_url: Some(crate::services::dev::tui::build_dev_console_url(&shop_fqdn)),
                 prefixes,
                 status: setup.status.clone(),
                 log_rx,
             },
             cancel.clone(),
-        );
-        tokio::select! {
-            _ = cancel.cancelled() => {}
-            _ = logs_fut => {}
-            _ = tui => {}
+        ));
+        let (error, tui_completed) = tokio::select! {
+            _ = cancel.cancelled() => (None, false),
+            result = &mut logs_fut => (result.err().map(|error| prefixed_error("app-logs", error)), false),
+            result = &mut process_failure => (result, false),
+            _ = &mut tui => (None, true),
+        };
+        cancel.cancel();
+        if !tui_completed {
+            let _ = tui.await;
         }
+        error
     } else {
-        tokio::spawn(async move {
+        let render_logs = async move {
             let mut log_rx = log_rx;
             while let Some((prefix, text)) = log_rx.recv().await {
                 for chunk in text.split('\n') {
@@ -350,27 +351,83 @@ pub async fn dev_with_prompter(
                     );
                 }
             }
-        });
+        };
+        tokio::pin!(render_logs);
         tokio::select! {
-            _ = cancel.cancelled() => {}
-            _ = logs_fut => {}
+            _ = cancel.cancelled() => None,
+            result = &mut logs_fut => result.err().map(|error| prefixed_error("app-logs", error)),
+            result = &mut process_failure => result,
+            _ = &mut render_logs => None,
         }
-    }
+    };
+
+    cancel.cancel();
+    drop(process_failure);
 
     if let Some(ref target) = options.notify {
         let _ = DevNotifier::new(target.clone()).notify("idle").await;
     }
 
-    for h in handles {
-        let _ = h.await;
+    while processes.join_next().await.is_some() {}
+
+    if let Some(error) = fatal_error {
+        return Err(error);
     }
 
     if preview_ready() {
-        println!("\n{}", crate::services::dev::tui::persist_preview_message(&shop_fqdn));
+        println!(
+            "\n{}",
+            crate::services::dev::tui::persist_preview_message(&shop_fqdn)
+        );
     } else {
         println!("\nStopped app dev.");
     }
     Ok(())
+}
+
+struct ProcessExit {
+    prefix: String,
+    result: Result<(), AppError>,
+}
+
+async fn wait_for_process_failure(
+    processes: &mut JoinSet<ProcessExit>,
+    cancel: CancellationToken,
+) -> Option<AppError> {
+    loop {
+        tokio::select! {
+            _ = cancel.cancelled() => return None,
+            joined = processes.join_next() => {
+                match joined {
+                    Some(Ok(ProcessExit { prefix, result: Err(error) })) => {
+                        return Some(prefixed_error(&prefix, error));
+                    }
+                    Some(Err(error)) => return Some(join_error(error)),
+                    Some(Ok(ProcessExit { result: Ok(()), .. })) => {}
+                    None => {
+                        cancel.cancelled().await;
+                        return None;
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn prefixed_error(prefix: &str, error: AppError) -> AppError {
+    AppError::message(format!("[{prefix}] {error}"))
+}
+
+fn join_error(error: JoinError) -> AppError {
+    AppError::message(format!("app dev process task failed: {error}"))
+}
+
+fn prepare_dev_dependencies(
+    directory: &std::path::Path,
+    skip: bool,
+    runner: Option<InstallRunner>,
+) -> Result<(), AppError> {
+    install_app_dependencies(directory, skip, runner).map(|_| ())
 }
 
 async fn resolve_network(options: &DevOptions) -> Result<(String, u16, bool), AppError> {
@@ -427,7 +484,10 @@ fn parse_port_from_url(url: &str) -> Option<u16> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::services::dependencies::PackageManager;
     use crate::services::dev::mkcert::LocalhostCert;
+    use std::path::Path;
+    use tempfile::tempdir;
 
     #[test]
     fn strip_and_parse_port() {
@@ -448,5 +508,78 @@ mod tests {
             cert: "c".into(),
             cert_path: ".shopify/localhost.pem".into(),
         };
+    }
+
+    #[tokio::test]
+    async fn process_failure_keeps_prefix() {
+        let cancel = CancellationToken::new();
+        let mut processes = JoinSet::new();
+        processes.spawn(async {
+            ProcessExit {
+                prefix: "proxy".into(),
+                result: Err(AppError::message("bind failed")),
+            }
+        });
+
+        let error = wait_for_process_failure(&mut processes, cancel)
+            .await
+            .unwrap();
+        assert_eq!(error.to_string(), "[proxy] bind failed");
+    }
+
+    #[tokio::test]
+    async fn process_panic_is_reported() {
+        let cancel = CancellationToken::new();
+        let mut processes = JoinSet::new();
+        processes.spawn(async move { panic!("process panic") });
+
+        let error = wait_for_process_failure(&mut processes, cancel)
+            .await
+            .unwrap();
+        assert!(error.to_string().contains("process task failed"));
+    }
+
+    #[tokio::test]
+    async fn successful_one_shot_does_not_stop_supervisor() {
+        let cancel = CancellationToken::new();
+        let mut processes = JoinSet::new();
+        processes.spawn(async {
+            ProcessExit {
+                prefix: "webhooks".into(),
+                result: Ok(()),
+            }
+        });
+        let cancel_task = cancel.clone();
+        tokio::spawn(async move {
+            tokio::task::yield_now().await;
+            cancel_task.cancel();
+        });
+
+        assert!(wait_for_process_failure(&mut processes, cancel)
+            .await
+            .is_none());
+    }
+
+    #[test]
+    fn dependency_install_failure_is_propagated() {
+        fn fail(_: &Path, _: PackageManager) -> Result<(), AppError> {
+            Err(AppError::message("install failed"))
+        }
+        let directory = tempdir().unwrap();
+        std::fs::write(directory.path().join("package.json"), "{}").unwrap();
+
+        let error = prepare_dev_dependencies(directory.path(), false, Some(fail)).unwrap_err();
+        assert_eq!(error.to_string(), "install failed");
+    }
+
+    #[test]
+    fn skipped_dependency_install_does_not_call_runner() {
+        fn panic_if_called(_: &Path, _: PackageManager) -> Result<(), AppError> {
+            panic!("installer should not run")
+        }
+        let directory = tempdir().unwrap();
+        std::fs::write(directory.path().join("package.json"), "{}").unwrap();
+
+        prepare_dev_dependencies(directory.path(), true, Some(panic_if_called)).unwrap();
     }
 }

@@ -2,8 +2,8 @@ pub mod version_diff;
 
 use crate::error::AppError;
 use crate::services::context::LinkedAppContext;
-use crate::validations::validate_version;
 use crate::services::release::version_diff::version_diff_by_version;
+use crate::validations::validate_version;
 use cli_api::{
     AppVersionIdentifiers, DeveloperPlatformClient, MinimalAppIdentifiers, MinimalOrganizationApp,
 };

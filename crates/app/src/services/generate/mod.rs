@@ -368,23 +368,25 @@ mod tests {
     async fn fetch_templates_filters_by_available_specs() {
         use crate::test_support::MockClient;
         use cli_api::ExtensionTemplate;
-        let mut client = MockClient::default();
-        client.templates = vec![
-            ExtensionTemplate {
-                identifier: "theme".into(),
-                name: "Theme app extension".into(),
-                group: Some("Online store".into()),
-                url: Some("https://github.com/Shopify/theme-ext".into()),
-                types: vec![],
-            },
-            ExtensionTemplate {
-                identifier: "unknown_remote".into(),
-                name: "Nope".into(),
-                group: None,
-                url: None,
-                types: vec![],
-            },
-        ];
+        let client = MockClient {
+            templates: vec![
+                ExtensionTemplate {
+                    identifier: "theme".into(),
+                    name: "Theme app extension".into(),
+                    group: Some("Online store".into()),
+                    url: Some("https://github.com/Shopify/theme-ext".into()),
+                    types: vec![],
+                },
+                ExtensionTemplate {
+                    identifier: "unknown_remote".into(),
+                    name: "Nope".into(),
+                    group: None,
+                    url: None,
+                    types: vec![],
+                },
+            ],
+            ..Default::default()
+        };
         let app = cli_api::MinimalAppIdentifiers {
             id: "1".into(),
             api_key: "k".into(),

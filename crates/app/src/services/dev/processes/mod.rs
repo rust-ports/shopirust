@@ -24,12 +24,10 @@ pub use dev_session::{
 };
 pub use draftable_extension::{setup_draftable_extensions_process, DraftableExtensionOptions};
 pub use graphiql::{setup_graphiql_server_process, GraphiqlOptions};
-pub use proxy::{
-    match_proxy_target, setup_proxy_server_process, ProxyServerOptions,
-};
 pub use previewable_extension::{
     setup_previewable_extensions_process, PreviewableExtensionOptions,
 };
+pub use proxy::{match_proxy_target, setup_proxy_server_process, ProxyServerOptions};
 pub use setup::{
     selected_process_kinds, setup_dev_processes, SetupDevProcessFlags, SetupDevProcessesResult,
 };

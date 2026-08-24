@@ -78,7 +78,10 @@ pub fn get_modules_to_migrate(
     types_map: &[(&str, &[&str])],
 ) -> Vec<MigrationPair> {
     let new_types: Vec<&str> = types_map.iter().map(|(k, _)| *k).collect();
-    let old_types: Vec<&str> = types_map.iter().flat_map(|(_, v)| v.iter().copied()).collect();
+    let old_types: Vec<&str> = types_map
+        .iter()
+        .flat_map(|(_, v)| v.iter().copied())
+        .collect();
     let locals: Vec<_> = local
         .iter()
         .filter(|e| new_types.iter().any(|t| *t == e.type_name()))
@@ -212,9 +215,8 @@ mod tests {
     use std::path::PathBuf;
 
     fn local(ty: &str, handle: &str) -> ExtensionInstance {
-        let spec = create_extension_specification(ty).unwrap_or_else(|| {
-            create_extension_specification("ui_extension").unwrap()
-        });
+        let spec = create_extension_specification(ty)
+            .unwrap_or_else(|| create_extension_specification("ui_extension").unwrap());
         let mut ext = ExtensionInstance::new(
             handle,
             PathBuf::from(format!("/e/{handle}")),

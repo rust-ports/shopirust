@@ -398,10 +398,7 @@ mod tests {
 
     #[test]
     fn duplicate_types_go_to_manual_match() {
-        let locals = vec![
-            local("apple", "theme"),
-            local("orange", "theme"),
-        ];
+        let locals = vec![local("apple", "theme"), local("orange", "theme")];
         let remotes = vec![
             remote("u1", "pear", "theme"),
             remote("u2", "banana", "theme"),

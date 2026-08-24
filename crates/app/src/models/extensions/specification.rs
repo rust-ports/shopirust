@@ -124,7 +124,10 @@ pub fn apply_remote_json_schemas(
     for spec in specs {
         if let Some(remote) = remote.iter().find(|r| {
             r.identifier == spec.identifier
-                || spec.additional_identifiers.iter().any(|a| a == &r.identifier)
+                || spec
+                    .additional_identifiers
+                    .iter()
+                    .any(|a| a == &r.identifier)
         }) {
             if let Some(schema) = &remote.validation_schema {
                 spec.json_schema = Some(schema.clone());

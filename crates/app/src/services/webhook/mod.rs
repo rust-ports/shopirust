@@ -19,10 +19,11 @@ pub use send_uninstalled::{
 };
 pub use trigger::{webhook_trigger, WebhookTriggerOptions, WebhookTriggerResult};
 pub use trigger_flags::{
-    delivery_method_for_address, delivery_method_instructions, delivery_method_instructions_as_string,
-    is_address_allowed_for_delivery_method, parse_api_version_flag, parse_topic_flag,
-    validate_address_method, DeliveryMethod, DELIVERY_METHOD_EVENTBRIDGE, DELIVERY_METHOD_HTTP,
-    DELIVERY_METHOD_LOCALHOST, DELIVERY_METHOD_PUBSUB,
+    delivery_method_for_address, delivery_method_instructions,
+    delivery_method_instructions_as_string, is_address_allowed_for_delivery_method,
+    parse_api_version_flag, parse_topic_flag, validate_address_method, DeliveryMethod,
+    DELIVERY_METHOD_EVENTBRIDGE, DELIVERY_METHOD_HTTP, DELIVERY_METHOD_LOCALHOST,
+    DELIVERY_METHOD_PUBSUB,
 };
 pub use trigger_options::{
     collect_address_and_method, collect_api_version, collect_credentials, collect_topic,

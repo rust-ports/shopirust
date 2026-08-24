@@ -26,7 +26,10 @@ mod tests {
     fn local_to_remote_maps_handle() {
         let local = json!({ "name": "My App", "handle": "my-app" });
         let remote = transform_local(&local);
-        assert_eq!(remote.get("app_handle").and_then(|v| v.as_str()), Some("my-app"));
+        assert_eq!(
+            remote.get("app_handle").and_then(|v| v.as_str()),
+            Some("my-app")
+        );
     }
 
     #[test]

@@ -5,15 +5,15 @@ pub mod extension;
 pub mod fetch_extensions;
 pub mod format_config_info;
 pub mod migrate;
-pub mod select_store;
-pub mod update_extension;
 pub mod mkcert;
 pub mod notify;
 pub mod port_warnings;
 pub mod processes;
 pub mod run;
+pub mod select_store;
 pub mod tui;
 pub mod tunnel_mode;
+pub mod update_extension;
 pub mod urls;
 
 pub use app_events::{
@@ -24,13 +24,13 @@ pub use extension::{
     build_cart_url_if_needed, dev_ui_extensions, get_extension_point_target_surface,
     get_websocket_url, ExtensionDevOptions, ExtensionsPayloadStore,
 };
+pub use mkcert::{generate_certificate, LocalhostCert};
+pub use notify::DevNotifier;
 pub use port_warnings::{render_port_warnings, PortDetail, PortKind};
 pub use processes::{
     selected_process_kinds, setup_dev_processes, DevNetworkOptions, DevProcess, DevProcessKind,
     DevSessionClient, SetupDevProcessFlags, SetupDevProcessesResult,
 };
-pub use mkcert::{generate_certificate, LocalhostCert};
-pub use notify::DevNotifier;
 pub use run::{dev, dev_with_prompter, DevOptions};
 pub use tunnel_mode::{
     get_available_tcp_port, get_tunnel_mode, TunnelMode, TunnelModeFlags, DEFAULT_GRAPHIQL_PORT,

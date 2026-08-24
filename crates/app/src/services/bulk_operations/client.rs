@@ -377,14 +377,18 @@ mod tests {
         assert!(!is_graphql_mutation("query { shop { name } }"));
         assert!(!is_graphql_mutation("{ shop { name } }"));
         assert!(is_graphql_mutation("# comment\nmutation Run { x }"));
-        assert!(!is_graphql_mutation("# mutation\nquery Shop { shop { name } }"));
+        assert!(!is_graphql_mutation(
+            "# mutation\nquery Shop { shop { name } }"
+        ));
     }
 
     #[test]
     fn extracts_bulk_operation_pointer() {
         let v = serde_json::json!({ "bulkOperation": { "id": "gid://x" } });
         assert_eq!(
-            extract_operation_node(&v).and_then(|n| n.get("id")).and_then(|i| i.as_str()),
+            extract_operation_node(&v)
+                .and_then(|n| n.get("id"))
+                .and_then(|i| i.as_str()),
             Some("gid://x")
         );
         let legacy = serde_json::json!({ "data": { "node": { "id": "n" } } });

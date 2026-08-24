@@ -7,15 +7,10 @@ pub async fn download_bulk_operation_results(url: &str) -> Result<String, AppErr
     download_with_client(&reqwest::Client::new(), url).await
 }
 
-pub async fn download_with_client(
-    client: &reqwest::Client,
-    url: &str,
-) -> Result<String, AppError> {
-    let resp = client
-        .get(url)
-        .send()
-        .await
-        .map_err(|e| AppError::message(format!("Failed to download bulk operation results: {e}")))?;
+pub async fn download_with_client(client: &reqwest::Client, url: &str) -> Result<String, AppError> {
+    let resp = client.get(url).send().await.map_err(|e| {
+        AppError::message(format!("Failed to download bulk operation results: {e}"))
+    })?;
     if !resp.status().is_success() {
         let status = resp.status();
         let body = resp.text().await.unwrap_or_default();

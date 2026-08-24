@@ -164,10 +164,7 @@ mod tests {
         let client = MockClient {
             app: Some(sample_org_app("key-1")),
             active_version: Some(AppVersion {
-                app_module_versions: vec![module(
-                    "function",
-                    serde_json::json!({"title": "fn"}),
-                )],
+                app_module_versions: vec![module("function", serde_json::json!({"title": "fn"}))],
             }),
             ..Default::default()
         };
@@ -247,7 +244,9 @@ mod tests {
         );
         assert_eq!(local.get("embedded").and_then(|v| v.as_bool()), Some(true));
         assert_eq!(
-            local.pointer("/webhooks/api_version").and_then(|v| v.as_str()),
+            local
+                .pointer("/webhooks/api_version")
+                .and_then(|v| v.as_str()),
             Some("2024-01")
         );
         assert!(
@@ -260,8 +259,7 @@ mod tests {
             .or_else(|| local.get("scopes"))
             .and_then(|v| v.as_str());
         assert!(
-            scopes == Some("read_products")
-                || local.to_string().contains("read_products"),
+            scopes == Some("read_products") || local.to_string().contains("read_products"),
             "expected scopes in pipeline output: {local}"
         );
     }

@@ -67,11 +67,7 @@ async fn run_proxy(abort: CancellationToken, opts: ProxyServerOptions) -> Result
     );
 
     let rules = Arc::new(opts.rules);
-    let tls = opts
-        .localhost_cert
-        .as_ref()
-        .map(tls_acceptor)
-        .transpose()?;
+    let tls = opts.localhost_cert.as_ref().map(tls_acceptor).transpose()?;
 
     loop {
         tokio::select! {
@@ -173,7 +169,9 @@ async fn handle(
             );
             Ok(Response::builder()
                 .status(StatusCode::BAD_GATEWAY)
-                .body(Full::new(Bytes::from(format!("Unreachable target {target}"))))
+                .body(Full::new(Bytes::from(format!(
+                    "Unreachable target {target}"
+                ))))
                 .unwrap())
         }
     }
@@ -280,7 +278,10 @@ async fn proxy_websocket(
         return Ok(bad_gateway("failed to connect websocket target"));
     };
 
-    let mut head = format!("{} {path} HTTP/1.1\r\nHost: {host_header}\r\n", req.method());
+    let mut head = format!(
+        "{} {path} HTTP/1.1\r\nHost: {host_header}\r\n",
+        req.method()
+    );
     for (name, value) in req.headers() {
         if name == hyper::header::HOST {
             continue;
@@ -410,13 +411,9 @@ mod tests {
     use std::net::SocketAddr;
 
     async fn spawn_echo(body: &'static str) -> u16 {
-        let app = Router::new().route(
-            "/*rest",
-            get(move || async move { body }),
-        ).route(
-            "/",
-            get(move || async move { body }),
-        );
+        let app = Router::new()
+            .route("/*rest", get(move || async move { body }))
+            .route("/", get(move || async move { body }));
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = listener.local_addr().unwrap().port();
         tokio::spawn(async move {

@@ -86,9 +86,10 @@ async fn run_graphiql(abort: CancellationToken, opts: GraphiqlOptions) -> Result
             opts.store_fqdn
         )
     });
-    let token_url = opts.token_url.clone().unwrap_or_else(|| {
-        format!("https://{}/admin/oauth/access_token", opts.store_fqdn)
-    });
+    let token_url = opts
+        .token_url
+        .clone()
+        .unwrap_or_else(|| format!("https://{}/admin/oauth/access_token", opts.store_fqdn));
     let state = GraphiqlState {
         key: opts.key.clone(),
         app_name: opts.app_name.clone(),
@@ -171,7 +172,9 @@ async fn graphql_proxy(
     let Ok(token) = current_token(&state).await else {
         return (
             StatusCode::UNAUTHORIZED,
-            Json(serde_json::json!({"errors": [{"message": "Failed to refresh credentials. Check that your app is installed, and try again."}]})),
+            Json(
+                serde_json::json!({"errors": [{"message": "Failed to refresh credentials. Check that your app is installed, and try again."}]}),
+            ),
         );
     };
     match proxy_once(&state, &body, &token).await {
@@ -186,7 +189,9 @@ async fn graphql_proxy(
                 },
                 Err(_) => (
                     StatusCode::UNAUTHORIZED,
-                    Json(serde_json::json!({"errors": [{"message": "Failed to refresh credentials. Check that your app is installed, and try again."}]})),
+                    Json(
+                        serde_json::json!({"errors": [{"message": "Failed to refresh credentials. Check that your app is installed, and try again."}]}),
+                    ),
                 ),
             }
         }
@@ -243,7 +248,10 @@ async fn mint_token(state: &GraphiqlState) -> Result<String, String> {
         .await
         .map_err(|e| e.to_string())?;
     if !resp.status().is_success() {
-        return Err(format!("Token request failed with status {}", resp.status()));
+        return Err(format!(
+            "Token request failed with status {}",
+            resp.status()
+        ));
     }
     let json: Value = resp.json().await.map_err(|e| e.to_string())?;
     let token = json
@@ -328,10 +336,7 @@ mod tests {
         let b = derive_graphiql_key("secret", "shop.myshopify.com");
         assert_eq!(a, b);
         assert_eq!(a.len(), 64);
-        assert_ne!(
-            derive_graphiql_key("secret", "other.myshopify.com"),
-            a
-        );
+        assert_ne!(derive_graphiql_key("secret", "other.myshopify.com"), a);
         assert_eq!(
             resolve_graphiql_key(Some(" explicit "), "s", "shop.myshopify.com"),
             "explicit"
@@ -357,7 +362,9 @@ mod tests {
         Mock::given(method("POST"))
             .and(path("/admin/api/unstable/graphql.json"))
             .and(header("X-Shopify-Access-Token", "shpat_live"))
-            .and(body_partial_json(serde_json::json!({"query": "{ shop { name } }"})))
+            .and(body_partial_json(
+                serde_json::json!({"query": "{ shop { name } }"}),
+            ))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
                 "data": { "shop": { "name": "Demo" } }
             })))
@@ -421,7 +428,12 @@ mod tests {
         );
         let app = graphiql_router(state);
         let response = app
-            .oneshot(Request::builder().uri("/graphiql/status").body(Body::empty()).unwrap())
+            .oneshot(
+                Request::builder()
+                    .uri("/graphiql/status")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
             .await
             .unwrap();
         let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)

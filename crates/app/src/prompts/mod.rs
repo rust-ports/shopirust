@@ -197,9 +197,7 @@ mod tests {
 
     #[test]
     fn prompt_item_builders() {
-        let item = PromptItem::new("A", "a")
-            .with_hint("hint")
-            .with_group("g");
+        let item = PromptItem::new("A", "a").with_hint("hint").with_group("g");
         assert_eq!(item.hint.as_deref(), Some("hint"));
         assert_eq!(item.group.as_deref(), Some("g"));
     }

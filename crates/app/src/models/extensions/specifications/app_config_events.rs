@@ -20,6 +20,8 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        assert!(out.get("events").is_some() || out.get("subscriptions").is_some() || !out.is_null());
+        assert!(
+            out.get("events").is_some() || out.get("subscriptions").is_some() || !out.is_null()
+        );
     }
 }

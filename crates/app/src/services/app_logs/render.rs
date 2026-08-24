@@ -46,11 +46,7 @@ pub fn camelcase_keys(value: Value, deep: bool) -> Value {
         Value::Object(map) => {
             let mut out = serde_json::Map::new();
             for (k, v) in map {
-                let converted = if deep {
-                    camelcase_keys(v, true)
-                } else {
-                    v
-                };
+                let converted = if deep { camelcase_keys(v, true) } else { v };
                 out.insert(snake_to_camel(&k), converted);
             }
             Value::Object(out)
@@ -364,13 +360,19 @@ mod tests {
     #[test]
     fn camelcase_leaves_camel_case_unchanged() {
         let v = serde_json::json!({"alreadyCamel": 1});
-        assert_eq!(camelcase_keys(v, false), serde_json::json!({"alreadyCamel": 1}));
+        assert_eq!(
+            camelcase_keys(v, false),
+            serde_json::json!({"alreadyCamel": 1})
+        );
     }
 
     #[test]
     fn camelcase_handles_null() {
         let v = serde_json::json!({"foo_bar": null});
-        assert_eq!(camelcase_keys(v, false), serde_json::json!({"fooBar": null}));
+        assert_eq!(
+            camelcase_keys(v, false),
+            serde_json::json!({"fooBar": null})
+        );
     }
 
     #[test]
@@ -412,10 +414,7 @@ mod tests {
     #[test]
     fn camelcase_top_level_arrays_with_deep() {
         let v = serde_json::json!([{"foo_bar": 1}]);
-        assert_eq!(
-            camelcase_keys(v, true),
-            serde_json::json!([{"fooBar": 1}])
-        );
+        assert_eq!(camelcase_keys(v, true), serde_json::json!([{"fooBar": 1}]));
     }
 
     #[test]
@@ -429,7 +428,10 @@ mod tests {
 
     #[test]
     fn camelcase_empty_object() {
-        assert_eq!(camelcase_keys(serde_json::json!({}), false), serde_json::json!({}));
+        assert_eq!(
+            camelcase_keys(serde_json::json!({}), false),
+            serde_json::json!({})
+        );
     }
 
     #[test]

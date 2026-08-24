@@ -58,9 +58,9 @@ pub fn parse_structured_errors(issues: &[Value]) -> Vec<ParsedIssue> {
                 }
                 return vec![ParsedIssue {
                     path: issue.path,
-                    message: issue
-                        .message
-                        .unwrap_or_else(|| "Configuration doesn't match any expected format".into()),
+                    message: issue.message.unwrap_or_else(|| {
+                        "Configuration doesn't match any expected format".into()
+                    }),
                     code: issue.code,
                 }];
             }
@@ -81,10 +81,7 @@ fn find_best_matching_variant(union_errors: &[UnionError]) -> Option<&UnionError
 }
 
 fn score_variant(issues: &[InnerIssue]) -> i32 {
-    let msgs: Vec<&str> = issues
-        .iter()
-        .filter_map(|i| i.message.as_deref())
-        .collect();
+    let msgs: Vec<&str> = issues.iter().filter_map(|i| i.message.as_deref()).collect();
     let required = msgs
         .iter()
         .filter(|m| m.contains("Required") || m.contains("required"))
@@ -130,7 +127,9 @@ mod tests {
         })]);
         assert_eq!(parsed.len(), 2);
         assert!(parsed.iter().all(|i| i.message == "Required"));
-        assert!(parsed.iter().all(|i| i.code.as_deref() == Some("invalid_union")));
+        assert!(parsed
+            .iter()
+            .all(|i| i.code.as_deref() == Some("invalid_union")));
     }
 
     #[test]

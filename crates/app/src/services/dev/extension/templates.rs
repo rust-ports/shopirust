@@ -33,7 +33,8 @@ const POST_PURCHASE_INDEX: &str = r#"<html>
   </body>
 </html>"#;
 
-const GENERIC_ERROR: &str = r#"<html><body><h1>Extension error</h1><p>{{ message }}</p></body></html>"#;
+const GENERIC_ERROR: &str =
+    r#"<html><body><h1>Extension error</h1><p>{{ message }}</p></body></html>"#;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PreviewTemplate {

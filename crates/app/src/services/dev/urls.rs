@@ -207,13 +207,15 @@ pub fn get_urls(remote_app_config: Option<&Value>) -> ApplicationUrls {
                 .collect()
         })
         .unwrap_or_default();
-    let app_proxy = remote_app_config.and_then(|c| c.get("app_proxy")).and_then(|p| {
-        Some(AppProxyUrls {
-            proxy_url: p.get("url")?.as_str()?.to_string(),
-            proxy_sub_path: p.get("subpath")?.as_str()?.to_string(),
-            proxy_sub_path_prefix: p.get("prefix")?.as_str()?.to_string(),
-        })
-    });
+    let app_proxy = remote_app_config
+        .and_then(|c| c.get("app_proxy"))
+        .and_then(|p| {
+            Some(AppProxyUrls {
+                proxy_url: p.get("url")?.as_str()?.to_string(),
+                proxy_sub_path: p.get("subpath")?.as_str()?.to_string(),
+                proxy_sub_path_prefix: p.get("prefix")?.as_str()?.to_string(),
+            })
+        });
     ApplicationUrls {
         application_url,
         redirect_url_whitelist,

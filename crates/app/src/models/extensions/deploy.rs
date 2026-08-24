@@ -72,8 +72,7 @@ pub async fn build_deploy_config(
         "function" => deploy_function(&config, directory, ctx).await,
         "theme" => Ok(Some(json!({ "theme_extension": { "files": {} } }))),
         "ui_extension" => {
-            crate::models::extensions::specifications::deploy_ui_extension(&config, directory)
-                .await
+            crate::models::extensions::specifications::deploy_ui_extension(&config, directory).await
         }
         "checkout_ui_extension" => deploy_checkout_ui(&config, directory).await,
         "checkout_post_purchase" => Ok(Some(json!({
@@ -103,9 +102,7 @@ pub async fn build_deploy_config(
         "flow_action" => deploy_flow_action(&config, directory, ctx).await,
         "flow_trigger" => deploy_flow_trigger(&config, directory).await,
         "flow_template" => deploy_flow_template(&config, directory).await,
-        "payments_extension" => {
-            crate::models::extensions::specifications::deploy_payments(&config)
-        }
+        "payments_extension" => crate::models::extensions::specifications::deploy_payments(&config),
         "admin_link" | "channel_config" | "order_attribution_config" => {
             deploy_contract(spec, &config, directory).await
         }
@@ -206,11 +203,17 @@ pub fn validate_configuration(
             require_string(&config, "name")?;
             let runtime_url = require_string(&config, "runtime_url")?;
             crate::services::flow::validate_flow_action_url(&runtime_url)?;
-            validate_flow_extension(&config, crate::services::flow::types::FlowExtensionType::FlowAction)?;
+            validate_flow_extension(
+                &config,
+                crate::services::flow::types::FlowExtensionType::FlowAction,
+            )?;
         }
         "flow_trigger" => {
             require_string(&config, "name")?;
-            validate_flow_extension(&config, crate::services::flow::types::FlowExtensionType::FlowTrigger)?;
+            validate_flow_extension(
+                &config,
+                crate::services::flow::types::FlowExtensionType::FlowTrigger,
+            )?;
         }
         "flow_template" | "editor_extension_collection" => {
             require_string(&config, "name")?;

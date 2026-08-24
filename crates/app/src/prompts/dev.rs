@@ -11,7 +11,12 @@ pub fn prompt_update_urls(
     current_redirect_urls: &[String],
     new_urls: &ApplicationUrls,
 ) -> Result<bool, AppError> {
-    let _ = (using_dev_sessions, current_app_url, current_redirect_urls, new_urls);
+    let _ = (
+        using_dev_sessions,
+        current_app_url,
+        current_redirect_urls,
+        new_urls,
+    );
     let message = if using_dev_sessions {
         "Have Shopify override your app URLs when running `app dev` against your dev store? This won't affect your app on other stores"
     } else {
@@ -21,9 +26,7 @@ pub fn prompt_update_urls(
 }
 
 pub fn prompt_generate_certificate(prompter: &dyn Prompter) -> Result<bool, AppError> {
-    prompter.confirm(
-        "--use-localhost requires a certificate for `localhost`. Generate it now?",
-    )
+    prompter.confirm("--use-localhost requires a certificate for `localhost`. Generate it now?")
 }
 
 #[cfg(test)]

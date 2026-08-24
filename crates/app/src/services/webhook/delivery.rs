@@ -187,13 +187,9 @@ mod tests {
             .mount(&server)
             .await;
 
-        let got = trigger_local_webhook(
-            &format!("{}/a/url/path", server.uri()),
-            body,
-            headers,
-        )
-        .await
-        .unwrap();
+        let got = trigger_local_webhook(&format!("{}/a/url/path", server.uri()), body, headers)
+            .await
+            .unwrap();
         assert!(got);
     }
 

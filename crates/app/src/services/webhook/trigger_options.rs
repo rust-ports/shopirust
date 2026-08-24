@@ -147,10 +147,8 @@ mod tests {
 
     #[tokio::test]
     async fn collect_api_version_uses_passed() {
-        let client = MockWebhookClient::with_lists(
-            vec!["2023-01".into(), "unstable".into()],
-            vec![],
-        );
+        let client =
+            MockWebhookClient::with_lists(vec!["2023-01".into(), "unstable".into()], vec![]);
         let p = InjectedPrompter::new();
         let version = collect_api_version(&client, Some("2023-01"), &p)
             .await
@@ -160,10 +158,8 @@ mod tests {
 
     #[tokio::test]
     async fn collect_api_version_prompts_when_unset() {
-        let client = MockWebhookClient::with_lists(
-            vec!["2023-01".into(), "unstable".into()],
-            vec![],
-        );
+        let client =
+            MockWebhookClient::with_lists(vec!["2023-01".into(), "unstable".into()], vec![]);
         let p = InjectedPrompter::new();
         p.push_select("2023-01");
         let version = collect_api_version(&client, None, &p).await.unwrap();
@@ -287,8 +283,7 @@ mod tests {
     fn collect_credentials_eventbridge_without_client_id_loads_remote() {
         let mut sources = sources_with_flags();
         sources.client_id = None;
-        let (creds, info) =
-            collect_credentials(&sources, DELIVERY_METHOD_EVENTBRIDGE).unwrap();
+        let (creds, info) = collect_credentials(&sources, DELIVERY_METHOD_EVENTBRIDGE).unwrap();
         assert_eq!(creds.client_secret, ORGANIZATION_APP_SECRET);
         assert_eq!(creds.api_key.as_deref(), Some(ORGANIZATION_APP_KEY));
         assert!(info.is_some());

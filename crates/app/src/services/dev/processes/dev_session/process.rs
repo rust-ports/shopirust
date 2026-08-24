@@ -1,7 +1,7 @@
 //! Dev-session concurrent process.
 
-use super::status::{inherited_module_uids, DevSessionStatusManager};
 use super::super::types::{DevProcess, DevProcessKind};
+use super::status::{inherited_module_uids, DevSessionStatusManager};
 use super::DevSessionClient;
 use crate::error::AppError;
 use crate::services::dev::app_events::AppEventWatcher;

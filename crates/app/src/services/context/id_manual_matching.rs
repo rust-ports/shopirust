@@ -47,7 +47,10 @@ pub fn manual_match_ids(
             .collect();
         items.push(PromptItem::new("Create new", CREATE_NEW));
         let selected = prompter.select(
-            &format!("Match local extension {} to a remote source", current.handle),
+            &format!(
+                "Match local extension {} to a remote source",
+                current.handle
+            ),
             &items,
         )?;
         if selected == CREATE_NEW {
@@ -100,7 +103,10 @@ mod tests {
             Some(&p),
         )
         .unwrap();
-        assert_eq!(result.identifiers.get("apple").map(String::as_str), Some("u1"));
+        assert_eq!(
+            result.identifiers.get("apple").map(String::as_str),
+            Some("u1")
+        );
         assert!(result.to_create.is_empty());
         assert!(result.only_remote.is_empty());
     }

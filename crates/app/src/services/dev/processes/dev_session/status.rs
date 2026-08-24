@@ -73,9 +73,10 @@ impl DevSessionStatusManager {
 
     pub fn apply_event(&self, event: &AppEvent) {
         let rows = rows_from_event(event);
-        let has_error = event.extension_events.iter().any(|e| {
-            matches!(e.build_result, Some(ExtensionBuildResult::Error { .. }))
-        });
+        let has_error = event
+            .extension_events
+            .iter()
+            .any(|e| matches!(e.build_result, Some(ExtensionBuildResult::Error { .. })));
         if has_error {
             let msg = event
                 .extension_events
@@ -210,7 +211,9 @@ mod tests {
             vec![ExtensionEvent {
                 r#type: EventType::Updated,
                 extension: a,
-                build_result: Some(ExtensionBuildResult::Ok { uid: "uid-a".into() }),
+                build_result: Some(ExtensionBuildResult::Ok {
+                    uid: "uid-a".into(),
+                }),
             }],
         );
         assert_eq!(inherited_module_uids(&ev), vec!["uid-b".to_string()]);

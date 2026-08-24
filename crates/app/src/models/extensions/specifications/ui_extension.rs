@@ -78,7 +78,10 @@ pub fn validate_ui_modules(config: &Value, directory: &Path) -> Result<(), AppEr
     Ok(())
 }
 
-pub async fn deploy_ui_extension(config: &Value, directory: &Path) -> Result<Option<Value>, AppError> {
+pub async fn deploy_ui_extension(
+    config: &Value,
+    directory: &Path,
+) -> Result<Option<Value>, AppError> {
     let handle = config
         .get("handle")
         .and_then(|v| v.as_str())
@@ -163,14 +166,21 @@ mod tests {
     use tempfile::tempdir;
 
     fn cfg(pairs: &[(&str, Value)]) -> HashMap<String, Value> {
-        pairs.iter().map(|(k, v)| ((*k).into(), v.clone())).collect()
+        pairs
+            .iter()
+            .map(|(k, v)| ((*k).into(), v.clone()))
+            .collect()
     }
 
     #[test]
     fn validate_ok_when_module_exists() {
         let dir = tempdir().unwrap();
         fs::create_dir_all(dir.path().join("src")).unwrap();
-        fs::write(dir.path().join("src/ExtensionPointA.js"), "export default {}").unwrap();
+        fs::write(
+            dir.path().join("src/ExtensionPointA.js"),
+            "export default {}",
+        )
+        .unwrap();
         let spec = create_extension_specification("ui_extension").unwrap();
         let configuration = cfg(&[
             ("name", json!("UI Extension")),
@@ -250,7 +260,10 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        let points = out.get("extension_points").and_then(|v| v.as_array()).unwrap();
+        let points = out
+            .get("extension_points")
+            .and_then(|v| v.as_array())
+            .unwrap();
         assert_eq!(points.len(), 1);
         assert_eq!(
             points[0]["metafields"],
@@ -272,9 +285,13 @@ mod tests {
 
     #[test]
     fn should_render_target_helper() {
-        assert!(get_should_render_target("purchase.checkout.block.render.should-render"));
+        assert!(get_should_render_target(
+            "purchase.checkout.block.render.should-render"
+        ));
         assert!(!get_should_render_target("purchase.checkout.block.render"));
-        assert!(get_should_render_target("admin.product-details.action.should-render"));
+        assert!(get_should_render_target(
+            "admin.product-details.action.should-render"
+        ));
     }
 
     #[tokio::test]
@@ -350,10 +367,7 @@ mod tests {
                     "block_progress": false
                 }),
             ),
-            (
-                "supported_features",
-                json!({ "runs_offline": true }),
-            ),
+            ("supported_features", json!({ "runs_offline": true })),
             (
                 "targeting",
                 json!([{ "target": "purchase.checkout.block.render", "module": "./src/A.js" }]),
@@ -376,10 +390,7 @@ mod tests {
         let configuration = cfg(&[
             ("name", json!("UI Extension")),
             ("handle", json!("test-ui")),
-            (
-                "targeting",
-                json!([{ "target": "A", "module": "./a.js" }]),
-            ),
+            ("targeting", json!([{ "target": "A", "module": "./a.js" }])),
         ]);
         let out = build_deploy_config(&spec, &configuration, dir.path(), &Default::default())
             .await

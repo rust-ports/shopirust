@@ -381,10 +381,7 @@ mod tests {
 
     #[test]
     fn delivery_method_parse() {
-        assert_eq!(
-            DeliveryMethod::parse("http").unwrap(),
-            DeliveryMethod::Http
-        );
+        assert_eq!(DeliveryMethod::parse("http").unwrap(), DeliveryMethod::Http);
         assert!(DeliveryMethod::parse("ftp").is_err());
     }
 }

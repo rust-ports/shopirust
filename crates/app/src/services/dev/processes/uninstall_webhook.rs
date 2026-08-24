@@ -4,8 +4,8 @@ use super::types::{DevProcess, DevProcessKind};
 use crate::error::AppError;
 use crate::models::loader::WebInstance;
 use crate::services::webhook::{
-    send_app_uninstalled_webhook, send_uninstall_webhook_to_app_server, SendUninstallWebhookOptions,
-    WebhookSampleClient,
+    send_app_uninstalled_webhook, send_uninstall_webhook_to_app_server,
+    SendUninstallWebhookOptions, WebhookSampleClient,
 };
 use std::sync::Arc;
 use std::time::Duration;
@@ -24,9 +24,7 @@ pub struct UninstallWebhookOptions {
     pub sample_client: Option<Arc<dyn WebhookSampleClient>>,
 }
 
-pub fn front_and_backend(
-    webs: &[WebInstance],
-) -> (Option<&WebInstance>, Option<&WebInstance>) {
+pub fn front_and_backend(webs: &[WebInstance]) -> (Option<&WebInstance>, Option<&WebInstance>) {
     let backend = webs
         .iter()
         .find(|w| w.roles.iter().any(|r| r.eq_ignore_ascii_case("backend")));
@@ -172,10 +170,7 @@ mod tests {
         }
     }
 
-    fn opts(
-        updated: bool,
-        webs: Vec<WebInstance>,
-    ) -> UninstallWebhookOptions {
+    fn opts(updated: bool, webs: Vec<WebInstance>) -> UninstallWebhookOptions {
         UninstallWebhookOptions {
             store_fqdn: "shop.myshopify.com".into(),
             api_secret: "sec".into(),
@@ -189,10 +184,8 @@ mod tests {
 
     #[test]
     fn skips_when_remote_not_updated() {
-        let proc = setup_send_uninstall_webhook_process(opts(
-            false,
-            vec![web("backend", Some("/hooks"))],
-        ));
+        let proc =
+            setup_send_uninstall_webhook_process(opts(false, vec![web("backend", Some("/hooks"))]));
         assert!(proc.is_none());
     }
 
