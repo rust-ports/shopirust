@@ -1,13 +1,20 @@
 [package]
-name = "store"
+name = "shopirust-store"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
-description = "Shopify store topic: list, info, execute, create, auth"
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+readme.workspace = true
+description = "Shopify-compatible store operations and authentication for Shopirust"
+keywords = ["shopify", "store", "cli"]
+categories = ["development-tools"]
+publish = ["crates-io"]
 
 [dependencies]
-cli-core = { path = "../cli-core" }
+cli-core = { package = "shopirust-core", version = "=0.1.0-alpha.1", path = "../cli-core" }
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

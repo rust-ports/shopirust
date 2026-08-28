@@ -1,9 +1,17 @@
 [package]
-name = "cli-core"
+name = "shopirust-core"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+readme.workspace = true
+description = "Core command, environment, and runner support for Shopirust"
+keywords = ["shopify", "cli", "commerce"]
+categories = ["command-line-utilities", "development-tools"]
+publish = ["crates-io"]
 
 [dependencies]
 clap = { version = "4", features = ["derive", "env"] }

@@ -18,10 +18,10 @@ The default upstream checkout location is `../gitCloned/cli`; override it with
 ```bash
 # Format and compile all cli-kit targets
 cargo fmt --check
-cargo check -p cli-kit --all-targets --all-features
+cargo check -p shopirust-cli --all-targets --all-features
 
 # Run focused crates while iterating
-cargo test -p cli-kit --lib
+cargo test -p shopirust-cli --lib
 cargo test -p app --lib
 cargo test -p theme --lib
 cargo test -p store --lib

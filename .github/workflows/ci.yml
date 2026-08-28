@@ -34,7 +34,7 @@ jobs:
           shared-key: lint
       - run: cargo clippy --all-targets --all-features
       - run: cargo fmt --check
-      - run: cargo build -p cli-kit --bin shopify
+      - run: cargo build -p shopirust-cli --bin shopify
       - run: python3 scripts/theme-parity-check.py theme-upstream target/debug/shopify
 
   test:

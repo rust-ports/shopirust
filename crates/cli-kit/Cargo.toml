@@ -1,10 +1,21 @@
 [package]
-name = "cli-kit"
+name = "shopirust-cli"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+readme.workspace = true
+description = "Independent Rust CLI compatible with Shopify developer workflows"
+keywords = ["shopify", "cli", "commerce", "developer-tools"]
+categories = ["command-line-utilities", "development-tools"]
+publish = ["crates-io"]
 default-run = "shopify"
+
+[lib]
+name = "cli_kit"
 
 [[bin]]
 name = "shopify"
@@ -15,12 +26,12 @@ name = "create-app"
 path = "src/bin/create-app.rs"
 
 [dependencies]
-cli-core = { path = "../cli-core" }
-cli-api = { path = "../cli-api" }
+cli-core = { package = "shopirust-core", version = "=0.1.0-alpha.1", path = "../cli-core" }
+cli-api = { package = "shopirust-api", version = "=0.1.0-alpha.1", path = "../cli-api" }
 clap = { version = "4", features = ["derive", "env"] }
-theme = { path = "../theme" }
-app = { path = "../app" }
-store = { path = "../store" }
+theme = { package = "shopirust-theme", version = "=0.1.0-alpha.1", path = "../theme" }
+app = { package = "shopirust-app", version = "=0.1.0-alpha.1", path = "../app" }
+store = { package = "shopirust-store", version = "=0.1.0-alpha.1", path = "../store" }
 strsim = "0.11"
 async-trait = "0.1"
 tokio.workspace = true

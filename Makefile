@@ -36,7 +36,7 @@ help:
 	@echo "  make codegen-app          Regenerate app surfaces only"
 	@echo "  make codegen-admin        Regenerate admin modules only"
 	@echo "  make codegen-test         Run graphql-codegen unit tests"
-	@echo "  make codegen-check        codegen + generator tests + cargo check -p cli-kit"
+	@echo "  make codegen-check        codegen + generator tests + cargo check -p shopirust-cli"
 	@echo "  make codegen-verify       Fail if regenerating changes committed output"
 	@echo "  make codegen-verify-upstream  Fail if upstream paths are missing"
 	@echo "  make console-assets       Build ui-extensions-dev-console → crates/app/assets/dev-console"
@@ -61,7 +61,7 @@ help:
 	@echo "(run Shopify/cli's own GraphQL codegen first if those TS artifacts are stale)."
 
 theme-parity-check:
-	cargo build -p cli-kit --bin shopify
+	cargo build -p shopirust-cli --bin shopify
 	python3 scripts/theme-parity-check.py "$(UPSTREAM_CLI)" target/debug/shopify
 
 codegen-verify-upstream:
@@ -105,7 +105,7 @@ codegen-test:
 	cargo test -p graphql-codegen
 
 codegen-check: codegen codegen-test
-	cargo check -p cli-kit
+	cargo check -p shopirust-cli
 
 codegen-verify: codegen-check
 	git diff --exit-code -- $(OUT_GRAPHQL)
@@ -191,7 +191,7 @@ bridge-size:
 	@du -sh "$(RELEASE_ARCHIVE)" 2>/dev/null || true
 
 release-package: bridge-archive
-	cargo build -p cli-kit --bins --release
+	cargo build -p shopirust-cli --bins --release
 	rm -rf "$(RELEASE_ROOT)" "$(RELEASE_ARCHIVE)"
 	mkdir -p "$(RELEASE_ROOT)/bin" "$(DIST_DIR)"
 	cp target/release/shopify "$(RELEASE_ROOT)/bin/shopify"

@@ -1,10 +1,17 @@
 [package]
-name = "cli-api"
+name = "shopirust-api"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
-description = "DeveloperPlatformClient trait and shared types (adapters live in cli-kit)"
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+readme.workspace = true
+description = "Developer-platform client traits and shared types for Shopirust"
+keywords = ["shopify", "api", "cli"]
+categories = ["api-bindings", "development-tools"]
+publish = ["crates-io"]
 
 [dependencies]
 async-trait = "0.1"

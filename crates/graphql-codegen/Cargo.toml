@@ -4,3 +4,4 @@ version = "0.1.0"
 edition = "2021"
 license = "MIT"
 description = "Generate Rust structs + query strings from Shopify CLI Kit .graphql and generated .ts files"
+publish = false
